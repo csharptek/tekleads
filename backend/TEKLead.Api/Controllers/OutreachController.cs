@@ -20,7 +20,8 @@ public class OutreachController : ControllerBase
         if (!Guid.TryParse(request.LeadId, out var leadId)) return BadRequest("Invalid lead id");
         var lead = await _db.GetLeadById(leadId);
         if (lead == null) return NotFound("Lead not found");
-        if (string.IsNullOrEmpty(lead.Email)) return BadRequest("Lead has no email");
+        if (lead.Emails == null || lead.Emails.Length == 0) return BadRequest("Lead has no email");
+        var toEmail = lead.Emails[0];
 
         var record = new OutreachRecord
         {
@@ -28,7 +29,7 @@ public class OutreachController : ControllerBase
             Channel = "email", Subject = request.Subject, Body = request.Body,
         };
 
-        try { await _outreach.SendEmail(lead.Email, lead.Name, request.Subject, request.Body); }
+        try { await _outreach.SendEmail(toEmail, lead.Name, request.Subject, request.Body); }
         catch (Exception ex) { record.Status = "failed"; await _db.InsertOutreach(record); return StatusCode(500, ex.Message); }
 
         return Ok(await _db.InsertOutreach(record));
