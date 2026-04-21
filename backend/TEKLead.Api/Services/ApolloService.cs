@@ -36,9 +36,9 @@ public class ApolloService
         var json = await response.Content.ReadAsStringAsync();
 
         using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("people", out var people)) return ([], false);
+        if (!doc.RootElement.TryGetProperty("people", out var people))
+            return (new List<Lead>(), false);
 
-        // Check pagination info
         var hasMore = false;
         if (doc.RootElement.TryGetProperty("pagination", out var pagination))
         {
@@ -50,7 +50,7 @@ public class ApolloService
         {
             var orgName = p.TryGetProperty("organization", out var org) ? Str(org, "name") : "";
             var orgIndustry = p.TryGetProperty("organization", out var org2) ? Str(org2, "industry") : "";
-            // Apollo returns email in contact_emails array or email field
+
             var emails = new List<string>();
             var emailVal = Str(p, "email");
             if (!string.IsNullOrEmpty(emailVal)) emails.Add(emailVal);
@@ -69,8 +69,8 @@ public class ApolloService
                 Industry = string.IsNullOrEmpty(orgIndustry) ? (request.Industry ?? "") : orgIndustry,
                 Location = Str(p, "city"),
                 Emails = emails.ToArray(),
-                Phones = [],
-                LinkedinUrl = Str(p, "linkedin_url").NullIfEmpty(),
+                Phones = Array.Empty<string>(),
+                LinkedinUrl = NullIfEmpty(Str(p, "linkedin_url")),
             };
         }).ToList();
 
@@ -80,14 +80,14 @@ public class ApolloService
     public async Task<string[]> RevealPhones(string apolloPersonId)
     {
         var s = await _settings.GetSettings();
-
         var body = new { api_key = s.ApolloApiKey, id = apolloPersonId, reveal_phone_number = true };
         var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         var response = await _http.PostAsync("https://api.apollo.io/v1/people/match", content);
         var json = await response.Content.ReadAsStringAsync();
 
         using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("person", out var person)) return [];
+        if (!doc.RootElement.TryGetProperty("person", out var person))
+            return Array.Empty<string>();
 
         var phones = new List<string>();
         if (person.TryGetProperty("phone_numbers", out var phoneNumbers))
@@ -101,9 +101,6 @@ public class ApolloService
 
     private static string Str(JsonElement el, string key) =>
         el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-}
 
-file static class StringExtensions
-{
-    public static string? NullIfEmpty(this string s) => string.IsNullOrEmpty(s) ? null : s;
+    private static string? NullIfEmpty(string s) => string.IsNullOrEmpty(s) ? null : s;
 }

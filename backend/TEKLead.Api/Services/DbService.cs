@@ -25,7 +25,7 @@ public class DbService
         return rows.Select(r => new Project
         {
             Id = r.id, Title = r.title ?? "", Industry = r.industry ?? "",
-            Tags = (r.tags as string[]) ?? [], Problem = r.problem ?? "",
+            Tags = (r.tags as string[]) ?? Array.Empty<string>(), Problem = r.problem ?? "",
             Solution = r.solution ?? "", TechStack = r.tech_stack ?? "",
             Outcomes = r.outcomes ?? "", Links = r.links ?? "", CreatedAt = r.created_at,
         }).ToList();
@@ -63,7 +63,7 @@ public class DbService
         return rows.Select(r => new Project
         {
             Id = r.id, Title = r.title ?? "", Industry = r.industry ?? "",
-            Tags = (r.tags as string[]) ?? [], Problem = r.problem ?? "",
+            Tags = (r.tags as string[]) ?? Array.Empty<string>(), Problem = r.problem ?? "",
             Solution = r.solution ?? "", TechStack = r.tech_stack ?? "", Outcomes = r.outcomes ?? "",
         }).ToList();
     }
@@ -127,12 +127,12 @@ public class DbService
         return o;
     }
 
-    private static Lead MapLead(dynamic r) => new()
+    private static Lead MapLead(dynamic r) => new Lead
     {
         Id = r.id, Name = r.name ?? "", Title = r.title ?? "", Company = r.company ?? "",
         Industry = r.industry ?? "", Location = r.location ?? "",
-        Emails = (r.emails as string[]) ?? [],
-        Phones = (r.phones as string[]) ?? [],
+        Emails = (r.emails as string[]) ?? Array.Empty<string>(),
+        Phones = (r.phones as string[]) ?? Array.Empty<string>(),
         LinkedinUrl = r.linkedin_url,
         SavedAt = r.saved_at,
     };

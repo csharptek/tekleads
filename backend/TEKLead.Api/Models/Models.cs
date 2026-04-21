@@ -5,7 +5,7 @@ public class Project
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = "";
     public string Industry { get; set; } = "";
-    public string[] Tags { get; set; } = [];
+    public string[] Tags { get; set; } = Array.Empty<string>();
     public string Problem { get; set; } = "";
     public string Solution { get; set; } = "";
     public string TechStack { get; set; } = "";
@@ -22,8 +22,8 @@ public class Lead
     public string Company { get; set; } = "";
     public string Industry { get; set; } = "";
     public string Location { get; set; } = "";
-    public string[] Emails { get; set; } = [];
-    public string[] Phones { get; set; } = [];
+    public string[] Emails { get; set; } = Array.Empty<string>();
+    public string[] Phones { get; set; } = Array.Empty<string>();
     public string? LinkedinUrl { get; set; }
     public DateTime SavedAt { get; set; } = DateTime.UtcNow;
 }

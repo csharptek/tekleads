@@ -20,33 +20,23 @@ public class EmailAiService
         var s = await _settings.GetSettings();
         var client = new OpenAIClient(new Uri(s.AzureOpenAiEndpoint), new AzureKeyCredential(s.AzureOpenAiKey));
 
-        // Get query embedding for RAG
         var portfolioContext = await GetPortfolioContext(client, s, lead);
 
-        var systemPrompt = $"""
-            You are an expert B2B sales copywriter. Write personalized cold outreach emails.
-            Tone: {tone}. Be concise, value-focused, non-generic.
-            Return JSON only: {{"subject":"...","body":"..."}}
-            """;
+        var systemPrompt = "You are an expert B2B sales copywriter. Write personalized cold outreach emails. Tone: " + tone + ". Be concise, value-focused, non-generic. Return JSON only: {\"subject\":\"...\",\"body\":\"...\"}";
 
-        var userPrompt = $"""
-            Lead: {lead.Name}, {lead.Title} at {lead.Company} ({lead.Industry}, {lead.Location})
-
-            Our Relevant Work:
-            {portfolioContext}
-
-            {(string.IsNullOrEmpty(additionalContext) ? "" : $"Extra context: {additionalContext}")}
-
-            Write a personalized outreach email referencing our relevant experience.
-            """;
+        var userPrompt = "Lead: " + lead.Name + ", " + lead.Title + " at " + lead.Company + " (" + lead.Industry + ", " + lead.Location + ")\n\n"
+            + "Our Relevant Work:\n" + portfolioContext + "\n\n"
+            + (string.IsNullOrEmpty(additionalContext) ? "" : "Extra context: " + additionalContext + "\n\n")
+            + "Write a personalized outreach email referencing our relevant experience.";
 
         var options = new ChatCompletionsOptions
         {
             DeploymentName = s.AzureOpenAiDeployment,
-            Messages = { new ChatRequestSystemMessage(systemPrompt), new ChatRequestUserMessage(userPrompt) },
             MaxTokens = 800,
             Temperature = 0.7f,
         };
+        options.Messages.Add(new ChatRequestSystemMessage(systemPrompt));
+        options.Messages.Add(new ChatRequestUserMessage(userPrompt));
 
         var response = await client.GetChatCompletionsAsync(options);
         var raw = response.Value.Choices[0].Message.Content;
@@ -54,7 +44,7 @@ public class EmailAiService
         try
         {
             var clean = raw.Trim().TrimStart('`').TrimEnd('`');
-            if (clean.StartsWith("json")) clean = clean[4..].Trim();
+            if (clean.StartsWith("json")) clean = clean.Substring(4).Trim();
             using var doc = System.Text.Json.JsonDocument.Parse(clean);
             return (
                 doc.RootElement.GetProperty("subject").GetString() ?? "",
@@ -71,7 +61,8 @@ public class EmailAiService
     {
         var s = await _settings.GetSettings();
         var client = new OpenAIClient(new Uri(s.AzureOpenAiEndpoint), new AzureKeyCredential(s.AzureOpenAiKey));
-        var response = await client.GetEmbeddingsAsync(new EmbeddingsOptions("text-embedding-ada-002", [text]));
+        var embOptions = new EmbeddingsOptions("text-embedding-ada-002", new List<string> { text });
+        var response = await client.GetEmbeddingsAsync(embOptions);
         return response.Value.Data[0].Embedding.ToArray();
     }
 
@@ -79,15 +70,16 @@ public class EmailAiService
     {
         try
         {
-            var query = $"{lead.Industry} {lead.Title} {lead.Company}";
-            var embResponse = await client.GetEmbeddingsAsync(new EmbeddingsOptions("text-embedding-ada-002", [query]));
+            var query = lead.Industry + " " + lead.Title + " " + lead.Company;
+            var embOptions = new EmbeddingsOptions("text-embedding-ada-002", new List<string> { query });
+            var embResponse = await client.GetEmbeddingsAsync(embOptions);
             var embedding = embResponse.Value.Data[0].Embedding.ToArray();
 
             var projects = await _db.SearchSimilarProjects(embedding, 3);
             if (projects.Count == 0) return "No portfolio data indexed yet.";
 
             return string.Join("\n", projects.Select(p =>
-                $"- {p.Title} ({p.Industry}): {p.Solution} | Outcomes: {p.Outcomes}"));
+                "- " + p.Title + " (" + p.Industry + "): " + p.Solution + " | Outcomes: " + p.Outcomes));
         }
         catch
         {
