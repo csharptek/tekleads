@@ -32,12 +32,20 @@ public class LeadsController : ControllerBase
     [HttpGet("saved")]
     public async Task<IActionResult> GetSaved() => Ok(await _db.GetLeads());
 
+    [HttpPut("{id}/phones")]
+    public async Task<IActionResult> UpdatePhones(Guid id, [FromBody] UpdatePhonesRequest request)
+    {
+        var lead = await _db.GetLeadById(id);
+        if (lead == null) return NotFound("Lead not found");
+        await _db.UpdateLeadPhones(id, request.Phones);
+        return Ok();
+    }
+
     [HttpPost("{id}/reveal-phones")]
     public async Task<IActionResult> RevealPhones(Guid id, [FromBody] RevealPhoneRequest request)
     {
         var lead = await _db.GetLeadById(id);
         if (lead == null) return NotFound("Lead not found");
-
         var phones = await _apollo.RevealPhones(request.ApolloPersonId);
         await _db.UpdateLeadPhones(id, phones);
         return Ok(new { phones });

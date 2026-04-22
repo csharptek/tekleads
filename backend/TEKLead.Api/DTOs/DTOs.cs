@@ -11,3 +11,5 @@ public record EmailGenerateResponse(string Subject, string Body);
 public record SendEmailRequest(string LeadId, string Subject, string Body);
 public record SendWhatsAppRequest(string To, string Message);
 public record RevealPhoneRequest(string ApolloPersonId);
+
+public record UpdatePhonesRequest(string[] Phones);
