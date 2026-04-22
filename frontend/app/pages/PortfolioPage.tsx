@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PageHeader from "../components/PageHeader";
+import { get, post, del } from "../../lib/api";
 
 interface Project {
   id: string;
@@ -14,201 +15,216 @@ interface Project {
   links: string;
 }
 
-const MOCK_PROJECTS: Project[] = [
-  {
-    id: "1",
-    title: "AI-Powered Fleet Management",
-    industry: "Logistics",
-    tags: ["AI", "IoT", "Real-time"],
-    problem: "Manual fleet tracking causing 30% downtime",
-    solution: "ML-based predictive maintenance + live GPS",
-    techStack: ["Azure", "Python", "React", "CosmosDB"],
-    outcomes: "42% reduction in downtime, $2M savings",
-    links: "https://example.com",
-  },
-  {
-    id: "2",
-    title: "Healthcare Claims Automation",
-    industry: "Healthcare",
-    tags: ["RPA", "ML", "Compliance"],
-    problem: "Manual claims processing taking 14 days avg",
-    solution: "Automated OCR + NLP claims extraction",
-    techStack: [".NET", "Azure AI", "SQL Server"],
-    outcomes: "Claims processed in 2hrs, 95% accuracy",
-    links: "",
-  },
-];
+const ICON = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/></svg>
+);
 
 export default function PortfolioPage() {
-  const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState<Project | null>(null);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "", industry: "", tags: "", problem: "",
     solution: "", techStack: "", outcomes: "", links: "",
   });
 
-  const handleAdd = () => {
-    const p: Project = {
-      id: Date.now().toString(),
-      title: form.title,
-      industry: form.industry,
-      tags: form.tags.split(",").map(t => t.trim()).filter(Boolean),
-      problem: form.problem,
-      solution: form.solution,
-      techStack: form.techStack.split(",").map(t => t.trim()).filter(Boolean),
-      outcomes: form.outcomes,
-      links: form.links,
-    };
-    setProjects(prev => [p, ...prev]);
-    setShowForm(false);
-    setForm({ title: "", industry: "", tags: "", problem: "", solution: "", techStack: "", outcomes: "", links: "" });
+  const load = useCallback(async () => {
+    try {
+      const data: Project[] = await get("/api/portfolio");
+      setProjects(data || []);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleAdd = async () => {
+    setLoading(true);
+    try {
+      const p = {
+        title: form.title,
+        industry: form.industry,
+        tags: form.tags.split(",").map(t => t.trim()).filter(Boolean),
+        problem: form.problem,
+        solution: form.solution,
+        techStack: form.techStack.split(",").map(t => t.trim()).filter(Boolean),
+        outcomes: form.outcomes,
+        links: form.links,
+      };
+      const created: Project = await post("/api/portfolio", p);
+      setProjects(prev => [created, ...prev]);
+      setShowForm(false);
+      setForm({ title: "", industry: "", tags: "", problem: "", solution: "", techStack: "", outcomes: "", links: "" });
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await del(`/api/portfolio/${id}`);
+      setProjects(prev => prev.filter(p => p.id !== id));
+      setSelected(null);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const filtered = projects.filter(p =>
+    !search ||
+    p.title.toLowerCase().includes(search.toLowerCase()) ||
+    p.industry.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <PageHeader
         title="Portfolio Intelligence"
         subtitle="Manage project data used for AI email generation"
-        icon="◈"
+        icon={ICON}
         actions={
-          <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
-            + Add Project
+          <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setSelected(null); }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14M12 5v14"/></svg>
+            Add Project
           </button>
         }
       />
 
+      {error && (
+        <div style={{ margin: "12px 20px 0", padding: "10px 14px", background: "var(--red-light)", border: "1px solid var(--red-light)", borderRadius: 8, fontSize: 12, color: "var(--red)", flexShrink: 0, display: "flex", justifyContent: "space-between" }}>
+          <span>{error}</span>
+          <button onClick={() => setError(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--red)" }}>✕</button>
+        </div>
+      )}
+
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {/* Left: Project List */}
-        <div style={{
-          width: 320, borderRight: "1px solid var(--border)",
-          display: "flex", flexDirection: "column",
-        }}>
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
-            <input className="input" placeholder="Search projects..." style={{ fontSize: 11 }} />
+        {/* List */}
+        <div style={{ width: 340, borderRight: "1px solid var(--border)", background: "var(--bg-card)", display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+            <input className="input" placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <div className="scroll-y" style={{ flex: 1, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-            {projects.map(p => (
+            {filtered.length === 0 ? (
+              <div className="empty">
+                <div className="empty-icon">{ICON}</div>
+                <div className="empty-title">No projects yet</div>
+                <div className="empty-sub">Add your first project to get started</div>
+              </div>
+            ) : filtered.map(p => (
               <div
                 key={p.id}
-                className={`card ${selected?.id === p.id ? "card-active" : ""}`}
-                style={{ padding: "12px 14px", cursor: "pointer" }}
-                onClick={() => setSelected(p)}
+                className={`card card-hover ${selected?.id === p.id ? "card-active" : ""}`}
+                style={{ padding: "14px 16px", cursor: "pointer" }}
+                onClick={() => { setSelected(p); setShowForm(false); }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                  <div style={{
-                    fontFamily: "Syne, sans-serif",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: "var(--text)",
-                    lineHeight: 1.3,
-                  }}>{p.title}</div>
-                </div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
-                  <span className="chip chip-accent">{p.industry}</span>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 8, lineHeight: 1.3 }}>{p.title}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                  {p.industry && <span className="chip chip-accent">{p.industry}</span>}
                   {p.tags.slice(0, 2).map(t => <span key={t} className="chip">{t}</span>)}
                 </div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                  {p.outcomes.substring(0, 60)}...
+                <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                  {(p.outcomes || "").substring(0, 70)}{p.outcomes && p.outcomes.length > 70 ? "..." : ""}
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Right: Detail / Add Form */}
+        {/* Detail / Form */}
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {showForm ? (
-            <div className="scroll-y" style={{ flex: 1, padding: 24 }}>
-              <div style={{ maxWidth: 600 }}>
-                <div style={{
-                  fontFamily: "Syne, sans-serif",
-                  fontSize: 15,
-                  fontWeight: 700,
-                  marginBottom: 20,
-                  color: "var(--text)",
-                }}>New Project</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                  {[
-                    { key: "title", label: "Project Title", full: true },
-                    { key: "industry", label: "Industry" },
-                    { key: "tags", label: "Tags (comma-separated)" },
-                    { key: "techStack", label: "Tech Stack (comma-separated)" },
-                    { key: "links", label: "Links" },
-                  ].map(({ key, label, full }) => (
-                    <div key={key} style={{ gridColumn: full ? "1 / -1" : undefined }}>
-                      <div className="label" style={{ marginBottom: 6 }}>{label}</div>
-                      <input
-                        className="input"
-                        value={(form as any)[key]}
-                        onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
-                        placeholder={label}
-                      />
-                    </div>
-                  ))}
-                  {[
-                    { key: "problem", label: "Problem Statement" },
-                    { key: "solution", label: "Solution" },
-                    { key: "outcomes", label: "Outcomes & Results", full: true },
-                  ].map(({ key, label, full }) => (
-                    <div key={key} style={{ gridColumn: full ? "1 / -1" : undefined }}>
-                      <div className="label" style={{ marginBottom: 6 }}>{label}</div>
-                      <textarea
-                        className="textarea"
-                        rows={3}
-                        value={(form as any)[key]}
-                        onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
-                        placeholder={label}
-                      />
-                    </div>
-                  ))}
+            <div className="scroll-y" style={{ flex: 1, padding: 32 }}>
+              <div style={{ maxWidth: 720 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>New Project</h2>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 24 }}>Add project details to feed RAG-based email generation</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div className="label">Project Title</div>
+                    <input className="input" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="AI-Powered Fleet Management" />
+                  </div>
+                  <div>
+                    <div className="label">Industry</div>
+                    <input className="input" value={form.industry} onChange={e => setForm(p => ({ ...p, industry: e.target.value }))} placeholder="Logistics" />
+                  </div>
+                  <div>
+                    <div className="label">Tags</div>
+                    <input className="input" value={form.tags} onChange={e => setForm(p => ({ ...p, tags: e.target.value }))} placeholder="AI, IoT, Real-time" />
+                  </div>
+                  <div>
+                    <div className="label">Tech Stack</div>
+                    <input className="input" value={form.techStack} onChange={e => setForm(p => ({ ...p, techStack: e.target.value }))} placeholder="Azure, Python, React" />
+                  </div>
+                  <div>
+                    <div className="label">Links</div>
+                    <input className="input" value={form.links} onChange={e => setForm(p => ({ ...p, links: e.target.value }))} placeholder="https://..." />
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div className="label">Problem Statement</div>
+                    <textarea className="textarea" rows={3} value={form.problem} onChange={e => setForm(p => ({ ...p, problem: e.target.value }))} placeholder="Describe the business problem" />
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div className="label">Solution</div>
+                    <textarea className="textarea" rows={3} value={form.solution} onChange={e => setForm(p => ({ ...p, solution: e.target.value }))} placeholder="Describe the solution" />
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div className="label">Outcomes & Results</div>
+                    <textarea className="textarea" rows={3} value={form.outcomes} onChange={e => setForm(p => ({ ...p, outcomes: e.target.value }))} placeholder="42% reduction in downtime, $2M savings" />
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
-                  <button className="btn btn-primary" onClick={handleAdd}>Save Project</button>
+                <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+                  <button className="btn btn-primary" onClick={handleAdd} disabled={loading || !form.title}>
+                    {loading ? <span className="spinner" /> : null}
+                    {loading ? "Saving..." : "Save Project"}
+                  </button>
                   <button className="btn" onClick={() => setShowForm(false)}>Cancel</button>
                 </div>
               </div>
             </div>
           ) : selected ? (
-            <div className="scroll-y fade-in" style={{ flex: 1, padding: 28 }}>
-              <div style={{ maxWidth: 640 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-                  <div>
-                    <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{selected.title}</h2>
+            <div className="scroll-y fade-in" style={{ flex: 1, padding: 32 }}>
+              <div style={{ maxWidth: 760 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, gap: 20 }}>
+                  <div style={{ flex: 1 }}>
+                    <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, lineHeight: 1.2 }}>{selected.title}</h2>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <span className="chip chip-accent">{selected.industry}</span>
+                      {selected.industry && <span className="chip chip-accent">{selected.industry}</span>}
                       {selected.tags.map(t => <span key={t} className="chip">{t}</span>)}
                     </div>
                   </div>
-                  <button className="btn btn-danger" onClick={() => {
-                    setProjects(prev => prev.filter(p => p.id !== selected.id));
-                    setSelected(null);
-                  }}>Delete</button>
+                  <button className="btn btn-danger btn-sm" onClick={() => handleDelete(selected.id)}>Delete</button>
                 </div>
 
                 {[
                   { label: "Problem Statement", value: selected.problem },
                   { label: "Solution", value: selected.solution },
                   { label: "Outcomes", value: selected.outcomes },
-                ].map(({ label, value }) => (
-                  <div key={label} className="card" style={{ padding: "14px 16px", marginBottom: 12 }}>
-                    <div className="label" style={{ marginBottom: 6 }}>{label}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7 }}>{value}</div>
+                ].filter(x => x.value).map(({ label, value }) => (
+                  <div key={label} className="card" style={{ padding: "18px 20px", marginBottom: 14 }}>
+                    <div className="label" style={{ marginBottom: 8 }}>{label}</div>
+                    <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.7 }}>{value}</div>
                   </div>
                 ))}
 
-                <div className="card" style={{ padding: "14px 16px", marginBottom: 12 }}>
-                  <div className="label" style={{ marginBottom: 8 }}>Tech Stack</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {selected.techStack.map(t => <span key={t} className="chip chip-green">{t}</span>)}
+                {selected.techStack.length > 0 && (
+                  <div className="card" style={{ padding: "18px 20px", marginBottom: 14 }}>
+                    <div className="label" style={{ marginBottom: 10 }}>Tech Stack</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {selected.techStack.map(t => <span key={t} className="chip chip-green">{t}</span>)}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {selected.links && (
-                  <div className="card" style={{ padding: "14px 16px" }}>
-                    <div className="label" style={{ marginBottom: 6 }}>Links</div>
+                  <div className="card" style={{ padding: "18px 20px" }}>
+                    <div className="label" style={{ marginBottom: 8 }}>Links</div>
                     <a href={selected.links} target="_blank" rel="noreferrer"
-                      style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none" }}>
+                      style={{ fontSize: 13, color: "var(--accent-text)", textDecoration: "none", wordBreak: "break-all" }}>
                       {selected.links}
                     </a>
                   </div>
@@ -216,14 +232,10 @@ export default function PortfolioPage() {
               </div>
             </div>
           ) : (
-            <div style={{
-              flex: 1, display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center",
-              color: "var(--text-dim)",
-            }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>◈</div>
-              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, marginBottom: 6 }}>Select a project</div>
-              <div style={{ fontSize: 11 }}>or add a new one</div>
+            <div className="empty">
+              <div className="empty-icon">{ICON}</div>
+              <div className="empty-title">Select a project</div>
+              <div className="empty-sub">Choose from the list or add a new one</div>
             </div>
           )}
         </div>

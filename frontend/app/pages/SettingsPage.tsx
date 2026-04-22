@@ -1,92 +1,107 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PageHeader from "../components/PageHeader";
+import { get, post } from "../../lib/api";
+
+interface SettingField {
+  key: string;
+  label: string;
+  placeholder: string;
+  type?: string;
+  hint?: string;
+  full?: boolean;
+}
 
 interface SettingGroup {
   title: string;
   subtitle: string;
-  icon: string;
-  fields: { key: string; label: string; placeholder: string; type?: string; hint?: string }[];
+  fields: SettingField[];
 }
 
 const SETTING_GROUPS: SettingGroup[] = [
   {
     title: "Azure OpenAI",
     subtitle: "AI email generation",
-    icon: "◆",
     fields: [
-      { key: "azureOpenAiEndpoint", label: "Endpoint URL", placeholder: "https://your-resource.openai.azure.com/" },
+      { key: "azureOpenAiEndpoint", label: "Endpoint URL", placeholder: "https://your-resource.openai.azure.com/", full: true },
       { key: "azureOpenAiKey", label: "API Key", placeholder: "••••••••••••", type: "password" },
-      { key: "azureOpenAiModel", label: "Deployment Name", placeholder: "gpt-4o", hint: "Your Azure OpenAI deployment name" },
-    ],
-  },
-  {
-    title: "Azure AI Search",
-    subtitle: "RAG vector search",
-    icon: "◎",
-    fields: [
-      { key: "azureSearchEndpoint", label: "Endpoint", placeholder: "https://your-search.search.windows.net" },
-      { key: "azureSearchKey", label: "Admin Key", placeholder: "••••••••••••", type: "password" },
-      { key: "azureSearchIndex", label: "Index Name", placeholder: "portfolio-index" },
-    ],
-  },
-  {
-    title: "Azure Cosmos DB",
-    subtitle: "Primary data store",
-    icon: "⊞",
-    fields: [
-      { key: "cosmosEndpoint", label: "Endpoint", placeholder: "https://your-account.documents.azure.com:443/" },
-      { key: "cosmosKey", label: "Primary Key", placeholder: "••••••••••••", type: "password" },
-      { key: "cosmosDatabase", label: "Database Name", placeholder: "teklead" },
+      { key: "azureOpenAiDeployment", label: "Deployment Name", placeholder: "gpt-4o", hint: "Azure OpenAI deployment name" },
     ],
   },
   {
     title: "Azure Blob Storage",
     subtitle: "File attachments",
-    icon: "◈",
     fields: [
-      { key: "blobConnectionString", label: "Connection String", placeholder: "DefaultEndpointsProtocol=https;AccountName=...", type: "password" },
-      { key: "blobContainer", label: "Container Name", placeholder: "portfolio-assets" },
+      { key: "azureBlobConnectionString", label: "Connection String", placeholder: "DefaultEndpointsProtocol=https;AccountName=...", type: "password", full: true },
     ],
   },
   {
     title: "Apollo.io",
     subtitle: "Lead data provider",
-    icon: "◉",
     fields: [
-      { key: "apolloApiKey", label: "API Key", placeholder: "••••••••••••", type: "password" },
+      { key: "apolloApiKey", label: "API Key", placeholder: "••••••••••••", type: "password", full: true },
     ],
   },
   {
     title: "SendGrid",
     subtitle: "Email delivery",
-    icon: "✉",
     fields: [
       { key: "sendgridApiKey", label: "API Key", placeholder: "SG.••••••••••••", type: "password" },
       { key: "sendgridFromEmail", label: "From Email", placeholder: "outreach@yourcompany.com" },
-      { key: "sendgridFromName", label: "From Name", placeholder: "Your Name / Company" },
     ],
   },
   {
     title: "Twilio WhatsApp",
     subtitle: "WhatsApp messaging",
-    icon: "◈",
     fields: [
       { key: "twilioAccountSid", label: "Account SID", placeholder: "AC••••••••••••", type: "password" },
       { key: "twilioAuthToken", label: "Auth Token", placeholder: "••••••••••••", type: "password" },
-      { key: "twilioWhatsappNumber", label: "WhatsApp Number", placeholder: "whatsapp:+14155238886" },
+      { key: "twilioWhatsappFrom", label: "WhatsApp Number", placeholder: "whatsapp:+14155238886", full: true },
+    ],
+  },
+  {
+    title: "PostgreSQL",
+    subtitle: "Primary data store (Railway)",
+    fields: [
+      { key: "pgConnectionString", label: "Connection String", placeholder: "Host=...;Database=...;Username=...;Password=...", type: "password", full: true, hint: "Usually set via PG_CONNECTION_STRING env var on Railway" },
     ],
   },
 ];
 
+const ICON = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+);
+
 export default function SettingsPage() {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const data: Record<string, string> = await get("/api/settings");
+      setValues(data || {});
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }, []);
+
+  useEffect(() => { loadSettings(); }, [loadSettings]);
 
   const handleSave = async () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setSaving(true);
+    setError(null);
+    try {
+      await post("/api/settings", values);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -94,48 +109,45 @@ export default function SettingsPage() {
       <PageHeader
         title="Settings"
         subtitle="Configure API keys and service connections"
-        icon="⊞"
+        icon={ICON}
         actions={
-          <button className="btn btn-primary" onClick={handleSave}>
-            {saved ? "✓ Saved" : "Save All"}
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? <span className="spinner" /> : null}
+            {saved ? "✓ Saved" : saving ? "Saving..." : "Save All"}
           </button>
         }
       />
 
-      <div className="scroll-y" style={{ flex: 1, padding: "20px 28px" }}>
-        <div style={{ maxWidth: 720, display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Info banner */}
-          <div className="card" style={{
-            padding: "12px 16px",
-            borderColor: "rgba(0,212,255,0.2)",
-            background: "rgba(0,212,255,0.04)",
-          }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 }}>
-              All keys stored encrypted in <span style={{ color: "var(--accent)" }}>Azure Cosmos DB</span>.
-              Loaded at runtime by the .NET API — never exposed to the frontend.
+      {error && (
+        <div style={{ margin: "12px 20px 0", padding: "10px 14px", background: "var(--red-light)", border: "1px solid var(--red-light)", borderRadius: 8, fontSize: 12, color: "var(--red)", flexShrink: 0, display: "flex", justifyContent: "space-between" }}>
+          <span>{error}</span>
+          <button onClick={() => setError(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--red)" }}>✕</button>
+        </div>
+      )}
+
+      <div className="scroll-y" style={{ flex: 1, padding: "24px 28px" }}>
+        <div style={{ maxWidth: 840, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="card" style={{ padding: "14px 18px", background: "var(--accent-light)", borderColor: "var(--accent-light)" }}>
+            <div style={{ fontSize: 12, color: "var(--accent-text)", lineHeight: 1.6 }}>
+              <strong>Note:</strong> All keys stored encrypted in PostgreSQL. Loaded at runtime by the .NET API — never exposed to the frontend. Masked values shown as dots won't overwrite stored keys on save.
             </div>
           </div>
 
-          {SETTING_GROUPS.map((group) => (
-            <div key={group.title} className="card" style={{ padding: "16px 18px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <span style={{ fontSize: 16, color: "var(--accent)" }}>{group.icon}</span>
-                <div>
-                  <div style={{ fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-                    {group.title}
-                  </div>
-                  <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{group.subtitle}</div>
-                </div>
+          {SETTING_GROUPS.map(group => (
+            <div key={group.title} className="card" style={{ padding: "20px 22px" }}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{group.title}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{group.subtitle}</div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 {group.fields.map(field => (
-                  <div key={field.key} style={{ gridColumn: field.key.includes("ConnectionString") ? "1 / -1" : undefined }}>
-                    <div className="label" style={{ fontSize: 9, marginBottom: 5 }}>{field.label}</div>
+                  <div key={field.key} style={{ gridColumn: field.full ? "1 / -1" : undefined }}>
+                    <div className="label">{field.label}</div>
                     <div style={{ position: "relative" }}>
                       <input
                         className="input"
-                        style={{ fontSize: 11, paddingRight: field.type === "password" ? 40 : 12 }}
+                        style={{ paddingRight: field.type === "password" ? 56 : 12 }}
                         type={field.type === "password" && !reveal[field.key] ? "password" : "text"}
                         placeholder={field.placeholder}
                         value={values[field.key] || ""}
@@ -149,16 +161,17 @@ export default function SettingsPage() {
                             transform: "translateY(-50%)",
                             background: "none", border: "none",
                             cursor: "pointer",
-                            fontSize: 10,
-                            color: "var(--text-dim)",
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            fontWeight: 500,
                           }}
                         >
-                          {reveal[field.key] ? "hide" : "show"}
+                          {reveal[field.key] ? "Hide" : "Show"}
                         </button>
                       )}
                     </div>
                     {field.hint && (
-                      <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 3 }}>{field.hint}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5 }}>{field.hint}</div>
                     )}
                   </div>
                 ))}
@@ -166,7 +179,7 @@ export default function SettingsPage() {
             </div>
           ))}
 
-          <div style={{ height: 24 }} />
+          <div style={{ height: 20 }} />
         </div>
       </div>
     </div>

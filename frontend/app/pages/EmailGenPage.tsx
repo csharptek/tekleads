@@ -1,44 +1,37 @@
 "use client";
 import { useState } from "react";
 import PageHeader from "../components/PageHeader";
+import { post } from "../../lib/api";
 
 const TONES = ["Professional", "Casual", "Consultative", "Direct", "Curious"];
 const CONTEXTS = ["Cold Outreach", "Follow-up", "Demo Request", "Partnership", "Re-engagement"];
 
+const ICON = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+);
+
 export default function EmailGenPage() {
   const [form, setForm] = useState({
-    recipientName: "",
-    recipientTitle: "",
-    company: "",
-    industry: "",
-    tone: "Professional",
-    context: "Cold Outreach",
-    customContext: "",
+    recipientName: "", recipientTitle: "", company: "", industry: "",
+    tone: "Professional", context: "Cold Outreach", customContext: "",
   });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ subject: string; body: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     setLoading(true);
     setResult(null);
-    await new Promise(r => setTimeout(r, 1500));
-    setResult({
-      subject: `Helping ${form.company || "Your Company"} Accelerate Digital Transformation`,
-      body: `Hi ${form.recipientName || "[Name]"},
-
-I came across ${form.company || "your company"} and was genuinely impressed by what you're building in the ${form.industry || "industry"} space.
-
-At TEK, we've helped companies like yours solve [specific pain point] — reducing operational overhead by 40% while scaling their engineering capacity without proportional headcount growth.
-
-Given your role as ${form.recipientTitle || "a leader"}, I imagine you're navigating [relevant challenge] right now. We recently helped [similar company] go from manual processes to fully automated pipelines in under 8 weeks.
-
-Would a 20-minute call next week make sense? I'd love to share what we've built and see if there's a fit.
-
-Best,
-[Your Name]`,
-    });
-    setLoading(false);
+    setError(null);
+    try {
+      const data: { subject: string; body: string } = await post("/api/email/generate", form);
+      setResult(data);
+    } catch (e: any) {
+      setError(e.message || "Generation failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const copyToClipboard = () => {
@@ -53,108 +46,90 @@ Best,
       <PageHeader
         title="AI Email Generator"
         subtitle="RAG-powered personalized outreach using your portfolio"
-        icon="◆"
+        icon={ICON}
       />
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {/* Config Panel */}
-        <div style={{
-          width: 300,
-          borderRight: "1px solid var(--border)",
-          display: "flex", flexDirection: "column",
-        }}>
-          <div className="scroll-y" style={{ flex: 1, padding: "16px 14px", display: "flex", flexDirection: "column", gap: 14 }}>
-            <div className="label">Recipient Info</div>
+      {error && (
+        <div style={{ margin: "12px 20px 0", padding: "10px 14px", background: "var(--red-light)", border: "1px solid var(--red-light)", borderRadius: 8, fontSize: 12, color: "var(--red)", flexShrink: 0, display: "flex", justifyContent: "space-between" }}>
+          <span>{error}</span>
+          <button onClick={() => setError(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--red)" }}>✕</button>
+        </div>
+      )}
 
-            {[
-              { key: "recipientName", label: "Name", placeholder: "Sarah Chen" },
-              { key: "recipientTitle", label: "Job Title", placeholder: "VP of Engineering" },
-              { key: "company", label: "Company", placeholder: "Nexora Systems" },
-              { key: "industry", label: "Industry", placeholder: "SaaS / Healthcare..." },
-            ].map(({ key, label, placeholder }) => (
-              <div key={key}>
-                <div className="label" style={{ fontSize: 9, marginBottom: 5 }}>{label}</div>
-                <input
-                  className="input"
-                  style={{ fontSize: 11 }}
-                  placeholder={placeholder}
-                  value={(form as any)[key]}
-                  onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
-                />
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {/* Config */}
+        <div style={{ width: 320, borderRight: "1px solid var(--border)", background: "var(--bg-card)", display: "flex", flexDirection: "column" }}>
+          <div className="scroll-y" style={{ flex: 1, padding: "18px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 12 }}>Recipient</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  { key: "recipientName", label: "Name", placeholder: "Sarah Chen" },
+                  { key: "recipientTitle", label: "Job Title", placeholder: "VP of Engineering" },
+                  { key: "company", label: "Company", placeholder: "Nexora Systems" },
+                  { key: "industry", label: "Industry", placeholder: "SaaS / Healthcare" },
+                ].map(({ key, label, placeholder }) => (
+                  <div key={key}>
+                    <div className="label">{label}</div>
+                    <input
+                      className="input"
+                      placeholder={placeholder}
+                      value={(form as any)[key]}
+                      onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
 
             <div className="divider" />
-            <div className="label">Email Configuration</div>
 
             <div>
-              <div className="label" style={{ fontSize: 9, marginBottom: 6 }}>Tone</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                {TONES.map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setForm(p => ({ ...p, tone: t }))}
-                    className="chip"
-                    style={{
-                      cursor: "pointer",
-                      ...(form.tone === t ? {
-                        borderColor: "rgba(0,212,255,0.5)",
-                        color: "var(--accent)",
-                        background: "rgba(0,212,255,0.08)",
-                      } : {}),
-                    }}
-                  >{t}</button>
-                ))}
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 12 }}>Configuration</div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div className="label">Tone</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {TONES.map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setForm(p => ({ ...p, tone: t }))}
+                      className={`chip chip-interactive ${form.tone === t ? "chip-selected" : ""}`}
+                    >{t}</button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div>
-              <div className="label" style={{ fontSize: 9, marginBottom: 6 }}>Context</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                {CONTEXTS.map(c => (
-                  <button
-                    key={c}
-                    onClick={() => setForm(p => ({ ...p, context: c }))}
-                    className="chip"
-                    style={{
-                      cursor: "pointer",
-                      ...(form.context === c ? {
-                        borderColor: "rgba(0,212,255,0.5)",
-                        color: "var(--accent)",
-                        background: "rgba(0,212,255,0.08)",
-                      } : {}),
-                    }}
-                  >{c}</button>
-                ))}
+              <div style={{ marginBottom: 14 }}>
+                <div className="label">Context</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {CONTEXTS.map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setForm(p => ({ ...p, context: c }))}
+                      className={`chip chip-interactive ${form.context === c ? "chip-selected" : ""}`}
+                    >{c}</button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div>
-              <div className="label" style={{ fontSize: 9, marginBottom: 5 }}>Additional Context</div>
-              <textarea
-                className="textarea"
-                rows={3}
-                style={{ fontSize: 11 }}
-                placeholder="Any specific pain points, recent news about the company, or talking points..."
-                value={form.customContext}
-                onChange={e => setForm(p => ({ ...p, customContext: e.target.value }))}
-              />
+              <div>
+                <div className="label">Additional Context</div>
+                <textarea
+                  className="textarea"
+                  rows={4}
+                  placeholder="Any pain points, recent news, or talking points..."
+                  value={form.customContext}
+                  onChange={e => setForm(p => ({ ...p, customContext: e.target.value }))}
+                />
+              </div>
             </div>
           </div>
 
-          <div style={{ padding: "12px 14px", borderTop: "1px solid var(--border)" }}>
-            <button
-              className="btn btn-primary"
-              style={{ width: "100%", justifyContent: "center" }}
-              onClick={handleGenerate}
-              disabled={loading}
-            >
-              {loading ? (
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ animation: "pulse-glow 1s infinite" }}>◆</span>
-                  Generating...
-                </span>
-              ) : "◆ Generate Email"}
+          <div style={{ padding: "14px 16px", borderTop: "1px solid var(--border)" }}>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleGenerate} disabled={loading}>
+              {loading ? <span className="spinner" /> : null}
+              {loading ? "Generating..." : "Generate Email"}
             </button>
           </div>
         </div>
@@ -162,87 +137,55 @@ Best,
         {/* Output */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {loading ? (
-            <div style={{
-              flex: 1, display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center", gap: 16,
-            }}>
-              <div style={{ position: "relative" }}>
-                <div style={{
-                  width: 48, height: 48,
-                  border: "2px solid var(--border)",
-                  borderTop: "2px solid var(--accent)",
-                  borderRadius: "50%",
-                  animation: "spin 1s linear infinite",
-                }} />
+            <div className="empty">
+              <div style={{ marginBottom: 20 }}>
+                <span className="spinner spinner-dark" style={{ width: 36, height: 36, borderWidth: 3 }} />
               </div>
-              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: "var(--text-muted)" }}>
-                Retrieving portfolio context...
-              </div>
-              <div style={{ fontSize: 10, color: "var(--text-dim)" }}>RAG · Azure AI Search · OpenAI</div>
+              <div className="empty-title">Retrieving portfolio context...</div>
+              <div className="empty-sub mono" style={{ marginTop: 6 }}>RAG · Azure AI Search · OpenAI</div>
             </div>
           ) : result ? (
-            <div className="fade-in scroll-y" style={{ flex: 1, padding: 28 }}>
-              <div style={{ maxWidth: 680 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <div className="label">Generated Email</div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button className="btn" style={{ fontSize: 10 }} onClick={copyToClipboard}>
+            <div className="fade-in scroll-y" style={{ flex: 1, padding: 32 }}>
+              <div style={{ maxWidth: 760 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 600 }}>Generated Email</h3>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn btn-sm" onClick={copyToClipboard}>
                       {copied ? "✓ Copied" : "Copy"}
                     </button>
-                    <button className="btn btn-primary" style={{ fontSize: 10 }} onClick={handleGenerate}>
-                      ↻ Regenerate
-                    </button>
+                    <button className="btn btn-primary btn-sm" onClick={handleGenerate}>Regenerate</button>
                   </div>
                 </div>
 
-                <div className="card" style={{ padding: "14px 18px", marginBottom: 12 }}>
-                  <div className="label" style={{ fontSize: 9, marginBottom: 6 }}>Subject Line</div>
-                  <div style={{
-                    fontFamily: "Syne, sans-serif",
-                    fontSize: 14, fontWeight: 600,
-                    color: "var(--text)",
-                  }}>{result.subject}</div>
+                <div className="card" style={{ padding: "18px 20px", marginBottom: 14 }}>
+                  <div className="label" style={{ marginBottom: 8 }}>Subject</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{result.subject}</div>
                 </div>
 
-                <div className="card" style={{ padding: "16px 18px" }}>
-                  <div className="label" style={{ fontSize: 9, marginBottom: 12 }}>Email Body</div>
+                <div className="card" style={{ padding: "20px 22px" }}>
+                  <div className="label" style={{ marginBottom: 14 }}>Body</div>
                   <pre style={{
-                    fontFamily: "DM Mono, monospace",
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    lineHeight: 1.9,
+                    fontFamily: "Inter, sans-serif",
+                    fontSize: 13,
+                    color: "var(--text)",
+                    lineHeight: 1.8,
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
                   }}>{result.body}</pre>
                 </div>
-
-                <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                  <button className="btn btn-primary" style={{ fontSize: 10 }}>
-                    ◉ Send via Outreach
-                  </button>
-                  <button className="btn" style={{ fontSize: 10 }}>Edit Draft</button>
-                </div>
               </div>
             </div>
           ) : (
-            <div style={{
-              flex: 1, display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center",
-              color: "var(--text-dim)",
-            }}>
-              <div style={{ fontSize: 36, marginBottom: 12, color: "var(--border-bright)" }}>◆</div>
-              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, marginBottom: 6, color: "var(--text-muted)" }}>
-                Configure & Generate
-              </div>
-              <div style={{ fontSize: 11, maxWidth: 260, textAlign: "center", lineHeight: 1.6 }}>
+            <div className="empty">
+              <div className="empty-icon">{ICON}</div>
+              <div className="empty-title">Configure & Generate</div>
+              <div className="empty-sub" style={{ maxWidth: 280, lineHeight: 1.6 }}>
                 Fill in recipient details and click generate to create a personalized email using your portfolio context
               </div>
             </div>
           )}
         </div>
       </div>
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
