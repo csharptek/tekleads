@@ -68,24 +68,36 @@ public class SettingsService
     public static async Task EnsureSchema(NpgsqlConnection conn)
     {
         if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
-        await conn.ExecuteAsync(
-            "CREATE EXTENSION IF NOT EXISTS vector;" +
-            "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);" +
-            "CREATE TABLE IF NOT EXISTS projects (" +
-            "    id UUID PRIMARY KEY, title TEXT, industry TEXT, tags TEXT[]," +
-            "    problem TEXT, solution TEXT, tech_stack TEXT, outcomes TEXT, links TEXT," +
-            "    embedding vector(1536), created_at TIMESTAMPTZ DEFAULT NOW());" +
-            "CREATE TABLE IF NOT EXISTS leads (" +
-            "    id UUID PRIMARY KEY, name TEXT, title TEXT, company TEXT," +
-            "    industry TEXT, location TEXT," +
-            "    emails TEXT[] DEFAULT '{}'," +
-            "    phones TEXT[] DEFAULT '{}'," +
-            "    linkedin_url TEXT, saved_at TIMESTAMPTZ DEFAULT NOW());" +
-            "ALTER TABLE leads ADD COLUMN IF NOT EXISTS emails TEXT[] DEFAULT '{}';" +
-            "ALTER TABLE leads ADD COLUMN IF NOT EXISTS phones TEXT[] DEFAULT '{}';" +
-            "CREATE TABLE IF NOT EXISTS outreach (" +
-            "    id UUID PRIMARY KEY, lead_id UUID, lead_name TEXT, channel TEXT," +
-            "    subject TEXT, body TEXT, status TEXT, sent_at TIMESTAMPTZ DEFAULT NOW());");
+
+        // Try pgvector; if unavailable, fall back to BYTEA for embedding
+        bool hasVector = false;
+        try
+        {
+            await conn.ExecuteAsync("CREATE EXTENSION IF NOT EXISTS vector");
+            hasVector = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[EnsureSchema] pgvector unavailable, using fallback: {ex.Message}");
+        }
+
+        var embeddingCol = hasVector ? "embedding vector(1536)" : "embedding BYTEA";
+
+        var statements = new[]
+        {
+            "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            $"CREATE TABLE IF NOT EXISTS projects (id UUID PRIMARY KEY, title TEXT, industry TEXT, tags TEXT[], problem TEXT, solution TEXT, tech_stack TEXT, outcomes TEXT, links TEXT, {embeddingCol}, created_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS leads (id UUID PRIMARY KEY, name TEXT, title TEXT, company TEXT, industry TEXT, location TEXT, emails TEXT[] DEFAULT '{}', phones TEXT[] DEFAULT '{}', linkedin_url TEXT, saved_at TIMESTAMPTZ DEFAULT NOW())",
+            "ALTER TABLE leads ADD COLUMN IF NOT EXISTS emails TEXT[] DEFAULT '{}'",
+            "ALTER TABLE leads ADD COLUMN IF NOT EXISTS phones TEXT[] DEFAULT '{}'",
+            "CREATE TABLE IF NOT EXISTS outreach (id UUID PRIMARY KEY, lead_id UUID, lead_name TEXT, channel TEXT, subject TEXT, body TEXT, status TEXT, sent_at TIMESTAMPTZ DEFAULT NOW())"
+        };
+
+        foreach (var sql in statements)
+        {
+            try { await conn.ExecuteAsync(sql); }
+            catch (Exception ex) { Console.WriteLine($"[EnsureSchema] Statement failed: {ex.Message}\nSQL: {sql}"); throw; }
+        }
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
