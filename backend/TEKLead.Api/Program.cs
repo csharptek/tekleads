@@ -15,6 +15,23 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAn
 
 var app = builder.Build();
 app.UseCors();
+
+// Ensure DB tables exist at startup
+var pgConn = app.Configuration["PG_CONNECTION_STRING"] ?? "";
+if (!string.IsNullOrEmpty(pgConn))
+{
+    try
+    {
+        await using var conn = new Npgsql.NpgsqlConnection(pgConn);
+        await TEKLead.Api.Services.SettingsService.EnsureSchema(conn);
+        Console.WriteLine("DB schema initialized.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"DB init warning: {ex.Message}");
+    }
+}
+
 app.MapGet("/health", () => Results.Ok("healthy"));
 app.MapControllers();
 app.Run();
