@@ -34,9 +34,29 @@ public class SettingsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Save([FromBody] AppSettings settings)
     {
-        await _settings.SaveSettings(settings);
-        return Ok();
+        try
+        {
+            var existing = await _settings.GetSettings();
+            settings.AzureOpenAiKey = PreserveIfMasked(settings.AzureOpenAiKey, existing.AzureOpenAiKey);
+            settings.AzureBlobConnectionString = PreserveIfMasked(settings.AzureBlobConnectionString, existing.AzureBlobConnectionString);
+            settings.ApolloApiKey = PreserveIfMasked(settings.ApolloApiKey, existing.ApolloApiKey);
+            settings.SendgridApiKey = PreserveIfMasked(settings.SendgridApiKey, existing.SendgridApiKey);
+            settings.TwilioAuthToken = PreserveIfMasked(settings.TwilioAuthToken, existing.TwilioAuthToken);
+            settings.PgConnectionString = PreserveIfMasked(settings.PgConnectionString, existing.PgConnectionString);
+
+            await _settings.SaveSettings(settings);
+            return Ok(new { ok = true });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SettingsController.Save] {ex}");
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
+
+    private static bool IsMasked(string? v) => !string.IsNullOrEmpty(v) && v.Contains("****");
+    private static string PreserveIfMasked(string? incoming, string? existing) =>
+        IsMasked(incoming) ? (existing ?? "") : (incoming ?? "");
 
     private static string Mask(string? v) =>
         string.IsNullOrEmpty(v) ? "" : v.Length <= 8 ? "****" : v[..4] + new string('*', v.Length - 8) + v[^4..];

@@ -17,6 +17,7 @@ public class Project
 public class Lead
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public string? ApolloId { get; set; }
     public string Name { get; set; } = "";
     public string Title { get; set; } = "";
     public string Company { get; set; } = "";

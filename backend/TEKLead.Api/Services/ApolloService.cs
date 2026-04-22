@@ -16,24 +16,39 @@ public class ApolloService
         _http = factory.CreateClient();
     }
 
+    private HttpRequestMessage BuildRequest(HttpMethod method, string url, string apiKey, object? body = null)
+    {
+        var req = new HttpRequestMessage(method, url);
+        req.Headers.Add("X-Api-Key", apiKey);
+        req.Headers.Add("Cache-Control", "no-cache");
+        req.Headers.Add("accept", "application/json");
+        if (body != null)
+            req.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        return req;
+    }
+
     public async Task<(List<Lead> Leads, bool HasMore)> SearchPeople(LeadSearchRequest request)
     {
         var s = await _settings.GetSettings();
+        if (string.IsNullOrEmpty(s.ApolloApiKey))
+            throw new InvalidOperationException("Apollo API key not configured. Go to Settings and save it.");
 
-        var body = new
+        var body = new Dictionary<string, object?>
         {
-            api_key = s.ApolloApiKey,
-            q_organization_name = request.Company,
-            q_keywords = request.PersonName,
-            person_titles = string.IsNullOrEmpty(request.JobTitle) ? null : new[] { request.JobTitle },
-            person_locations = string.IsNullOrEmpty(request.Location) ? null : new[] { request.Location },
-            page = request.Page,
-            per_page = request.PerPage,
+            ["page"] = request.Page,
+            ["per_page"] = request.PerPage,
         };
+        if (!string.IsNullOrWhiteSpace(request.Company)) body["q_organization_name"] = request.Company;
+        if (!string.IsNullOrWhiteSpace(request.PersonName)) body["q_keywords"] = request.PersonName;
+        if (!string.IsNullOrWhiteSpace(request.JobTitle)) body["person_titles"] = new[] { request.JobTitle };
+        if (!string.IsNullOrWhiteSpace(request.Location)) body["person_locations"] = new[] { request.Location };
 
-        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        var response = await _http.PostAsync("https://api.apollo.io/v1/mixed_people/search", content);
+        var req = BuildRequest(HttpMethod.Post, "https://api.apollo.io/api/v1/mixed_people/search", s.ApolloApiKey, body);
+        var response = await _http.SendAsync(req);
         var json = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Apollo error {(int)response.StatusCode}: {json}");
 
         using var doc = JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("people", out var people))
@@ -53,7 +68,7 @@ public class ApolloService
 
             var emails = new List<string>();
             var emailVal = Str(p, "email");
-            if (!string.IsNullOrEmpty(emailVal)) emails.Add(emailVal);
+            if (!string.IsNullOrEmpty(emailVal) && emailVal != "email_not_unlocked@domain.com") emails.Add(emailVal);
             if (p.TryGetProperty("contact_emails", out var contactEmails))
                 foreach (var e in contactEmails.EnumerateArray())
                 {
@@ -63,6 +78,7 @@ public class ApolloService
 
             return new Lead
             {
+                ApolloId = Str(p, "id"),
                 Name = Str(p, "name"),
                 Title = Str(p, "title"),
                 Company = orgName,
@@ -80,10 +96,16 @@ public class ApolloService
     public async Task<string[]> RevealPhones(string apolloPersonId)
     {
         var s = await _settings.GetSettings();
-        var body = new { api_key = s.ApolloApiKey, id = apolloPersonId, reveal_phone_number = true };
-        var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        var response = await _http.PostAsync("https://api.apollo.io/v1/people/match", content);
+        if (string.IsNullOrEmpty(s.ApolloApiKey))
+            throw new InvalidOperationException("Apollo API key not configured.");
+
+        var url = $"https://api.apollo.io/api/v1/people/match?id={apolloPersonId}&reveal_phone_number=true";
+        var req = BuildRequest(HttpMethod.Post, url, s.ApolloApiKey);
+        var response = await _http.SendAsync(req);
         var json = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Apollo reveal error {(int)response.StatusCode}: {json}");
 
         using var doc = JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("person", out var person))
@@ -94,6 +116,7 @@ public class ApolloService
             foreach (var p in phoneNumbers.EnumerateArray())
             {
                 var num = Str(p, "sanitized_number");
+                if (string.IsNullOrEmpty(num)) num = Str(p, "raw_number");
                 if (!string.IsNullOrEmpty(num)) phones.Add(num);
             }
         return phones.ToArray();

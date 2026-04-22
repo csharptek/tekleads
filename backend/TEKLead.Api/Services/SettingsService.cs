@@ -42,7 +42,10 @@ public class SettingsService
                 return _cached;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SettingsService.GetSettings] {ex.Message}");
+        }
 
         return new AppSettings { PgConnectionString = BootstrapConnStr };
     }
@@ -51,6 +54,9 @@ public class SettingsService
     {
         _cached = null;
         var connStr = string.IsNullOrEmpty(settings.PgConnectionString) ? BootstrapConnStr : Normalize(settings.PgConnectionString);
+        if (string.IsNullOrEmpty(connStr))
+            throw new InvalidOperationException("No database connection string configured.");
+
         await using var conn = new NpgsqlConnection(connStr);
         await EnsureSchema(conn);
         var json = JsonSerializer.Serialize(settings, JsonOptions);
