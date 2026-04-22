@@ -22,7 +22,8 @@ if (!string.IsNullOrEmpty(pgConn))
 {
     try
     {
-        await using var conn = new Npgsql.NpgsqlConnection(pgConn);
+        var normalized = NormalizePgConn(pgConn);
+        await using var conn = new Npgsql.NpgsqlConnection(normalized);
         await TEKLead.Api.Services.SettingsService.EnsureSchema(conn);
         Console.WriteLine("DB schema initialized.");
     }
@@ -31,7 +32,20 @@ if (!string.IsNullOrEmpty(pgConn))
         Console.WriteLine($"DB init warning: {ex.Message}");
     }
 }
+else
+{
+    Console.WriteLine("PG_CONNECTION_STRING is empty.");
+}
 
 app.MapGet("/health", () => Results.Ok("healthy"));
 app.MapControllers();
 app.Run();
+
+static string NormalizePgConn(string conn)
+{
+    if (!conn.StartsWith("postgres://") && !conn.StartsWith("postgresql://")) return conn;
+    var uri = new Uri(conn);
+    var userInfo = uri.UserInfo.Split(':', 2);
+    var db = uri.AbsolutePath.TrimStart('/');
+    return $"Host={uri.Host};Port={uri.Port};Username={userInfo[0]};Password={userInfo[1]};Database={db};SSL Mode=Require;Trust Server Certificate=true";
+}

@@ -12,7 +12,17 @@ public class SettingsService
 
     public SettingsService(IConfiguration config) => _config = config;
 
-    private string BootstrapConnStr => _config["PG_CONNECTION_STRING"] ?? "";
+    private string BootstrapConnStr => Normalize(_config["PG_CONNECTION_STRING"] ?? "");
+
+    private static string Normalize(string conn)
+    {
+        if (string.IsNullOrEmpty(conn)) return conn;
+        if (!conn.StartsWith("postgres://") && !conn.StartsWith("postgresql://")) return conn;
+        var uri = new Uri(conn);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var db = uri.AbsolutePath.TrimStart('/');
+        return $"Host={uri.Host};Port={uri.Port};Username={userInfo[0]};Password={userInfo[1]};Database={db};SSL Mode=Require;Trust Server Certificate=true";
+    }
 
     public async Task<AppSettings> GetSettings()
     {
@@ -40,7 +50,7 @@ public class SettingsService
     public async Task SaveSettings(AppSettings settings)
     {
         _cached = null;
-        var connStr = string.IsNullOrEmpty(settings.PgConnectionString) ? BootstrapConnStr : settings.PgConnectionString;
+        var connStr = string.IsNullOrEmpty(settings.PgConnectionString) ? BootstrapConnStr : Normalize(settings.PgConnectionString);
         await using var conn = new NpgsqlConnection(connStr);
         await EnsureSchema(conn);
         var json = JsonSerializer.Serialize(settings, JsonOptions);
