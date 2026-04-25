@@ -297,7 +297,6 @@ DOCUMENT:
                 {
                     new { role = "user", content = prompt }
                 },
-                temperature = 0,
                 max_completion_tokens = 1000
             });
 
