@@ -35,7 +35,16 @@ public class LeadService
                 linkedin_url TEXT,
                 saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )");
-        await c.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS leads_apollo_id_idx ON leads(apollo_id) WHERE apollo_id IS NOT NULL");
+        // Run separately so failures are visible
+        try
+        {
+            await c.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS leads_apollo_id_idx ON leads(apollo_id) WHERE apollo_id IS NOT NULL");
+            _log.LogInformation("leads_apollo_id_idx OK");
+        }
+        catch (Exception ex)
+        {
+            _log.LogError("leads_apollo_id_idx failed: {0}", ex.Message);
+        }
     }
 
     public async Task<List<Lead>> GetAll()
@@ -67,9 +76,21 @@ public class LeadService
         await using var c = Conn();
         await c.OpenAsync();
 
+        // Check index exists before using ON CONFLICT (apollo_id)
+        var indexExists = await c.QuerySingleOrDefaultAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes 
+                WHERE tablename='leads' AND indexname='leads_apollo_id_idx'
+            )");
+
+        if (!indexExists)
+        {
+            _log.LogWarning("leads_apollo_id_idx missing — creating now");
+            await c.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS leads_apollo_id_idx ON leads(apollo_id) WHERE apollo_id IS NOT NULL");
+        }
+
         if (!string.IsNullOrEmpty(lead.ApolloId))
         {
-            // Upsert by apollo_id — handles duplicate apollo_id across different UUID rows
             await c.ExecuteAsync(@"
                 INSERT INTO leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
                 VALUES (@Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @Emails, @Phones, @LinkedinUrl, @SavedAt)
@@ -83,16 +104,12 @@ public class LeadService
                     phones       = EXCLUDED.phones,
                     linkedin_url = EXCLUDED.linkedin_url,
                     saved_at     = EXCLUDED.saved_at",
-                new
-                {
-                    lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
-                    lead.Industry, lead.Location, lead.Emails, lead.Phones,
-                    lead.LinkedinUrl, lead.SavedAt
-                });
+                new { lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
+                      lead.Industry, lead.Location, lead.Emails, lead.Phones,
+                      lead.LinkedinUrl, lead.SavedAt });
         }
         else
         {
-            // No apollo_id — upsert by primary key
             await c.ExecuteAsync(@"
                 INSERT INTO leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
                 VALUES (@Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @Emails, @Phones, @LinkedinUrl, @SavedAt)
@@ -106,12 +123,9 @@ public class LeadService
                     phones       = EXCLUDED.phones,
                     linkedin_url = EXCLUDED.linkedin_url,
                     saved_at     = EXCLUDED.saved_at",
-                new
-                {
-                    lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
-                    lead.Industry, lead.Location, lead.Emails, lead.Phones,
-                    lead.LinkedinUrl, lead.SavedAt
-                });
+                new { lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
+                      lead.Industry, lead.Location, lead.Emails, lead.Phones,
+                      lead.LinkedinUrl, lead.SavedAt });
         }
 
         _log.LogInformation("Upserted lead {0} ({1})", lead.Name, lead.Id);
