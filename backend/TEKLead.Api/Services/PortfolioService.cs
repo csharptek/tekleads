@@ -464,40 +464,44 @@ DOCUMENT:
         var checkResp = await client.GetAsync(checkUrl);
         if (checkResp.IsSuccessStatusCode) return;
 
-        // Create index with vector field (1536 dims for text-embedding-3-small)
+        // Create index - exact schema per MS docs 2024-05-01-preview
         var createUrl = $"{endpoint.TrimEnd('/')}/indexes?api-version=2024-05-01-preview";
-        var indexDef = JsonSerializer.Serialize(new
-        {
-            name = indexName,
-            fields = new object[]
-            {
-                new { name = "id",        type = "Edm.String",              key = true,  searchable = false, filterable = true,  retrievable = true  },
-                new { name = "title",     type = "Edm.String",              key = false, searchable = true,  filterable = true,  retrievable = true  },
-                new { name = "industry",  type = "Edm.String",              key = false, searchable = true,  filterable = true,  retrievable = true  },
-                new { name = "tags",      type = "Collection(Edm.String)",  key = false, searchable = true,  filterable = true,  retrievable = true  },
-                new { name = "problem",   type = "Edm.String",              key = false, searchable = true,  filterable = false, retrievable = true  },
-                new { name = "solution",  type = "Edm.String",              key = false, searchable = true,  filterable = false, retrievable = true  },
-                new { name = "tech_stack",type = "Edm.String",              key = false, searchable = true,  filterable = false, retrievable = true  },
-                new { name = "outcomes",  type = "Edm.String",              key = false, searchable = true,  filterable = false, retrievable = true  },
-                new { name = "links",     type = "Edm.String",              key = false, searchable = false, filterable = false, retrievable = true  },
-                new
-                {
-                    name = "embedding",
-                    type = "Collection(Edm.Single)",
-                    searchable = true,
-                    retrievable = false,
-                    dimensions = 1536,
-                    vectorSearchProfile = "portfolio-profile"
-                }
-            },
-            vectorSearch = new
-            {
-                profiles = new[] { new { name = "portfolio-profile", algorithmConfigurationName = "portfolio-hnsw" } },
-                algorithms = new[] { new { name = "portfolio-hnsw", kind = "hnsw" } }
-            }
-        });
 
-        var createResp = await client.PostAsync(createUrl, new StringContent(indexDef, Encoding.UTF8, "application/json"));
+        var indexJson = $$"""
+{
+  "name": "{{indexName}}",
+  "fields": [
+    { "name": "id",        "type": "Edm.String",             "key": true,  "searchable": false, "filterable": true,  "retrievable": true },
+    { "name": "title",     "type": "Edm.String",             "key": false, "searchable": true,  "filterable": true,  "retrievable": true },
+    { "name": "industry",  "type": "Edm.String",             "key": false, "searchable": true,  "filterable": true,  "retrievable": true },
+    { "name": "tags",      "type": "Collection(Edm.String)", "key": false, "searchable": true,  "filterable": true,  "retrievable": true },
+    { "name": "problem",   "type": "Edm.String",             "key": false, "searchable": true,  "filterable": false, "retrievable": true },
+    { "name": "solution",  "type": "Edm.String",             "key": false, "searchable": true,  "filterable": false, "retrievable": true },
+    { "name": "tech_stack","type": "Edm.String",             "key": false, "searchable": true,  "filterable": false, "retrievable": true },
+    { "name": "outcomes",  "type": "Edm.String",             "key": false, "searchable": true,  "filterable": false, "retrievable": true },
+    { "name": "links",     "type": "Edm.String",             "key": false, "searchable": false, "filterable": false, "retrievable": true },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "retrievable": false,
+      "dimensions": 1536,
+      "vectorSearchProfile": "portfolio-profile"
+    }
+  ],
+  "vectorSearch": {
+    "profiles": [
+      { "name": "portfolio-profile", "algorithm": "portfolio-hnsw" }
+    ],
+    "algorithms": [
+      { "name": "portfolio-hnsw", "kind": "hnsw" }
+    ]
+  }
+}
+""";
+
+        var createResp = await client.PostAsync(createUrl,
+            new StringContent(indexJson, Encoding.UTF8, "application/json"));
         var createJson = await createResp.Content.ReadAsStringAsync();
 
         if (!createResp.IsSuccessStatusCode)
