@@ -267,9 +267,9 @@ public class PortfolioService
         }
 
         // Call Azure OpenAI to extract fields
-        var prompt = $"""
+        var prompt = $$"""
 You are a business analyst. Extract project details from the document below and return ONLY valid JSON with these exact keys:
-{{
+{
   "title": "project name",
   "industry": "industry sector",
   "tags": ["tag1", "tag2"],
@@ -278,11 +278,11 @@ You are a business analyst. Extract project details from the document below and 
   "techStack": "technologies used",
   "outcomes": "results and metrics",
   "links": ""
-}}
+}
 If a field is not found, use an empty string or empty array. Return ONLY JSON, no explanation.
 
 DOCUMENT:
-{text}
+{{text}}
 """;
 
         try
