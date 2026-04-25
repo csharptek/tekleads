@@ -7,6 +7,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<SettingsService>();
 builder.Services.AddScoped<LeadService>();
 builder.Services.AddScoped<ApolloService>();
+builder.Services.AddScoped<PortfolioService>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
@@ -30,6 +31,7 @@ using (var scope = app.Services.CreateScope())
     var leadSvc  = scope.ServiceProvider.GetRequiredService<LeadService>();
     try { await settings.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Settings schema failed"); }
     try { await leadSvc.EnsureSchema();  } catch (Exception ex) { app.Logger.LogError(ex, "Leads schema failed"); }
+    try { var portSvc = scope.ServiceProvider.GetRequiredService<PortfolioService>(); await portSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Portfolio schema failed"); }
 }
 
 app.MapControllers();

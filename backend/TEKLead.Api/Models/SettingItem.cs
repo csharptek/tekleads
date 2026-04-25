@@ -22,15 +22,21 @@ public static class SettingKeys
     public const string WhatsappCountryCode        = "whatsapp_cc";
     public const string WhatsappMessageTemplate    = "whatsapp_message_template";
 
+    public const string AzureSearchEndpoint        = "azure_search_endpoint";
+    public const string AzureSearchKey             = "azure_search_key";
+    public const string AzureSearchIndex           = "azure_search_index";
+    public const string AzureOpenAiEmbeddingDeployment = "azure_openai_embedding_deployment";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
         GraphTenantId, GraphClientId, GraphClientSecret, GraphSenderEmail,
-        WhatsappCountryCode, WhatsappMessageTemplate
+        WhatsappCountryCode, WhatsappMessageTemplate,
+        AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment
     };
 
     public static readonly HashSet<string> Secrets = new()
     {
-        AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret
+        AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey
     };
 }

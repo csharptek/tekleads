@@ -7,6 +7,7 @@ const KEYS = {
   AzureOpenAiEndpoint: "azure_openai_endpoint",
   AzureOpenAiKey: "azure_openai_key",
   AzureOpenAiDeployment: "azure_openai_deployment",
+  AzureOpenAiEmbeddingDeployment: "azure_openai_embedding_deployment",
   AzureBlobConnString: "azure_blob_conn",
   ApolloApiKey: "apollo_api_key",
   GraphTenantId: "graph_tenant_id",
@@ -15,6 +16,9 @@ const KEYS = {
   GraphSenderEmail: "graph_sender_email",
   WhatsappCountryCode: "whatsapp_cc",
   WhatsappMessageTemplate: "whatsapp_message_template",
+  AzureSearchEndpoint: "azure_search_endpoint",
+  AzureSearchKey: "azure_search_key",
+  AzureSearchIndex: "azure_search_index",
 };
 
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
@@ -29,6 +33,7 @@ const TECH_GROUPS: Group[] = [
       { key: KEYS.AzureOpenAiEndpoint, label: "Endpoint", placeholder: "https://your-resource.openai.azure.com/", full: true },
       { key: KEYS.AzureOpenAiKey, label: "API Key", placeholder: "Enter to set / replace", secret: true },
       { key: KEYS.AzureOpenAiDeployment, label: "Deployment Name", placeholder: "gpt-4o" },
+      { key: KEYS.AzureOpenAiEmbeddingDeployment, label: "Embedding Deployment", placeholder: "text-embedding-3-small" },
     ],
   },
   {
@@ -43,6 +48,15 @@ const TECH_GROUPS: Group[] = [
     subtitle: "File attachments",
     fields: [
       { key: KEYS.AzureBlobConnString, label: "Connection String", placeholder: "DefaultEndpointsProtocol=https;...", secret: true, full: true },
+    ],
+  },
+  {
+    title: "Azure AI Search",
+    subtitle: "Portfolio embeddings for RAG",
+    fields: [
+      { key: KEYS.AzureSearchEndpoint, label: "Endpoint", placeholder: "https://your-search.search.windows.net", full: true },
+      { key: KEYS.AzureSearchKey, label: "Admin Key", placeholder: "Enter to set / replace", secret: true },
+      { key: KEYS.AzureSearchIndex, label: "Index Name", placeholder: "portfolio" },
     ],
   },
   {

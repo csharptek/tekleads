@@ -18,9 +18,13 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  get:  <T = any>(path: string) => call<T>(path),
-  post: <T = any>(path: string, body: unknown) =>
+  get:    <T = any>(path: string) => call<T>(path),
+  post:   <T = any>(path: string, body: unknown) =>
     call<T>(path, { method: "POST", body: JSON.stringify(body) }),
+  put:    <T = any>(path: string, body: unknown) =>
+    call<T>(path, { method: "PUT", body: JSON.stringify(body) }),
+  delete: <T = any>(path: string) =>
+    call<T>(path, { method: "DELETE" }),
 };
 
 export const API_BASE = BASE;
