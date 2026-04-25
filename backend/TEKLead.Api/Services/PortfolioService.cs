@@ -298,7 +298,7 @@ DOCUMENT:
                     new { role = "user", content = prompt }
                 },
                 temperature = 0,
-                max_tokens = 1000
+                max_completion_tokens = 1000
             });
 
             var resp = await client.PostAsync(url, new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
