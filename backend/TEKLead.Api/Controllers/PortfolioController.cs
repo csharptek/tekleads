@@ -86,10 +86,30 @@ public class PortfolioController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+    [HttpPost("extract")]
+    public async Task<IActionResult> Extract([FromBody] ExtractRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.FileName) || string.IsNullOrWhiteSpace(req.Base64))
+            return BadRequest(new { error = "fileName and base64 required." });
+
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(req.Base64); }
+        catch { return BadRequest(new { error = "Invalid base64 data." }); }
+
+        var (ok, message, project) = await _svc.ExtractFromDocument(req.FileName, bytes);
+        if (!ok) return BadRequest(new { ok = false, message });
+        return Ok(new { ok = true, message, project });
+    }
 }
 
 public class SimilarSearchRequest
 {
     public string Query { get; set; } = "";
     public int TopK { get; set; } = 3;
+}
+
+public class ExtractRequest
+{
+    public string FileName { get; set; } = "";
+    public string Base64 { get; set; } = "";
 }

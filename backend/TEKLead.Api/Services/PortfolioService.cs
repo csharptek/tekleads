@@ -239,6 +239,194 @@ public class PortfolioService
         return results;
     }
 
+    // ── Document Extraction ───────────────────────────────────────────────────
+
+    public async Task<(bool ok, string message, PortfolioProject? project)> ExtractFromDocument(
+        string fileName, byte[] fileBytes)
+    {
+        var settings = await _settings.GetAll();
+        var aoEndpoint  = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
+        var aoKey       = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
+        var aoDeployment = settings.GetValueOrDefault(SettingKeys.AzureOpenAiDeployment, "");
+
+        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
+            return (false, "Azure OpenAI not configured in Settings.", null);
+
+        // Extract text from file
+        string text;
+        try
+        {
+            text = ExtractText(fileName, fileBytes);
+            if (string.IsNullOrWhiteSpace(text))
+                return (false, "Could not extract text from the file.", null);
+            if (text.Length > 12000) text = text[..12000]; // trim to fit context
+        }
+        catch (Exception ex)
+        {
+            return (false, $"File read error: {ex.Message}", null);
+        }
+
+        // Call Azure OpenAI to extract fields
+        var prompt = $"""
+You are a business analyst. Extract project details from the document below and return ONLY valid JSON with these exact keys:
+{{
+  "title": "project name",
+  "industry": "industry sector",
+  "tags": ["tag1", "tag2"],
+  "problem": "problem statement",
+  "solution": "solution description",
+  "techStack": "technologies used",
+  "outcomes": "results and metrics",
+  "links": ""
+}}
+If a field is not found, use an empty string or empty array. Return ONLY JSON, no explanation.
+
+DOCUMENT:
+{text}
+""";
+
+        try
+        {
+            var client = _http.CreateClient();
+            client.DefaultRequestHeaders.Add("api-key", aoKey);
+
+            var url = $"{aoEndpoint.TrimEnd('/')}/openai/deployments/{aoDeployment}/chat/completions?api-version=2024-02-01";
+            var body = JsonSerializer.Serialize(new
+            {
+                messages = new[]
+                {
+                    new { role = "user", content = prompt }
+                },
+                temperature = 0,
+                max_tokens = 1000
+            });
+
+            var resp = await client.PostAsync(url, new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
+            var json = await resp.Content.ReadAsStringAsync();
+
+            if (!resp.IsSuccessStatusCode)
+                return (false, $"OpenAI error: {json}", null);
+
+            var doc = JsonDocument.Parse(json);
+            var content = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString() ?? "";
+
+            // Strip markdown fences if present
+            content = content.Trim();
+            if (content.StartsWith("```")) content = content.Split('\n', 2)[1];
+            if (content.EndsWith("```")) content = content[..content.LastIndexOf("```")];
+            content = content.Trim();
+
+            var parsed = JsonDocument.Parse(content);
+            var root = parsed.RootElement;
+
+            string Str(string key) => root.TryGetProperty(key, out var v) ? v.GetString() ?? "" : "";
+            string[] Arr(string key)
+            {
+                if (!root.TryGetProperty(key, out var v)) return Array.Empty<string>();
+                return v.ValueKind == JsonValueKind.Array
+                    ? v.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x != "").ToArray()
+                    : Array.Empty<string>();
+            }
+
+            var project = new PortfolioProject
+            {
+                Title     = Str("title"),
+                Industry  = Str("industry"),
+                Tags      = Arr("tags"),
+                Problem   = Str("problem"),
+                Solution  = Str("solution"),
+                TechStack = Str("techStack"),
+                Outcomes  = Str("outcomes"),
+                Links     = Str("links"),
+            };
+
+            return (true, "Extracted successfully.", project);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Extraction failed: {ex.Message}", null);
+        }
+    }
+
+    private static string ExtractText(string fileName, byte[] bytes)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+
+        if (ext == ".txt" || ext == ".md")
+            return System.Text.Encoding.UTF8.GetString(bytes);
+
+        if (ext == ".pdf")
+            return ExtractPdfText(bytes);
+
+        if (ext == ".docx")
+            return ExtractDocxText(bytes);
+
+        throw new NotSupportedException($"File type '{ext}' not supported. Use PDF, DOCX, or TXT.");
+    }
+
+    private static string ExtractPdfText(byte[] bytes)
+    {
+        // Simple PDF text extraction — reads stream objects
+        var text = System.Text.Encoding.Latin1.GetString(bytes);
+        var sb = new System.Text.StringBuilder();
+        var i = 0;
+        while (i < text.Length)
+        {
+            var bt = text.IndexOf("BT", i, StringComparison.Ordinal);
+            if (bt < 0) break;
+            var et = text.IndexOf("ET", bt, StringComparison.Ordinal);
+            if (et < 0) break;
+            var block = text[bt..et];
+            // extract text inside parentheses (Tj / TJ operators)
+            var j = 0;
+            while (j < block.Length)
+            {
+                var op = block.IndexOf('(', j);
+                if (op < 0) break;
+                var cp = block.IndexOf(')', op);
+                if (cp < 0) break;
+                sb.Append(block[(op + 1)..cp]).Append(' ');
+                j = cp + 1;
+            }
+            i = et + 2;
+        }
+        var result = sb.ToString().Trim();
+        // Fallback: if nothing extracted, try raw text search
+        if (result.Length < 50)
+        {
+            var raw = System.Text.Encoding.UTF8.GetString(bytes);
+            var lines = raw.Split('\n')
+                .Where(l => l.TrimStart().StartsWith("/") == false && l.Length > 10 && l.All(c => c >= 32 && c < 127))
+                .Take(200);
+            result = string.Join("\n", lines);
+        }
+        return result;
+    }
+
+    private static string ExtractDocxText(byte[] bytes)
+    {
+        using var ms = new System.IO.MemoryStream(bytes);
+        using var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read);
+        var entry = zip.GetEntry("word/document.xml");
+        if (entry == null) return "";
+        using var sr = new System.IO.StreamReader(entry.Open());
+        var xml = sr.ReadToEnd();
+        // Strip XML tags, keep text
+        var sb = new System.Text.StringBuilder();
+        var inTag = false;
+        foreach (var c in xml)
+        {
+            if (c == '<') { inTag = true; sb.Append(' '); continue; }
+            if (c == '>') { inTag = false; continue; }
+            if (!inTag) sb.Append(c);
+        }
+        return System.Text.RegularExpressions.Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static string BuildText(PortfolioProject p) =>

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
 
 interface Project {
@@ -39,6 +39,8 @@ export default function PortfolioView() {
   const [indexingId, setIndexingId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadProjects(); }, []);
 
@@ -68,6 +70,32 @@ export default function PortfolioView() {
 
   function cancelForm() {
     setShowForm(false); setEditId(null); setForm(empty()); setTagInput("");
+  }
+
+  async function handleExtract(file: File) {
+    setExtracting(true);
+    setBanner({ kind: "info", text: `Reading ${file.name}…` });
+    try {
+      const base64 = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res((r.result as string).split(",")[1]);
+        r.onerror = () => rej(new Error("File read failed"));
+        r.readAsDataURL(file);
+      });
+      const result = await api.post<{ ok: boolean; message: string; project: typeof form }>(
+        "/api/portfolio/extract", { fileName: file.name, base64 });
+      if (!result.ok) { setBanner({ kind: "error", text: result.message }); return; }
+      const p = result.project;
+      setForm({
+        title: p.title || "", industry: p.industry || "", tags: p.tags || [],
+        problem: p.problem || "", solution: p.solution || "",
+        techStack: p.techStack || "", outcomes: p.outcomes || "", links: p.links || "",
+      });
+      setShowForm(true);
+      setBanner({ kind: "success", text: "Fields extracted — review and save." });
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setExtracting(false); }
   }
 
   async function handleSubmit() {
@@ -114,9 +142,16 @@ export default function PortfolioView() {
           <div className="page-title">Portfolio</div>
           <div className="page-sub">Projects used as RAG context for AI email generation</div>
         </div>
-        <button className="btn btn-primary" onClick={() => { cancelForm(); setShowForm(s => !s); }}>
-          + Add Project
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md" style={{ display: "none" }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleExtract(f); e.target.value = ""; }} />
+          <button className="btn btn-ghost" disabled={extracting} onClick={() => fileRef.current?.click()}>
+            {extracting ? <><span className="spinner spinner-dark" /> Extracting…</> : "↑ Upload & Extract"}
+          </button>
+          <button className="btn btn-primary" onClick={() => { cancelForm(); setShowForm(s => !s); }}>
+            + Add Project
+          </button>
+        </div>
       </div>
 
       {banner && <Banner b={banner} onClose={() => setBanner(null)} />}
