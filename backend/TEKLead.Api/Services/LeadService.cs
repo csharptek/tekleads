@@ -22,8 +22,8 @@ public class LeadService
         await using var c = Conn();
         await c.OpenAsync();
         await c.ExecuteAsync(@"
-            CREATE TABLE IF NOT EXISTS leads (
-                id UUID PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS saved_leads (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 apollo_id TEXT,
                 name TEXT NOT NULL DEFAULT '',
                 title TEXT NOT NULL DEFAULT '',
@@ -35,23 +35,14 @@ public class LeadService
                 linkedin_url TEXT,
                 saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )");
-        // Run separately so failures are visible
-        try
-        {
-            await c.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS leads_apollo_id_idx ON leads(apollo_id) WHERE apollo_id IS NOT NULL");
-            _log.LogInformation("leads_apollo_id_idx OK");
-        }
-        catch (Exception ex)
-        {
-            _log.LogError("leads_apollo_id_idx failed: {0}", ex.Message);
-        }
+        _log.LogInformation("saved_leads table OK");
     }
 
     public async Task<List<Lead>> GetAll()
     {
         await using var c = Conn();
         await c.OpenAsync();
-        var rows = await c.QueryAsync<dynamic>("SELECT * FROM leads ORDER BY saved_at DESC");
+        var rows = await c.QueryAsync<dynamic>("SELECT * FROM saved_leads ORDER BY saved_at DESC");
         return rows.Select(Map).ToList();
     }
 
@@ -59,16 +50,8 @@ public class LeadService
     {
         await using var c = Conn();
         await c.OpenAsync();
-        var row = await c.QuerySingleOrDefaultAsync<dynamic>("SELECT * FROM leads WHERE id=@id", new { id });
+        var row = await c.QuerySingleOrDefaultAsync<dynamic>("SELECT * FROM saved_leads WHERE id=@id", new { id });
         return row == null ? null : Map(row);
-    }
-
-    public async Task<bool> ExistsByApolloId(string apolloId)
-    {
-        await using var c = Conn();
-        await c.OpenAsync();
-        return await c.QuerySingleOrDefaultAsync<bool>(
-            "SELECT EXISTS(SELECT 1 FROM leads WHERE apollo_id=@apolloId)", new { apolloId });
     }
 
     public async Task<Lead> Upsert(Lead lead)
@@ -76,59 +59,54 @@ public class LeadService
         await using var c = Conn();
         await c.OpenAsync();
 
-        // Check index exists before using ON CONFLICT (apollo_id)
-        var indexExists = await c.QuerySingleOrDefaultAsync<bool>(@"
-            SELECT EXISTS (
-                SELECT 1 FROM pg_indexes 
-                WHERE tablename='leads' AND indexname='leads_apollo_id_idx'
-            )");
-
-        if (!indexExists)
-        {
-            _log.LogWarning("leads_apollo_id_idx missing — creating now");
-            await c.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS leads_apollo_id_idx ON leads(apollo_id) WHERE apollo_id IS NOT NULL");
-        }
-
+        // If apollo_id exists already, update that row. Otherwise insert fresh.
         if (!string.IsNullOrEmpty(lead.ApolloId))
         {
-            await c.ExecuteAsync(@"
-                INSERT INTO leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
-                VALUES (@Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @Emails, @Phones, @LinkedinUrl, @SavedAt)
-                ON CONFLICT (apollo_id) DO UPDATE SET
-                    name         = EXCLUDED.name,
-                    title        = EXCLUDED.title,
-                    company      = EXCLUDED.company,
-                    industry     = EXCLUDED.industry,
-                    location     = EXCLUDED.location,
-                    emails       = EXCLUDED.emails,
-                    phones       = EXCLUDED.phones,
-                    linkedin_url = EXCLUDED.linkedin_url,
-                    saved_at     = EXCLUDED.saved_at",
-                new { lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
-                      lead.Industry, lead.Location, lead.Emails, lead.Phones,
-                      lead.LinkedinUrl, lead.SavedAt });
+            var existing = await c.QuerySingleOrDefaultAsync<dynamic>(
+                "SELECT id FROM saved_leads WHERE apollo_id = @apolloId", new { apolloId = lead.ApolloId });
+
+            if (existing != null)
+            {
+                await c.ExecuteAsync(@"
+                    UPDATE saved_leads SET
+                        name = @Name, title = @Title, company = @Company,
+                        industry = @Industry, location = @Location,
+                        emails = @Emails, phones = @Phones,
+                        linkedin_url = @LinkedinUrl, saved_at = @SavedAt
+                    WHERE apollo_id = @ApolloId",
+                    new { lead.Name, lead.Title, lead.Company, lead.Industry,
+                          lead.Location, lead.Emails, lead.Phones,
+                          lead.LinkedinUrl, lead.SavedAt, lead.ApolloId });
+                lead.Id = existing.id;
+            }
+            else
+            {
+                if (lead.Id == Guid.Empty) lead.Id = Guid.NewGuid();
+                await c.ExecuteAsync(@"
+                    INSERT INTO saved_leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
+                    VALUES (@Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @Emails, @Phones, @LinkedinUrl, @SavedAt)",
+                    new { lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
+                          lead.Industry, lead.Location, lead.Emails, lead.Phones,
+                          lead.LinkedinUrl, lead.SavedAt });
+            }
         }
         else
         {
+            if (lead.Id == Guid.Empty) lead.Id = Guid.NewGuid();
             await c.ExecuteAsync(@"
-                INSERT INTO leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
+                INSERT INTO saved_leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
                 VALUES (@Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @Emails, @Phones, @LinkedinUrl, @SavedAt)
                 ON CONFLICT (id) DO UPDATE SET
-                    name         = EXCLUDED.name,
-                    title        = EXCLUDED.title,
-                    company      = EXCLUDED.company,
-                    industry     = EXCLUDED.industry,
-                    location     = EXCLUDED.location,
-                    emails       = EXCLUDED.emails,
-                    phones       = EXCLUDED.phones,
-                    linkedin_url = EXCLUDED.linkedin_url,
-                    saved_at     = EXCLUDED.saved_at",
+                    name = EXCLUDED.name, title = EXCLUDED.title, company = EXCLUDED.company,
+                    industry = EXCLUDED.industry, location = EXCLUDED.location,
+                    emails = EXCLUDED.emails, phones = EXCLUDED.phones,
+                    linkedin_url = EXCLUDED.linkedin_url, saved_at = EXCLUDED.saved_at",
                 new { lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
                       lead.Industry, lead.Location, lead.Emails, lead.Phones,
                       lead.LinkedinUrl, lead.SavedAt });
         }
 
-        _log.LogInformation("Upserted lead {0} ({1})", lead.Name, lead.Id);
+        _log.LogInformation("Saved lead {0} ({1})", lead.Name, lead.Id);
         return lead;
     }
 
