@@ -196,7 +196,7 @@ public class PortfolioService
         var client = _http.CreateClient();
         client.DefaultRequestHeaders.Add("api-key", searchKey);
 
-        var url = $"{searchEp.TrimEnd('/')}/indexes/{searchIndex}/docs/search?api-version=2023-11-01";
+        var url = $"{searchEp.TrimEnd('/')}/indexes/{searchIndex}/docs/search?api-version=2024-05-01-preview";
 
         var body = JsonSerializer.Serialize(new
         {
@@ -460,12 +460,12 @@ DOCUMENT:
         client.DefaultRequestHeaders.Add("api-key", key);
 
         // Check if index exists
-        var checkUrl = $"{endpoint.TrimEnd('/')}/indexes/{indexName}?api-version=2023-11-01";
+        var checkUrl = $"{endpoint.TrimEnd('/')}/indexes/{indexName}?api-version=2024-05-01-preview";
         var checkResp = await client.GetAsync(checkUrl);
         if (checkResp.IsSuccessStatusCode) return;
 
         // Create index with vector field (1536 dims for text-embedding-3-small)
-        var createUrl = $"{endpoint.TrimEnd('/')}/indexes?api-version=2023-11-01";
+        var createUrl = $"{endpoint.TrimEnd('/')}/indexes?api-version=2024-05-01-preview";
         var indexDef = JsonSerializer.Serialize(new
         {
             name = indexName,
@@ -508,7 +508,7 @@ DOCUMENT:
         var client = _http.CreateClient();
         client.DefaultRequestHeaders.Add("api-key", key);
 
-        var url = $"{endpoint.TrimEnd('/')}/indexes/{indexName}/docs/index?api-version=2023-11-01";
+        var url = $"{endpoint.TrimEnd('/')}/indexes/{indexName}/docs/index?api-version=2024-05-01-preview";
 
         var doc = new
         {
@@ -554,7 +554,7 @@ DOCUMENT:
         var client = _http.CreateClient();
         client.DefaultRequestHeaders.Add("api-key", searchKey);
 
-        var url = $"{searchEp.TrimEnd('/')}/indexes/{searchIndex}/docs/index?api-version=2023-11-01";
+        var url = $"{searchEp.TrimEnd('/')}/indexes/{searchIndex}/docs/index?api-version=2024-05-01-preview";
         var body = $"{{\"value\":[{{\"@search.action\":\"delete\",\"id\":\"{id}\"}}]}}";
 
         await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
