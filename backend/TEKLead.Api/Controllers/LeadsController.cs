@@ -10,12 +10,16 @@ public class LeadsController : ControllerBase
 {
     private readonly ApolloService _apollo;
     private readonly LeadService _leads;
+    private readonly SettingsService _settings;
+    private readonly IHttpClientFactory _http;
     private readonly ILogger<LeadsController> _log;
 
-    public LeadsController(ApolloService apollo, LeadService leads, ILogger<LeadsController> log)
+    public LeadsController(ApolloService apollo, LeadService leads, SettingsService settings, IHttpClientFactory http, ILogger<LeadsController> log)
     {
         _apollo = apollo;
         _leads = leads;
+        _settings = settings;
+        _http = http;
         _log = log;
     }
 
@@ -53,11 +57,6 @@ public class LeadsController : ControllerBase
         return Ok(new { saved });
     }
 
-    /// <summary>
-    /// Enrich a lead by Apollo ID → get email + any available phones.
-    /// If phone found → auto-save the lead with phone.
-    /// Phone reveal via webhook is NOT supported (no webhook infrastructure).
-    /// </summary>
     [HttpPost("{id}/reveal-phone")]
     public async Task<IActionResult> RevealPhone(Guid id)
     {
@@ -69,32 +68,37 @@ public class LeadsController : ControllerBase
         try
         {
             var (emails, phones) = await _apollo.Enrich(lead.ApolloId);
-
             var updated = false;
-            if (emails.Length > 0 && lead.Emails.Length == 0)  { lead.Emails = emails; updated = true; }
-            if (phones.Length > 0)                             { lead.Phones = phones; updated = true; }
+            if (emails.Length > 0 && lead.Emails.Length == 0) { lead.Emails = emails; updated = true; }
+            if (phones.Length > 0) { lead.Phones = phones; updated = true; }
+            if (updated) await _leads.Upsert(lead);
 
-            if (updated)
-            {
-                await _leads.Upsert(lead);
-                _log.LogInformation("Auto-saved enriched data for lead {0}", id);
-            }
-
-            return Ok(new
-            {
-                emails,
-                phones,
-                autoSaved = updated,
-                note = phones.Length == 0
-                    ? "No phone available. Apollo phone reveal requires a webhook (async) — not supported in this setup."
-                    : null
-            });
+            return Ok(new { emails, phones, autoSaved = updated });
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "Enrich failed for {0}", id);
             return StatusCode(500, new { error = ex.Message });
         }
+    }
+
+    // DEBUG — returns raw Apollo response for 1 person so we can verify field names
+    [HttpPost("search-raw")]
+    public async Task<IActionResult> SearchRaw([FromBody] LeadSearchRequest req)
+    {
+        try
+        {
+            var all = await _settings.GetAll();
+            var key = all.GetValueOrDefault("apollo_api_key", "");
+            var client = _http.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Api-Key", key);
+            var kw = Uri.EscapeDataString(req.Name ?? "");
+            var url = $"https://api.apollo.io/api/v1/mixed_people/api_search?q_keywords={kw}&per_page=1&page=1";
+            var res = await client.PostAsync(url, null);
+            var body = await res.Content.ReadAsStringAsync();
+            return Content(body, "application/json");
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 }
 
@@ -107,27 +111,4 @@ public class LeadSearchRequest
     public string? Location { get; set; }
     public int Page { get; set; } = 1;
     public int PerPage { get; set; } = 25;
-}
-
-
-// DEBUG ONLY — remove after confirming field names
-[HttpPost("search-raw")]
-public async Task<IActionResult> SearchRaw([FromBody] LeadSearchRequest req)
-{
-    try
-    {
-        var all = await _leads.GetType().GetField("_settings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_leads);
-        // simpler: just proxy direct apollo call
-        var settings = HttpContext.RequestServices.GetRequiredService<TEKLead.Api.Services.SettingsService>();
-        var apolloAll = await settings.GetAll();
-        var key = apolloAll.GetValueOrDefault("apollo_api_key", "");
-        var http = HttpContext.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient();
-        http.DefaultRequestHeaders.Add("X-Api-Key", key);
-        var kw = req.Name ?? "";
-        var url = $"https://api.apollo.io/api/v1/mixed_people/api_search?q_keywords={Uri.EscapeDataString(kw)}&per_page=1&page=1";
-        var res = await http.PostAsync(url, null);
-        var body = await res.Content.ReadAsStringAsync();
-        return Content(body, "application/json");
-    }
-    catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
 }
