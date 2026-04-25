@@ -1,15 +1,26 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-async function api(path: string, options?: RequestInit) {
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!BASE) throw new Error("NEXT_PUBLIC_API_URL is not set");
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    cache: "no-store",
+    ...init,
   });
-  if (!res.ok) throw new Error(await res.text() || res.statusText);
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  let data: any = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) {
+    const msg = (data && data.error) ? data.error : (typeof data === "string" ? data : res.statusText);
+    throw new Error(`${res.status}: ${msg}`);
+  }
+  return data as T;
 }
 
-export const get = (path: string) => api(path);
-export const post = (path: string, body: unknown) => api(path, { method: 'POST', body: JSON.stringify(body) });
-export const del = (path: string) => api(path, { method: 'DELETE' });
+export const api = {
+  get:  <T = any>(path: string) => call<T>(path),
+  post: <T = any>(path: string, body: unknown) =>
+    call<T>(path, { method: "POST", body: JSON.stringify(body) }),
+};
+
+export const API_BASE = BASE;

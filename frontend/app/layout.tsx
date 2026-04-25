@@ -1,9 +1,8 @@
-import type { Metadata } from "next";
 import "./globals.css";
 
-export const metadata: Metadata = {
+export const metadata = {
   title: "TEKLead AI",
-  description: "AI-powered lead generation & outreach",
+  description: "Lead generation and outreach automation",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -8,119 +8,78 @@ namespace TEKLead.Api.Controllers;
 [Route("api/settings")]
 public class SettingsController : ControllerBase
 {
-    private readonly SettingsService _settings;
-    private readonly ILogger<SettingsController> _logger;
+    private readonly SettingsService _svc;
+    private readonly ILogger<SettingsController> _log;
 
-    public SettingsController(SettingsService settings, ILogger<SettingsController> logger)
+    public SettingsController(SettingsService svc, ILogger<SettingsController> log)
     {
-        _settings = settings;
-        _logger = logger;
+        _svc = svc;
+        _log = log;
     }
 
-    /// <summary>
-    /// Returns settings with secrets replaced by empty strings.
-    /// Frontend must only send non-empty values on save — empty means "leave as-is".
-    /// isSet flags tell the UI which secrets are already stored.
-    /// </summary>
     [HttpGet]
     public async Task<IActionResult> Get()
     {
-        var s = await _settings.GetSettings();
-        return Ok(new
-        {
-            // Non-secrets echoed as-is
-            azureOpenAiEndpoint = s.AzureOpenAiEndpoint,
-            azureOpenAiDeployment = s.AzureOpenAiDeployment,
-            sendgridFromEmail = "", // removed
-            twilioAccountSid = "",  // removed
-            twilioWhatsappFrom = "",// removed
-            graphTenantId = s.GraphTenantId,
-            graphClientId = s.GraphClientId,
-            graphSenderEmail = s.GraphSenderEmail,
-            whatsappDefaultCountryCode = string.IsNullOrEmpty(s.WhatsappDefaultCountryCode) ? "+91" : s.WhatsappDefaultCountryCode,
-
-            // Secrets: always empty in payload
-            azureOpenAiKey = "",
-            azureBlobConnectionString = "",
-            apolloApiKey = "",
-            graphClientSecret = "",
-            pgConnectionString = "",
-
-            // isSet flags (tells UI to show "●●●● set" vs empty)
-            isSet = new
-            {
-                azureOpenAiKey = !string.IsNullOrEmpty(s.AzureOpenAiKey),
-                azureBlobConnectionString = !string.IsNullOrEmpty(s.AzureBlobConnectionString),
-                apolloApiKey = !string.IsNullOrEmpty(s.ApolloApiKey),
-                graphClientSecret = !string.IsNullOrEmpty(s.GraphClientSecret),
-                pgConnectionString = !string.IsNullOrEmpty(s.PgConnectionString),
-            }
-        });
-    }
-
-    [HttpPost]
-    public async Task<IActionResult> Save([FromBody] AppSettings incoming)
-    {
         try
         {
-            var existing = await _settings.GetSettings();
+            var all = await _svc.GetAll();
+            var values = new Dictionary<string, string>();
+            var isSet = new Dictionary<string, bool>();
 
-            // Merge: empty string from client = keep existing secret
-            var merged = new AppSettings
+            foreach (var key in SettingKeys.AllKnown)
             {
-                AzureOpenAiEndpoint = Pick(incoming.AzureOpenAiEndpoint, existing.AzureOpenAiEndpoint),
-                AzureOpenAiKey = KeepIfEmpty(incoming.AzureOpenAiKey, existing.AzureOpenAiKey),
-                AzureOpenAiDeployment = Pick(incoming.AzureOpenAiDeployment, existing.AzureOpenAiDeployment),
-                AzureBlobConnectionString = KeepIfEmpty(incoming.AzureBlobConnectionString, existing.AzureBlobConnectionString),
-                ApolloApiKey = KeepIfEmpty(incoming.ApolloApiKey, existing.ApolloApiKey),
-                GraphTenantId = Pick(incoming.GraphTenantId, existing.GraphTenantId),
-                GraphClientId = Pick(incoming.GraphClientId, existing.GraphClientId),
-                GraphClientSecret = KeepIfEmpty(incoming.GraphClientSecret, existing.GraphClientSecret),
-                GraphSenderEmail = Pick(incoming.GraphSenderEmail, existing.GraphSenderEmail),
-                WhatsappDefaultCountryCode = Pick(incoming.WhatsappDefaultCountryCode, existing.WhatsappDefaultCountryCode),
-                PgConnectionString = "" // env only
-            };
+                var v = all.TryGetValue(key, out var s) ? s : "";
+                isSet[key] = !string.IsNullOrEmpty(v);
+                // Secrets always returned as empty; non-secrets echoed.
+                values[key] = SettingKeys.Secrets.Contains(key) ? "" : v;
+            }
 
-            await _settings.SaveSettings(merged);
-            return Ok(new { ok = true });
+            return Ok(new { values, isSet });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Settings save failed");
+            _log.LogError(ex, "GET /api/settings failed");
             return StatusCode(500, new { error = ex.Message });
         }
     }
 
     /// <summary>
-    /// Diagnostic endpoint — verifies DB round-trip without exposing secrets.
+    /// Body: { "values": { "apollo_api_key": "...", "graph_tenant_id": "..." } }
+    /// Only include keys you want to update. Omit a key = leave as-is.
+    /// Empty string value = explicit clear.
     /// </summary>
-    [HttpGet("status")]
-    public async Task<IActionResult> Status()
+    [HttpPost]
+    public async Task<IActionResult> Save([FromBody] SaveRequest? req)
     {
+        if (req?.Values == null)
+        {
+            _log.LogWarning("POST /api/settings: empty body");
+            return BadRequest(new { error = "Request body must include 'values' object." });
+        }
+
         try
         {
-            var s = await _settings.GetSettings();
-            return Ok(new
-            {
-                dbReachable = !string.IsNullOrEmpty(s.PgConnectionString),
-                azureOpenAi = !string.IsNullOrEmpty(s.AzureOpenAiKey) && !string.IsNullOrEmpty(s.AzureOpenAiEndpoint),
-                apollo = !string.IsNullOrEmpty(s.ApolloApiKey),
-                graphEmail = !string.IsNullOrEmpty(s.GraphTenantId)
-                           && !string.IsNullOrEmpty(s.GraphClientId)
-                           && !string.IsNullOrEmpty(s.GraphClientSecret)
-                           && !string.IsNullOrEmpty(s.GraphSenderEmail),
-                whatsapp = !string.IsNullOrEmpty(s.WhatsappDefaultCountryCode),
-            });
+            // Convert to nullable dict (we already filter at controller level — no nulls here).
+            var incoming = req.Values.ToDictionary(kv => kv.Key, kv => (string?)(kv.Value ?? ""));
+            var rows = await _svc.SaveMany(incoming);
+            return Ok(new { ok = true, rowsAffected = rows });
         }
         catch (Exception ex)
         {
+            _log.LogError(ex, "POST /api/settings failed");
             return StatusCode(500, new { error = ex.Message });
         }
     }
 
-    private static string KeepIfEmpty(string? incoming, string? existing) =>
-        string.IsNullOrEmpty(incoming) ? (existing ?? "") : incoming;
+    [HttpGet("diag")]
+    public async Task<IActionResult> Diag()
+    {
+        var info = await _svc.Diagnose();
+        return Ok(info);
+    }
+}
 
-    private static string Pick(string? incoming, string? existing) =>
-        incoming ?? existing ?? "";
+public class SaveRequest
+{
+    public Dictionary<string, string>? Values { get; set; }
 }

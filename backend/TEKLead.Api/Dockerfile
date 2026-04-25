@@ -1,15 +1,13 @@
-# Build stage - official Microsoft .NET 8 SDK
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY *.csproj ./
-RUN dotnet restore
+COPY TEKLead.Api.csproj ./
+RUN dotnet restore TEKLead.Api.csproj
 COPY . ./
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish TEKLead.Api.csproj -c Release -o /app /p:UseAppHost=false
 
-# Runtime stage - slim ASP.NET 8 runtime
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app ./
-ENV ASPNETCORE_URLS=http://+:${PORT:-8080}
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "TEKLead.Api.dll"]
