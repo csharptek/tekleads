@@ -20,7 +20,8 @@ const KEYS = {
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
 interface Group { title: string; subtitle: string; fields: Field[]; }
 
-const GROUPS: Group[] = [
+// Technical API keys — collapsible, hidden by default
+const TECH_GROUPS: Group[] = [
   {
     title: "Azure OpenAI",
     subtitle: "AI email generation",
@@ -54,12 +55,16 @@ const GROUPS: Group[] = [
       { key: KEYS.GraphSenderEmail, label: "Sender Email", placeholder: "outreach@yourcompany.com" },
     ],
   },
+];
+
+// User-facing config — always visible
+const USER_GROUPS: Group[] = [
   {
-    title: "WhatsApp",
-    subtitle: "Outreach via wa.me deep links",
+    title: "WhatsApp Outreach",
+    subtitle: "Outreach via wa.me deep links. Use {name} and {phone} as variables in the message.",
     fields: [
       { key: KEYS.WhatsappCountryCode, label: "Default Country Code", placeholder: "+91" },
-      { key: KEYS.WhatsappMessageTemplate, label: "Message Template", placeholder: "Hi {name}, I'd love to connect!", full: true, textarea: true },
+      { key: KEYS.WhatsappMessageTemplate, label: "Message Template", placeholder: "Hi {name}, I came across your profile and would love to connect!", full: true, textarea: true },
     ],
   },
 ];
@@ -68,6 +73,58 @@ interface Diag {
   connStringSet: boolean; connStringNormalized: boolean;
   dbReachable: boolean; tableExists: boolean;
   rowCount: number; keysStored: number; error?: string | null;
+}
+
+function FieldGroup({ group, form, setVal, serverValues, isSet, reveal, setReveal }: {
+  group: Group;
+  form: Record<string, string>;
+  setVal: (k: string, v: string) => void;
+  serverValues: Record<string, string>;
+  isSet: Record<string, boolean>;
+  reveal: Record<string, boolean>;
+  setReveal: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+}) {
+  const valueShown = (f: Field) => {
+    if (f.key in form) return form[f.key];
+    if (f.secret) return "";
+    return serverValues[f.key] || "";
+  };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{group.title}</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{group.subtitle}</div>
+      <div className="grid-2">
+        {group.fields.map(field => (
+          <div key={field.key} className={field.full ? "full" : ""}>
+            <div className="field-label">
+              <span>{field.label}</span>
+              {field.secret && isSet[field.key] && <span className="chip chip-green" style={{ fontSize: 10 }}>✓ stored</span>}
+            </div>
+            <div style={{ position: "relative" }}>
+              {field.textarea ? (
+                <textarea className="input" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit" }}
+                  placeholder={field.placeholder} value={valueShown(field)}
+                  onChange={e => setVal(field.key, e.target.value)} />
+              ) : (
+                <input className="input" style={{ paddingRight: field.secret ? 56 : 12 }}
+                  type={field.secret && !reveal[field.key] ? "password" : "text"}
+                  placeholder={field.placeholder} value={valueShown(field)}
+                  onChange={e => setVal(field.key, e.target.value)} />
+              )}
+              {field.secret && (
+                <button className="icon-btn"
+                  style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}
+                  onClick={() => setReveal(p => ({ ...p, [field.key]: !p[field.key] }))}>
+                  {reveal[field.key] ? "Hide" : "Show"}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function SettingsView() {
@@ -79,6 +136,7 @@ export default function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ kind: "error" | "success" | "info"; text: string } | null>(null);
   const [diag, setDiag] = useState<Diag | null>(null);
+  const [techOpen, setTechOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,9 +145,8 @@ export default function SettingsView() {
       setServerValues(data.values || {});
       setIsSet(data.isSet || {});
       setForm({});
-    } catch (e: any) {
-      setBanner({ kind: "error", text: `Load failed: ${e.message}` });
-    } finally { setLoading(false); }
+    } catch (e: any) { setBanner({ kind: "error", text: `Load failed: ${e.message}` }); }
+    finally { setLoading(false); }
   }, []);
 
   const loadDiag = useCallback(async () => {
@@ -105,12 +162,6 @@ export default function SettingsView() {
 
   const setVal = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
-  const valueShown = (f: Field): string => {
-    if (f.key in form) return form[f.key];
-    if (f.secret) return "";
-    return serverValues[f.key] || "";
-  };
-
   const onSave = async () => {
     if (Object.keys(form).length === 0) { setBanner({ kind: "info", text: "Nothing to save." }); return; }
     setSaving(true); setBanner(null);
@@ -118,23 +169,23 @@ export default function SettingsView() {
       const res = await api.post<{ ok: boolean; rowsAffected: number }>("/api/settings", { values: form });
       setBanner({ kind: "success", text: `Saved. ${res.rowsAffected} field(s) written.` });
       await load(); await loadDiag();
-    } catch (e: any) {
-      setBanner({ kind: "error", text: `Save failed: ${e.message}` });
-    } finally { setSaving(false); }
+    } catch (e: any) { setBanner({ kind: "error", text: `Save failed: ${e.message}` }); }
+    finally { setSaving(false); }
   };
 
+  const sharedProps = { form, setVal, serverValues, isSet, reveal, setReveal };
+
   return (
-    <div className="container">
-      <div className="header">
+    <div className="page">
+      <div className="page-header">
         <div>
-          <h1 className="h1">TEKLead AI — Settings</h1>
-          <div className="sub">Configure API keys and outreach templates.</div>
+          <h1 className="page-title">Settings</h1>
+          <div className="page-sub">Outreach config and API keys</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-ghost" onClick={() => { load(); loadDiag(); }} disabled={loading}>Reload</button>
           <button className="btn btn-primary" onClick={onSave} disabled={saving || loading}>
-            {saving ? <span className="spinner" /> : null}
-            {saving ? "Saving..." : "Save"}
+            {saving ? <span className="spinner" /> : null}{saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -146,76 +197,55 @@ export default function SettingsView() {
         </div>
       )}
 
-      <div className="card" style={{ background: "var(--accent-light)", borderColor: "#bfdbfe" }}>
-        <div className="card-title" style={{ color: "var(--accent)" }}>How saving works</div>
-        <div style={{ fontSize: 12, color: "var(--accent)", lineHeight: 1.6 }}>
-          Leave a secret field empty to keep the existing stored value. Type a new value to set or replace.
-        </div>
+      {/* User config — always visible */}
+      <div className="card">
+        {USER_GROUPS.map(g => <FieldGroup key={g.title} group={g} {...sharedProps} />)}
       </div>
 
+      {/* Tech config — collapsible */}
       <div className="card">
-        <div className="card-title">Diagnostics</div>
-        <div className="card-sub">Live status from <code>/api/settings/diag</code></div>
-        {!diag ? <div className="sub">Loading…</div> : (
-          <>
-            <div className="diag-row">
-              <span className={`chip ${diag.connStringSet ? "chip-green" : "chip-red"}`}>{diag.connStringSet ? "●" : "○"} ENV var</span>
-              <span className={`chip ${diag.connStringNormalized ? "chip-green" : "chip-red"}`}>{diag.connStringNormalized ? "●" : "○"} Conn parsed</span>
-              <span className={`chip ${diag.dbReachable ? "chip-green" : "chip-red"}`}>{diag.dbReachable ? "●" : "○"} DB reachable</span>
-              <span className={`chip ${diag.tableExists ? "chip-green" : "chip-red"}`}>{diag.tableExists ? "●" : "○"} Table exists</span>
-              <span className="chip chip-blue">Rows: {diag.rowCount}</span>
-              <span className="chip chip-blue">Keys stored: {diag.keysStored}</span>
-            </div>
-            {diag.error && <div style={{ marginTop: 10, fontSize: 12, color: "var(--red)" }}>Error: {diag.error}</div>}
-            <div style={{ marginTop: 10, fontSize: 11, color: "var(--dim)" }}>API: <code>{API_BASE || "(not set)"}</code></div>
-          </>
+        <button onClick={() => setTechOpen(p => !p)}
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, textAlign: "left" }}>🔧 API Keys & Integrations</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "left" }}>Apollo, Azure OpenAI, Blob, Microsoft Graph</div>
+          </div>
+          <span style={{ fontSize: 18, color: "var(--muted)" }}>{techOpen ? "▲" : "▼"}</span>
+        </button>
+
+        {techOpen && (
+          <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+            {TECH_GROUPS.map(g => <FieldGroup key={g.title} group={g} {...sharedProps} />)}
+          </div>
         )}
       </div>
 
-      {GROUPS.map(group => (
-        <div key={group.title} className="card">
-          <div className="card-title">{group.title}</div>
-          <div className="card-sub">{group.subtitle}</div>
-          <div className="grid-2">
-            {group.fields.map(field => (
-              <div key={field.key} className={field.full ? "full" : ""}>
-                <div className="field-label">
-                  <span>{field.label}</span>
-                  {field.secret && isSet[field.key] && <span className="chip chip-green">✓ stored</span>}
+      {/* Diagnostics — collapsible */}
+      <div className="card">
+        <button onClick={() => setDiag(d => d ? { ...d, _open: !d._open as any } : d)}
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>🩺 Diagnostics</div>
+          <span style={{ fontSize: 18, color: "var(--muted)" }}>{(diag as any)?._open ? "▲" : "▼"}</span>
+        </button>
+        {(diag as any)?._open && (
+          <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            {!diag ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div> : (
+              <>
+                <div className="diag-row">
+                  <span className={`chip ${diag.connStringSet ? "chip-green" : "chip-red"}`}>{diag.connStringSet ? "●" : "○"} ENV var</span>
+                  <span className={`chip ${diag.connStringNormalized ? "chip-green" : "chip-red"}`}>{diag.connStringNormalized ? "●" : "○"} Conn parsed</span>
+                  <span className={`chip ${diag.dbReachable ? "chip-green" : "chip-red"}`}>{diag.dbReachable ? "●" : "○"} DB reachable</span>
+                  <span className={`chip ${diag.tableExists ? "chip-green" : "chip-red"}`}>{diag.tableExists ? "●" : "○"} Table exists</span>
+                  <span className="chip chip-blue">Rows: {diag.rowCount}</span>
+                  <span className="chip chip-blue">Keys: {diag.keysStored}</span>
                 </div>
-                <div style={{ position: "relative" }}>
-                  {field.textarea ? (
-                    <textarea
-                      className="input"
-                      style={{ minHeight: 80, resize: "vertical", fontFamily: "inherit" }}
-                      placeholder={field.placeholder}
-                      value={valueShown(field)}
-                      onChange={e => setVal(field.key, e.target.value)}
-                    />
-                  ) : (
-                    <input
-                      className="input"
-                      style={{ paddingRight: field.secret ? 56 : 12 }}
-                      type={field.secret && !reveal[field.key] ? "password" : "text"}
-                      placeholder={field.placeholder}
-                      value={valueShown(field)}
-                      onChange={e => setVal(field.key, e.target.value)}
-                    />
-                  )}
-                  {field.secret && (
-                    <button className="icon-btn"
-                      style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}
-                      onClick={() => setReveal(p => ({ ...p, [field.key]: !p[field.key] }))}>
-                      {reveal[field.key] ? "Hide" : "Show"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+                {diag.error && <div style={{ marginTop: 8, fontSize: 12, color: "var(--red)" }}>Error: {diag.error}</div>}
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--dim)" }}>API: <code>{API_BASE || "(not set)"}</code></div>
+              </>
+            )}
           </div>
-        </div>
-      ))}
-      <div style={{ height: 40 }} />
+        )}
+      </div>
     </div>
   );
 }
