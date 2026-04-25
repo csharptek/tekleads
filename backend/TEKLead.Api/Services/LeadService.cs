@@ -66,25 +66,54 @@ public class LeadService
     {
         await using var c = Conn();
         await c.OpenAsync();
-        await c.ExecuteAsync(@"
-            INSERT INTO leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
-            VALUES (@Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @Emails, @Phones, @LinkedinUrl, @SavedAt)
-            ON CONFLICT (id) DO UPDATE SET
-                apollo_id    = EXCLUDED.apollo_id,
-                name         = EXCLUDED.name,
-                title        = EXCLUDED.title,
-                company      = EXCLUDED.company,
-                industry     = EXCLUDED.industry,
-                location     = EXCLUDED.location,
-                emails       = EXCLUDED.emails,
-                phones       = EXCLUDED.phones,
-                linkedin_url = EXCLUDED.linkedin_url",
-            new
-            {
-                lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
-                lead.Industry, lead.Location, lead.Emails, lead.Phones,
-                lead.LinkedinUrl, lead.SavedAt
-            });
+
+        if (!string.IsNullOrEmpty(lead.ApolloId))
+        {
+            // Upsert by apollo_id — handles duplicate apollo_id across different UUID rows
+            await c.ExecuteAsync(@"
+                INSERT INTO leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
+                VALUES (@Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @Emails, @Phones, @LinkedinUrl, @SavedAt)
+                ON CONFLICT (apollo_id) DO UPDATE SET
+                    name         = EXCLUDED.name,
+                    title        = EXCLUDED.title,
+                    company      = EXCLUDED.company,
+                    industry     = EXCLUDED.industry,
+                    location     = EXCLUDED.location,
+                    emails       = EXCLUDED.emails,
+                    phones       = EXCLUDED.phones,
+                    linkedin_url = EXCLUDED.linkedin_url,
+                    saved_at     = EXCLUDED.saved_at",
+                new
+                {
+                    lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
+                    lead.Industry, lead.Location, lead.Emails, lead.Phones,
+                    lead.LinkedinUrl, lead.SavedAt
+                });
+        }
+        else
+        {
+            // No apollo_id — upsert by primary key
+            await c.ExecuteAsync(@"
+                INSERT INTO leads (id, apollo_id, name, title, company, industry, location, emails, phones, linkedin_url, saved_at)
+                VALUES (@Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @Emails, @Phones, @LinkedinUrl, @SavedAt)
+                ON CONFLICT (id) DO UPDATE SET
+                    name         = EXCLUDED.name,
+                    title        = EXCLUDED.title,
+                    company      = EXCLUDED.company,
+                    industry     = EXCLUDED.industry,
+                    location     = EXCLUDED.location,
+                    emails       = EXCLUDED.emails,
+                    phones       = EXCLUDED.phones,
+                    linkedin_url = EXCLUDED.linkedin_url,
+                    saved_at     = EXCLUDED.saved_at",
+                new
+                {
+                    lead.Id, lead.ApolloId, lead.Name, lead.Title, lead.Company,
+                    lead.Industry, lead.Location, lead.Emails, lead.Phones,
+                    lead.LinkedinUrl, lead.SavedAt
+                });
+        }
+
         _log.LogInformation("Upserted lead {0} ({1})", lead.Name, lead.Id);
         return lead;
     }
