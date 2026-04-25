@@ -57,11 +57,6 @@ public class LeadsController : ControllerBase
         return Ok(new { saved });
     }
 
-    /// <summary>
-    /// Enrich email synchronously.
-    /// Trigger phone reveal async via Apollo webhook.
-    /// Apollo will POST phone data to /api/leads/phone-webhook once ready.
-    /// </summary>
     [HttpPost("{id}/reveal-phone")]
     public async Task<IActionResult> RevealPhone(Guid id)
     {
@@ -74,7 +69,6 @@ public class LeadsController : ControllerBase
         {
             var request = HttpContext.Request;
             var webhookUrl = $"{request.Scheme}://{request.Host}/api/leads/phone-webhook/{id}";
-
             var (emails, phones) = await _apollo.Enrich(lead.ApolloId, webhookUrl);
 
             var updated = false;
@@ -88,9 +82,7 @@ public class LeadsController : ControllerBase
                 phones,
                 autoSaved = updated,
                 phoneWebhookPending = phones.Length == 0,
-                message = phones.Length == 0
-                    ? "Email retrieved. Phone will be delivered by Apollo to webhook and auto-saved."
-                    : null
+                message = phones.Length == 0 ? "Phone request sent to Apollo — auto-saved when delivered." : null
             });
         }
         catch (Exception ex)
@@ -100,10 +92,6 @@ public class LeadsController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Apollo posts phone data here after async reveal.
-    /// Parses and auto-saves phone to the lead.
-    /// </summary>
     [HttpPost("phone-webhook/{leadId}")]
     public async Task<IActionResult> PhoneWebhook(Guid leadId)
     {
@@ -114,22 +102,13 @@ public class LeadsController : ControllerBase
             _log.LogInformation("Phone webhook for lead {0}: {1}", leadId, body);
 
             var phones = ApolloService.ParsePhonesFromWebhook(body);
-            if (phones.Length == 0)
-            {
-                _log.LogInformation("Webhook: no phones in payload for lead {0}", leadId);
-                return Ok(new { received = true, phonesFound = 0 });
-            }
+            if (phones.Length == 0) return Ok(new { received = true, phonesFound = 0 });
 
             var lead = await _leads.GetById(leadId);
-            if (lead == null)
-            {
-                _log.LogWarning("Webhook: lead {0} not found in DB", leadId);
-                return Ok(new { received = true, phonesFound = phones.Length, saved = false });
-            }
+            if (lead == null) return Ok(new { received = true, phonesFound = phones.Length, saved = false });
 
             lead.Phones = phones;
             await _leads.Upsert(lead);
-            _log.LogInformation("Webhook: saved {0} phone(s) for lead {1}", phones.Length, leadId);
             return Ok(new { received = true, phonesFound = phones.Length, saved = true });
         }
         catch (Exception ex)
@@ -137,25 +116,6 @@ public class LeadsController : ControllerBase
             _log.LogError(ex, "Phone webhook error for lead {0}", leadId);
             return StatusCode(500, new { error = ex.Message });
         }
-    }
-
-    // DEBUG — raw Apollo response to verify field names
-    [HttpGet("search-raw")]
-    public async Task<IActionResult> SearchRaw([FromQuery] string? name = "john wright")
-    {
-        try
-        {
-            var all = await _settings.GetAll();
-            var key = all.GetValueOrDefault("apollo_api_key", "");
-            var client = _http.CreateClient();
-            client.DefaultRequestHeaders.Add("X-Api-Key", key);
-            var kw = Uri.EscapeDataString(name ?? "");
-            var url = $"https://api.apollo.io/api/v1/mixed_people/api_search?q_keywords={kw}&per_page=1&page=1";
-            var res = await client.PostAsync(url, null);
-            var body = await res.Content.ReadAsStringAsync();
-            return Content(body, "application/json");
-        }
-        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 }
 

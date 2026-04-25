@@ -66,21 +66,23 @@ public class ApolloService
         var total = root.TryGetProperty("pagination", out var pg) && pg.TryGetProperty("total_entries", out var te)
             ? te.GetInt32() : 0;
 
+        // LOG first person raw — see Railway logs for exact Apollo field names
+        if (root.TryGetProperty("people", out var dbg) && dbg.GetArrayLength() > 0)
+            _log.LogInformation("APOLLO_RAW_PERSON: {0}", dbg[0].ToString());
+
         var leads = new List<Lead>();
         if (root.TryGetProperty("people", out var people))
         {
             foreach (var p in people.EnumerateArray())
             {
-                // Always build full name from parts — most reliable
                 var firstName = Str(p, "first_name");
                 var lastName  = Str(p, "last_name");
                 var fullName  = $"{firstName} {lastName}".Trim();
                 if (string.IsNullOrEmpty(fullName)) fullName = Str(p, "name");
 
-                // Location: combine city + state + country
-                var parts = new[] { Str(p, "city"), Str(p, "state"), Str(p, "country") }
+                var locParts = new[] { Str(p, "city"), Str(p, "state"), Str(p, "country") }
                     .Where(s => !string.IsNullOrEmpty(s));
-                var loc = string.Join(", ", parts);
+                var loc = string.Join(", ", locParts);
 
                 var orgName = "";
                 var orgIndustry = "";
@@ -109,12 +111,28 @@ public class ApolloService
         return (leads, total);
     }
 
-    public async Task<(string[] Emails, string[] Phones)> Enrich(string apolloPersonId)
+    /// <summary>
+    /// Enrich person by Apollo ID.
+    /// Email returned synchronously.
+    /// Phone reveal is async — Apollo posts to webhookUrl when ready.
+    /// </summary>
+    public async Task<(string[] Emails, string[] Phones)> Enrich(string apolloPersonId, string webhookUrl)
     {
         var key = await GetKey();
-        var url = $"https://api.apollo.io/api/v1/people/match?id={Uri.EscapeDataString(apolloPersonId)}&reveal_personal_emails=false&reveal_phone_number=false";
-        var res = await MakeClient(key).PostAsync(url, null);
+
+        var payload = new
+        {
+            id = apolloPersonId,
+            reveal_personal_emails = false,
+            reveal_phone_number = true,
+            webhook_url = webhookUrl
+        };
+
+        var client = MakeClient(key);
+        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
         var body = await res.Content.ReadAsStringAsync();
+
+        _log.LogInformation("Apollo enrich response {0}: {1}", res.StatusCode, body[..Math.Min(500, body.Length)]);
 
         if (!res.IsSuccessStatusCode)
         {
@@ -131,6 +149,7 @@ public class ApolloService
             var email = Str(person, "email");
             if (!string.IsNullOrEmpty(email)) emails.Add(email);
 
+            // Phones may come back inline for some plans even with webhook
             if (person.TryGetProperty("phone_numbers", out var pns) && pns.ValueKind == JsonValueKind.Array)
                 foreach (var pn in pns.EnumerateArray())
                 {
@@ -140,6 +159,50 @@ public class ApolloService
         }
 
         return (emails.ToArray(), phones.ToArray());
+    }
+
+    /// <summary>
+    /// Parse phone numbers from Apollo webhook payload.
+    /// Apollo sends different payload shapes — handle both native and waterfall.
+    /// </summary>
+    public static string[] ParsePhonesFromWebhook(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var phones = new List<string>();
+            var root = doc.RootElement;
+
+            // Shape 1: { "person": { "phone_numbers": [...] } }
+            if (root.TryGetProperty("person", out var person))
+                ExtractPhones(person, phones);
+
+            // Shape 2: { "phone_numbers": [...] } (waterfall)
+            if (phones.Count == 0)
+                ExtractPhones(root, phones);
+
+            // Shape 3: { "phones": [...] }
+            if (phones.Count == 0 && root.TryGetProperty("phones", out var ph) && ph.ValueKind == JsonValueKind.Array)
+                foreach (var p in ph.EnumerateArray())
+                {
+                    var num = p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+                    if (!string.IsNullOrEmpty(num)) phones.Add(num!);
+                }
+
+            return phones.ToArray();
+        }
+        catch { return Array.Empty<string>(); }
+    }
+
+    private static void ExtractPhones(JsonElement el, List<string> phones)
+    {
+        if (!el.TryGetProperty("phone_numbers", out var pns) || pns.ValueKind != JsonValueKind.Array) return;
+        foreach (var pn in pns.EnumerateArray())
+        {
+            var num = Str(pn, "sanitized_number") is { Length: > 0 } s ? s : Str(pn, "raw_number");
+            if (!string.IsNullOrEmpty(num)) phones.Add(num);
+        }
     }
 
     private static string Str(JsonElement el, string key) =>
