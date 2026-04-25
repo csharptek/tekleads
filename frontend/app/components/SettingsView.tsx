@@ -73,7 +73,7 @@ interface Diag {
 export default function SettingsView() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [serverValues, setServerValues] = useState<Record<string, string>>({});
-  const [isSet, setIsSet] = useState<Record<string, bool>>({});
+  const [isSet, setIsSet] = useState<Record<string, boolean>>({});
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
