@@ -10,16 +10,12 @@ public class LeadsController : ControllerBase
 {
     private readonly ApolloService _apollo;
     private readonly LeadService _leads;
-    private readonly SettingsService _settings;
-    private readonly IHttpClientFactory _http;
     private readonly ILogger<LeadsController> _log;
 
-    public LeadsController(ApolloService apollo, LeadService leads, SettingsService settings, IHttpClientFactory http, ILogger<LeadsController> log)
+    public LeadsController(ApolloService apollo, LeadService leads, ILogger<LeadsController> log)
     {
         _apollo = apollo;
         _leads = leads;
-        _settings = settings;
-        _http = http;
         _log = log;
     }
 
@@ -67,11 +63,12 @@ public class LeadsController : ControllerBase
 
         try
         {
-            var request = HttpContext.Request;
-            var webhookUrl = $"https://{request.Host}/api/leads/phone-webhook/{id}";
-            var (emails, phones) = await _apollo.Enrich(lead.ApolloId, webhookUrl);
+            var webhookUrl = $"https://{HttpContext.Request.Host}/api/leads/phone-webhook/{id}";
+            var (emails, phones, fullName, location) = await _apollo.Enrich(lead.ApolloId, webhookUrl);
 
             var updated = false;
+            if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
+            if (!string.IsNullOrEmpty(location)) { lead.Location = location; updated = true; }
             if (emails.Length > 0 && lead.Emails.Length == 0) { lead.Emails = emails; updated = true; }
             if (phones.Length > 0) { lead.Phones = phones; updated = true; }
             if (updated) await _leads.Upsert(lead);
@@ -80,9 +77,10 @@ public class LeadsController : ControllerBase
             {
                 emails,
                 phones,
+                fullName,
+                location,
                 autoSaved = updated,
-                phoneWebhookPending = phones.Length == 0,
-                message = phones.Length == 0 ? "Phone request sent to Apollo — auto-saved when delivered." : null
+                phoneWebhookPending = phones.Length == 0
             });
         }
         catch (Exception ex)

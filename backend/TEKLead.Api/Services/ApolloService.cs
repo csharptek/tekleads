@@ -71,18 +71,9 @@ public class ApolloService
         {
             foreach (var p in people.EnumerateArray())
             {
-                // Apollo returns last_name_obfuscated (e.g. "Wr***t") on free/basic plans
-                var firstName = Str(p, "first_name");
+                var firstName   = Str(p, "first_name");
                 var lastNameObf = Str(p, "last_name_obfuscated");
-                var fullName = $"{firstName} {lastNameObf}".Trim();
-
-                // Location flags only — actual values need enrichment
-                // Build hint from has_city/has_state/has_country flags
-                var locHints = new List<string>();
-                if (BoolFlag(p, "has_city"))    locHints.Add("city");
-                if (BoolFlag(p, "has_state"))   locHints.Add("state");
-                if (BoolFlag(p, "has_country")) locHints.Add("country");
-                var loc = locHints.Count > 0 ? $"[{string.Join(", ", locHints)} available — enrich]" : "";
+                var fullName    = $"{firstName} {lastNameObf}".Trim();
 
                 var orgName = "";
                 var orgIndustry = "";
@@ -92,9 +83,6 @@ public class ApolloService
                     orgIndustry = Str(org, "industry");
                 }
 
-                // Direct phone availability hint
-                var phoneHint = Str(p, "has_direct_phone");
-
                 leads.Add(new Lead
                 {
                     Id          = Guid.NewGuid(),
@@ -103,7 +91,7 @@ public class ApolloService
                     Title       = Str(p, "title"),
                     Company     = orgName,
                     Industry    = orgIndustry,
-                    Location    = loc,
+                    Location    = "",
                     Emails      = Array.Empty<string>(),
                     Phones      = Array.Empty<string>(),
                     LinkedinUrl = Str(p, "linkedin_url"),
@@ -114,7 +102,9 @@ public class ApolloService
         return (leads, total);
     }
 
-    public async Task<(string[] Emails, string[] Phones)> Enrich(string apolloPersonId, string webhookUrl)
+    // Returns full name, location, emails, phones after enrichment
+    public async Task<(string[] Emails, string[] Phones, string FullName, string Location)> Enrich(
+        string apolloPersonId, string webhookUrl)
     {
         var key = await GetKey();
 
@@ -136,13 +126,25 @@ public class ApolloService
             throw new Exception($"Apollo enrich error {(int)res.StatusCode}: {body}");
 
         using var doc = JsonDocument.Parse(body);
-        var emails = new List<string>();
-        var phones = new List<string>();
+        var emails   = new List<string>();
+        var phones   = new List<string>();
+        var fullName = "";
+        var location = "";
 
         if (doc.RootElement.TryGetProperty("person", out var person))
         {
             var email = Str(person, "email");
             if (!string.IsNullOrEmpty(email)) emails.Add(email);
+
+            // Full unmasked name from enrichment
+            var fn = Str(person, "first_name");
+            var ln = Str(person, "last_name");
+            fullName = $"{fn} {ln}".Trim();
+
+            // Real location from enrichment
+            var locParts = new[] { Str(person, "city"), Str(person, "state"), Str(person, "country") }
+                .Where(s => !string.IsNullOrEmpty(s));
+            location = string.Join(", ", locParts);
 
             if (person.TryGetProperty("phone_numbers", out var pns) && pns.ValueKind == JsonValueKind.Array)
                 foreach (var pn in pns.EnumerateArray())
@@ -152,7 +154,7 @@ public class ApolloService
                 }
         }
 
-        return (emails.ToArray(), phones.ToArray());
+        return (emails.ToArray(), phones.ToArray(), fullName, location);
     }
 
     public static string[] ParsePhonesFromWebhook(string json)
@@ -163,7 +165,6 @@ public class ApolloService
             using var doc = JsonDocument.Parse(json);
             var phones = new List<string>();
             var root = doc.RootElement;
-
             if (root.TryGetProperty("person", out var person)) ExtractPhones(person, phones);
             if (phones.Count == 0) ExtractPhones(root, phones);
             if (phones.Count == 0 && root.TryGetProperty("phones", out var ph) && ph.ValueKind == JsonValueKind.Array)
@@ -172,7 +173,6 @@ public class ApolloService
                     var num = p.ValueKind == JsonValueKind.String ? p.GetString() : null;
                     if (!string.IsNullOrEmpty(num)) phones.Add(num!);
                 }
-
             return phones.ToArray();
         }
         catch { return Array.Empty<string>(); }
@@ -190,7 +190,4 @@ public class ApolloService
 
     private static string Str(JsonElement el, string key) =>
         el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-
-    private static bool BoolFlag(JsonElement el, string key) =>
-        el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
 }

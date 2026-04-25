@@ -28,6 +28,7 @@ export default function LeadSearchView() {
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [revealingId, setRevealingId] = useState<string | null>(null);
+  const [phonePending, setPhonePending] = useState<Set<string>>(new Set());
   const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
   const [searched, setSearched] = useState(false);
   const [enrichConfirm, setEnrichConfirm] = useState<Lead | null>(null);
@@ -73,17 +74,27 @@ export default function LeadSearchView() {
     setRevealingId(lead.id); setBanner(null);
     try {
       await api.post("/api/leads/save", [lead]);
-      const res = await api.post<{ emails: string[]; phones: string[]; autoSaved: boolean; note?: string }>(
+      const res = await api.post<{ emails: string[]; phones: string[]; fullName?: string; location?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
         `/api/leads/${lead.id}/reveal-phone`, {});
+
       setResults(prev => prev.map(l => l.id === lead.id
-        ? { ...l, emails: res.emails.length ? res.emails : l.emails, phones: res.phones.length ? res.phones : l.phones }
+        ? {
+            ...l,
+            name:     res.fullName  && res.fullName.trim()  ? res.fullName  : l.name,
+            location: res.location  && res.location.trim()  ? res.location  : l.location,
+            emails:   res.emails.length  ? res.emails  : l.emails,
+            phones:   res.phones.length  ? res.phones  : l.phones,
+          }
         : l));
-      if (res.phones.length > 0)
-        setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")}${res.autoSaved ? " — auto-saved" : ""}` });
-      else if (res.emails.length > 0)
-        setBanner({ kind: "success", text: `Email: ${res.emails[0]}${res.autoSaved ? " — auto-saved" : ""}` });
-      else
-        setBanner({ kind: "info", text: res.note || "No contact data available for this person." });
+
+      if (res.phoneWebhookPending) {
+        setPhonePending(p => new Set([...p, lead.id]));
+        setBanner({ kind: "info", text: `${res.emails.length ? `Email: ${res.emails[0]}. ` : ""}Phone request sent to Apollo — will auto-save when delivered (usually 1–3 min).` });
+      } else if (res.phones.length > 0) {
+        setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")} — auto-saved.` });
+      } else if (res.emails.length > 0) {
+        setBanner({ kind: "success", text: `Email: ${res.emails[0]} — saved.` });
+      }
     } catch (e: any) {
       setBanner({ kind: "error", text: e.message });
     } finally { setRevealingId(null); }
@@ -94,13 +105,12 @@ export default function LeadSearchView() {
 
   return (
     <div className="page">
-      {/* Credit warning modal */}
       {enrichConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div className="card" style={{ width: 380, margin: 0 }}>
             <div className="card-title">⚠ Enrich uses Apollo credits</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
-              Enriching <strong>{enrichConfirm.name}</strong> will consume credits from your Apollo plan. Search does not consume credits. Continue?
+              Enriching <strong>{enrichConfirm.name}</strong> consumes credits. Phone reveal is async — Apollo will post it back automatically within 1–3 min.
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost" onClick={() => setEnrichConfirm(null)}>Cancel</button>
@@ -113,7 +123,7 @@ export default function LeadSearchView() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Lead Search</h1>
-          <div className="page-sub">Search free · Enrich uses Apollo credits</div>
+          <div className="page-sub">Search free · Enrich uses Apollo credits · Phone auto-saved via webhook</div>
         </div>
         {selected.size > 0 && (
           <button className="btn btn-primary" onClick={onSave} disabled={saving}>
@@ -130,7 +140,6 @@ export default function LeadSearchView() {
         </div>
       )}
 
-      {/* Filters */}
       <div className="card">
         <div className="card-title">Search Filters</div>
         <div className="card-sub">No credits consumed · Similar matches included</div>
@@ -151,22 +160,17 @@ export default function LeadSearchView() {
           ))}
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => doSearch(1)} disabled={searching}>
-              {searching
-                ? <><span className="spinner" />&nbsp;Searching…</>
-                : "Search Apollo"}
+              {searching ? <><span className="spinner" />&nbsp;Searching…</> : "Search Apollo"}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Results */}
       {searched && (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div style={{ fontSize: 13, color: "var(--muted)" }}>
-              {total > 0
-                ? `${total.toLocaleString()} total · page ${page} of ${totalPages}`
-                : "No results"}
+              {total > 0 ? `${total.toLocaleString()} total · page ${page} of ${totalPages}` : "No results"}
             </div>
             {results.length > 0 && (
               <button className="btn btn-ghost btn-sm" onClick={toggleAll}>
@@ -181,16 +185,14 @@ export default function LeadSearchView() {
                 <table>
                   <thead>
                     <tr>
-                      <th style={{ width: 36 }}>
-                        <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-                      </th>
+                      <th style={{ width: 36 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
                       <th>Name</th>
                       <th>Title</th>
                       <th>Company</th>
                       <th>Location</th>
                       <th>Email</th>
                       <th>Phone</th>
-                      <th style={{ width: 90 }}></th>
+                      <th style={{ width: 100 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -215,7 +217,9 @@ export default function LeadSearchView() {
                         <td style={{ fontSize: 12 }}>
                           {lead.phones?.[0]
                             ? <span className="chip chip-green" style={{ fontSize: 11 }}>{lead.phones[0]}</span>
-                            : <span style={{ color: "var(--dim)" }}>—</span>}
+                            : phonePending.has(lead.id)
+                              ? <span className="chip chip-orange">pending…</span>
+                              : <span style={{ color: "var(--dim)" }}>—</span>}
                         </td>
                         <td>
                           <button
@@ -224,9 +228,7 @@ export default function LeadSearchView() {
                             disabled={revealingId === lead.id}
                             title="Uses Apollo credits"
                           >
-                            {revealingId === lead.id
-                              ? <span className="spinner spinner-dark" />
-                              : "Enrich"}
+                            {revealingId === lead.id ? <span className="spinner spinner-dark" /> : "Enrich"}
                           </button>
                         </td>
                       </tr>
