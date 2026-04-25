@@ -108,3 +108,26 @@ public class LeadSearchRequest
     public int Page { get; set; } = 1;
     public int PerPage { get; set; } = 25;
 }
+
+
+// DEBUG ONLY — remove after confirming field names
+[HttpPost("search-raw")]
+public async Task<IActionResult> SearchRaw([FromBody] LeadSearchRequest req)
+{
+    try
+    {
+        var all = await _leads.GetType().GetField("_settings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_leads);
+        // simpler: just proxy direct apollo call
+        var settings = HttpContext.RequestServices.GetRequiredService<TEKLead.Api.Services.SettingsService>();
+        var apolloAll = await settings.GetAll();
+        var key = apolloAll.GetValueOrDefault("apollo_api_key", "");
+        var http = HttpContext.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient();
+        http.DefaultRequestHeaders.Add("X-Api-Key", key);
+        var kw = req.Name ?? "";
+        var url = $"https://api.apollo.io/api/v1/mixed_people/api_search?q_keywords={Uri.EscapeDataString(kw)}&per_page=1&page=1";
+        var res = await http.PostAsync(url, null);
+        var body = await res.Content.ReadAsStringAsync();
+        return Content(body, "application/json");
+    }
+    catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+}
