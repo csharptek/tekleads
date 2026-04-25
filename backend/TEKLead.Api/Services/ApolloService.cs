@@ -165,14 +165,20 @@ public class ApolloService
             using var doc = JsonDocument.Parse(json);
             var phones = new List<string>();
             var root = doc.RootElement;
-            if (root.TryGetProperty("person", out var person)) ExtractPhones(person, phones);
-            if (phones.Count == 0) ExtractPhones(root, phones);
-            if (phones.Count == 0 && root.TryGetProperty("phones", out var ph) && ph.ValueKind == JsonValueKind.Array)
-                foreach (var p in ph.EnumerateArray())
-                {
-                    var num = p.ValueKind == JsonValueKind.String ? p.GetString() : null;
-                    if (!string.IsNullOrEmpty(num)) phones.Add(num!);
-                }
+
+            // Shape: { "people": [ { "phone_numbers": [...] } ] }
+            if (root.TryGetProperty("people", out var people) && people.ValueKind == JsonValueKind.Array)
+                foreach (var person in people.EnumerateArray())
+                    ExtractPhones(person, phones);
+
+            // Shape: { "person": { "phone_numbers": [...] } }
+            if (phones.Count == 0 && root.TryGetProperty("person", out var personEl))
+                ExtractPhones(personEl, phones);
+
+            // Shape: { "phone_numbers": [...] }
+            if (phones.Count == 0)
+                ExtractPhones(root, phones);
+
             return phones.ToArray();
         }
         catch { return Array.Empty<string>(); }
