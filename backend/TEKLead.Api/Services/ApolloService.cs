@@ -34,8 +34,6 @@ public class ApolloService
         return c;
     }
 
-    /// POST /api/v1/mixed_people/api_search — query params, no body.
-    /// No emails/phones returned. Similar matches included by default.
     public async Task<(List<Lead> Leads, int Total)> Search(
         string? name, string? title, string? company,
         string? industry, string? location,
@@ -43,7 +41,6 @@ public class ApolloService
     {
         var key = await GetKey();
 
-        // Build keywords: name + company + industry all go into q_keywords
         var kw = string.Join(" ", new[] { name, company, industry }
             .Where(s => !string.IsNullOrWhiteSpace(s)));
 
@@ -53,9 +50,9 @@ public class ApolloService
         if (!string.IsNullOrEmpty(location)) qs.Add($"person_locations[]={Uri.EscapeDataString(location)}");
 
         var url = $"https://api.apollo.io/api/v1/mixed_people/api_search?{string.Join("&", qs)}";
-        _log.LogInformation("Apollo search URL: {0}", url);
+        _log.LogInformation("Apollo search: {0}", url);
 
-        var res = await MakeClient(key).PostAsync(url, null); // POST with no body, params in QS
+        var res = await MakeClient(key).PostAsync(url, null);
         var body = await res.Content.ReadAsStringAsync();
 
         if (!res.IsSuccessStatusCode)
@@ -74,15 +71,37 @@ public class ApolloService
         {
             foreach (var p in people.EnumerateArray())
             {
+                // Name: try "name" first, then build from first_name + last_name
+                var fullName = Str(p, "name");
+                if (string.IsNullOrEmpty(fullName))
+                {
+                    var fn = Str(p, "first_name");
+                    var ln = Str(p, "last_name");
+                    fullName = $"{fn} {ln}".Trim();
+                }
+
+                var orgName = "";
+                var orgIndustry = "";
+                if (p.TryGetProperty("organization", out var org) && org.ValueKind == JsonValueKind.Object)
+                {
+                    orgName = Str(org, "name");
+                    orgIndustry = Str(org, "industry");
+                }
+
+                // Location: try city, state, country in order
+                var loc = Str(p, "city");
+                if (string.IsNullOrEmpty(loc)) loc = Str(p, "state");
+                if (string.IsNullOrEmpty(loc)) loc = Str(p, "country");
+
                 leads.Add(new Lead
                 {
                     Id          = Guid.NewGuid(),
                     ApolloId    = Str(p, "id"),
-                    Name        = Str(p, "name"),
+                    Name        = fullName,
                     Title       = Str(p, "title"),
-                    Company     = p.TryGetProperty("organization", out var org) && org.ValueKind == JsonValueKind.Object ? Str(org, "name") : "",
-                    Industry    = p.TryGetProperty("organization", out var org2) && org2.ValueKind == JsonValueKind.Object ? Str(org2, "industry") : "",
-                    Location    = Str(p, "city"),
+                    Company     = orgName,
+                    Industry    = orgIndustry,
+                    Location    = loc,
                     Emails      = Array.Empty<string>(),
                     Phones      = Array.Empty<string>(),
                     LinkedinUrl = Str(p, "linkedin_url"),
@@ -93,7 +112,6 @@ public class ApolloService
         return (leads, total);
     }
 
-    /// Enrich by Apollo ID — returns email synchronously, phones if available without webhook.
     public async Task<(string[] Emails, string[] Phones)> Enrich(string apolloPersonId)
     {
         var key = await GetKey();
