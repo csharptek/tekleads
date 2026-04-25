@@ -137,6 +137,7 @@ export default function SettingsView() {
   const [banner, setBanner] = useState<{ kind: "error" | "success" | "info"; text: string } | null>(null);
   const [diag, setDiag] = useState<Diag | null>(null);
   const [techOpen, setTechOpen] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -222,12 +223,12 @@ export default function SettingsView() {
 
       {/* Diagnostics — collapsible */}
       <div className="card">
-        <button onClick={() => setDiag(d => d ? { ...d, _open: !d._open as any } : d)}
+        <button onClick={() => setDiagOpen(p => !p)}
           style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600 }}>🩺 Diagnostics</div>
-          <span style={{ fontSize: 18, color: "var(--muted)" }}>{(diag as any)?._open ? "▲" : "▼"}</span>
+          <span style={{ fontSize: 18, color: "var(--muted)" }}>{diagOpen ? "▲" : "▼"}</span>
         </button>
-        {(diag as any)?._open && (
+        {diagOpen && (
           <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
             {!diag ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div> : (
               <>
