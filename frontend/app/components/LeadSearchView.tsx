@@ -17,25 +17,25 @@ interface Lead {
 
 interface SearchResult { leads: Lead[]; total: number; }
 
+const PER_PAGE = 25;
+
 export default function LeadSearchView() {
   const [form, setForm] = useState({ name: "", title: "", company: "", industry: "", location: "" });
   const [results, setResults] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const PER_PAGE = 25;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [revealingId, setRevealingId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
   const [searched, setSearched] = useState(false);
+  const [enrichConfirm, setEnrichConfirm] = useState<Lead | null>(null);
 
   const f = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
 
   const doSearch = async (p: number) => {
-    setSearching(true);
-    setBanner(null);
-    setSelected(new Set());
+    setSearching(true); setBanner(null); setSelected(new Set());
     try {
       const data = await api.post<SearchResult>("/api/leads/search", { ...form, page: p, perPage: PER_PAGE });
       setResults(data.leads || []);
@@ -49,11 +49,8 @@ export default function LeadSearchView() {
     } finally { setSearching(false); }
   };
 
-  const onSearch = () => doSearch(1);
-
   const toggleSelect = (id: string) =>
     setSelected(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
   const toggleAll = () =>
     setSelected(selected.size === results.length ? new Set() : new Set(results.map(l => l.id)));
 
@@ -70,8 +67,9 @@ export default function LeadSearchView() {
     } finally { setSaving(false); }
   };
 
-  const onReveal = async (lead: Lead) => {
-    if (!lead.apolloId) { setBanner({ kind: "info", text: "Save this lead first." }); return; }
+  const doEnrich = async (lead: Lead) => {
+    setEnrichConfirm(null);
+    if (!lead.apolloId) { setBanner({ kind: "info", text: "No Apollo ID — cannot enrich." }); return; }
     setRevealingId(lead.id); setBanner(null);
     try {
       await api.post("/api/leads/save", [lead]);
@@ -83,7 +81,7 @@ export default function LeadSearchView() {
       if (res.phones.length > 0)
         setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")}${res.autoSaved ? " — auto-saved" : ""}` });
       else if (res.emails.length > 0)
-        setBanner({ kind: "success", text: `Email found: ${res.emails[0]}${res.autoSaved ? " — auto-saved" : ""}` });
+        setBanner({ kind: "success", text: `Email: ${res.emails[0]}${res.autoSaved ? " — auto-saved" : ""}` });
       else
         setBanner({ kind: "info", text: res.note || "No contact data available for this person." });
     } catch (e: any) {
@@ -96,10 +94,26 @@ export default function LeadSearchView() {
 
   return (
     <div className="page">
+      {/* Credit warning modal */}
+      {enrichConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ width: 380, margin: 0 }}>
+            <div className="card-title">⚠ Enrich uses Apollo credits</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
+              Enriching <strong>{enrichConfirm.name}</strong> will consume credits from your Apollo plan. Search does not consume credits. Continue?
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost" onClick={() => setEnrichConfirm(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => doEnrich(enrichConfirm)}>Yes, Enrich</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
         <div>
           <h1 className="page-title">Lead Search</h1>
-          <div className="page-sub">Search Apollo.io · Reveal contact info · Save leads</div>
+          <div className="page-sub">Search free · Enrich uses Apollo credits</div>
         </div>
         {selected.size > 0 && (
           <button className="btn btn-primary" onClick={onSave} disabled={saving}>
@@ -119,10 +133,10 @@ export default function LeadSearchView() {
       {/* Filters */}
       <div className="card">
         <div className="card-title">Search Filters</div>
-        <div className="card-sub">Results include similar matches — Apollo fuzzy search</div>
+        <div className="card-sub">No credits consumed · Similar matches included</div>
         <div className="grid-3">
           {([
-            ["name",     "Person Name",  "e.g. John Smith"],
+            ["name",     "Person Name",  "e.g. John Wright"],
             ["title",    "Job Title",    "e.g. CTO"],
             ["company",  "Company",      "e.g. Acme Corp"],
             ["industry", "Industry",     "e.g. Software"],
@@ -132,12 +146,14 @@ export default function LeadSearchView() {
               <div className="field-label">{label}</div>
               <input className="input" placeholder={ph} value={form[k]}
                 onChange={e => f(k, e.target.value)}
-                onKeyDown={e => e.key === "Enter" && onSearch()} />
+                onKeyDown={e => e.key === "Enter" && doSearch(1)} />
             </div>
           ))}
           <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="btn btn-primary" style={{ width: "100%" }} onClick={onSearch} disabled={searching}>
-              {searching ? <><span className="spinner" />&nbsp;Searching…</> : "Search Apollo"}
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => doSearch(1)} disabled={searching}>
+              {searching
+                ? <><span className="spinner" />&nbsp;Searching…</>
+                : "Search Apollo"}
             </button>
           </div>
         </div>
@@ -149,16 +165,14 @@ export default function LeadSearchView() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div style={{ fontSize: 13, color: "var(--muted)" }}>
               {total > 0
-                ? `${total.toLocaleString()} total · page ${page} of ${totalPages} · showing ${results.length}`
+                ? `${total.toLocaleString()} total · page ${page} of ${totalPages}`
                 : "No results"}
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {results.length > 0 && (
-                <button className="btn btn-ghost btn-sm" onClick={toggleAll}>
-                  {allSelected ? "Deselect All" : "Select All"}
-                </button>
-              )}
-            </div>
+            {results.length > 0 && (
+              <button className="btn btn-ghost btn-sm" onClick={toggleAll}>
+                {allSelected ? "Deselect All" : "Select All"}
+              </button>
+            )}
           </div>
 
           {results.length > 0 && (
@@ -176,7 +190,7 @@ export default function LeadSearchView() {
                       <th>Location</th>
                       <th>Email</th>
                       <th>Phone</th>
-                      <th></th>
+                      <th style={{ width: 90 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -184,32 +198,35 @@ export default function LeadSearchView() {
                       <tr key={lead.id} className={selected.has(lead.id) ? "selected" : ""}>
                         <td><input type="checkbox" checked={selected.has(lead.id)} onChange={() => toggleSelect(lead.id)} /></td>
                         <td>
-                          <div style={{ fontWeight: 600, color: "var(--text)" }}>{lead.name || "—"}</div>
+                          <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>{lead.name || "—"}</div>
                           {lead.linkedinUrl && (
                             <a href={lead.linkedinUrl} target="_blank" rel="noreferrer"
                               style={{ fontSize: 11, color: "var(--accent)" }}>LinkedIn ↗</a>
                           )}
                         </td>
-                        <td style={{ color: "var(--muted)" }}>{lead.title || "—"}</td>
-                        <td>{lead.company || "—"}</td>
-                        <td style={{ color: "var(--muted)", fontSize: 12 }}>{lead.location || "—"}</td>
+                        <td style={{ color: "var(--muted)", fontSize: 12 }}>{lead.title || "—"}</td>
+                        <td style={{ fontSize: 12 }}>{lead.company || "—"}</td>
+                        <td style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap" }}>{lead.location || "—"}</td>
                         <td style={{ fontSize: 12 }}>
                           {lead.emails?.[0]
-                            ? <span className="chip chip-blue">{lead.emails[0]}</span>
+                            ? <span className="chip chip-blue" style={{ fontSize: 11 }}>{lead.emails[0]}</span>
                             : <span style={{ color: "var(--dim)" }}>—</span>}
                         </td>
                         <td style={{ fontSize: 12 }}>
                           {lead.phones?.[0]
-                            ? <span className="chip chip-green">{lead.phones[0]}</span>
+                            ? <span className="chip chip-green" style={{ fontSize: 11 }}>{lead.phones[0]}</span>
                             : <span style={{ color: "var(--dim)" }}>—</span>}
                         </td>
                         <td>
                           <button
                             className="btn btn-ghost btn-sm"
-                            onClick={() => onReveal(lead)}
+                            onClick={() => setEnrichConfirm(lead)}
                             disabled={revealingId === lead.id}
+                            title="Uses Apollo credits"
                           >
-                            {revealingId === lead.id ? <span className="spinner spinner-dark" /> : "Enrich"}
+                            {revealingId === lead.id
+                              ? <span className="spinner spinner-dark" />
+                              : "Enrich"}
                           </button>
                         </td>
                       </tr>
@@ -218,16 +235,11 @@ export default function LeadSearchView() {
                 </table>
               </div>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 16 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => doSearch(page - 1)} disabled={page <= 1 || searching}>
-                    ← Prev
-                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => doSearch(page - 1)} disabled={page <= 1 || searching}>← Prev</button>
                   <span style={{ fontSize: 13, color: "var(--muted)" }}>Page {page} / {totalPages}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => doSearch(page + 1)} disabled={page >= totalPages || searching}>
-                    Next →
-                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => doSearch(page + 1)} disabled={page >= totalPages || searching}>Next →</button>
                 </div>
               )}
             </>

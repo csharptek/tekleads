@@ -71,27 +71,24 @@ public class ApolloService
         {
             foreach (var p in people.EnumerateArray())
             {
-                // Name: try "name" first, then build from first_name + last_name
-                var fullName = Str(p, "name");
-                if (string.IsNullOrEmpty(fullName))
-                {
-                    var fn = Str(p, "first_name");
-                    var ln = Str(p, "last_name");
-                    fullName = $"{fn} {ln}".Trim();
-                }
+                // Always build full name from parts — most reliable
+                var firstName = Str(p, "first_name");
+                var lastName  = Str(p, "last_name");
+                var fullName  = $"{firstName} {lastName}".Trim();
+                if (string.IsNullOrEmpty(fullName)) fullName = Str(p, "name");
+
+                // Location: combine city + state + country
+                var parts = new[] { Str(p, "city"), Str(p, "state"), Str(p, "country") }
+                    .Where(s => !string.IsNullOrEmpty(s));
+                var loc = string.Join(", ", parts);
 
                 var orgName = "";
                 var orgIndustry = "";
                 if (p.TryGetProperty("organization", out var org) && org.ValueKind == JsonValueKind.Object)
                 {
-                    orgName = Str(org, "name");
+                    orgName     = Str(org, "name");
                     orgIndustry = Str(org, "industry");
                 }
-
-                // Location: try city, state, country in order
-                var loc = Str(p, "city");
-                if (string.IsNullOrEmpty(loc)) loc = Str(p, "state");
-                if (string.IsNullOrEmpty(loc)) loc = Str(p, "country");
 
                 leads.Add(new Lead
                 {
