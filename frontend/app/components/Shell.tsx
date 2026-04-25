@@ -2,14 +2,20 @@
 import { useState } from "react";
 import SettingsView from "./SettingsView";
 import LeadSearchView from "./LeadSearchView";
+import SavedLeadsView from "./SavedLeadsView";
 
-type Page = "leads" | "settings";
+type Page = "leads" | "prospects" | "settings";
 
 const NAV: { id: Page; label: string; icon: React.ReactNode }[] = [
   {
     id: "leads",
     label: "Lead Search",
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
+  },
+  {
+    id: "prospects",
+    label: "Saved Prospects",
+    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   },
   {
     id: "settings",
@@ -27,11 +33,7 @@ export default function Shell() {
         <div className="sidebar-logo">TEK<span>Lead</span> AI</div>
         <nav className="sidebar-nav">
           {NAV.map(n => (
-            <button
-              key={n.id}
-              className={`nav-item ${page === n.id ? "active" : ""}`}
-              onClick={() => setPage(n.id)}
-            >
+            <button key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => setPage(n.id)}>
               {n.icon}
               {n.label}
             </button>
@@ -39,8 +41,9 @@ export default function Shell() {
         </nav>
       </aside>
       <div className="main">
-        {page === "leads"    && <LeadSearchView />}
-        {page === "settings" && <SettingsView />}
+        {page === "leads"     && <LeadSearchView />}
+        {page === "prospects" && <SavedLeadsView />}
+        {page === "settings"  && <SettingsView />}
       </div>
     </div>
   );

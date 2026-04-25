@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../../lib/api";
 
 interface Lead {
@@ -19,6 +19,19 @@ interface SearchResult { leads: Lead[]; total: number; }
 
 const PER_PAGE = 25;
 
+function WaLink({ phone, message, name }: { phone: string; message: string; name: string }) {
+  const clean = phone.replace(/\D/g, "");
+  const text = message.replace("{name}", name).replace("{phone}", phone);
+  const url = `https://wa.me/${clean}?text=${encodeURIComponent(text)}`;
+  return (
+    <a href={url} target="_blank" rel="noreferrer"
+      className="chip chip-green" style={{ fontSize: 11, textDecoration: "none", cursor: "pointer" }}
+      title="Open WhatsApp">
+      💬 {phone}
+    </a>
+  );
+}
+
 export default function LeadSearchView() {
   const [form, setForm] = useState({ name: "", title: "", company: "", industry: "", location: "" });
   const [results, setResults] = useState<Lead[]>([]);
@@ -32,6 +45,13 @@ export default function LeadSearchView() {
   const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
   const [searched, setSearched] = useState(false);
   const [enrichConfirm, setEnrichConfirm] = useState<Lead | null>(null);
+  const [waTemplate, setWaTemplate] = useState("Hi {name}, I'd love to connect!");
+
+  useEffect(() => {
+    api.get<{ values: Record<string, string> }>("/api/settings")
+      .then(d => { if (d.values?.whatsapp_message_template) setWaTemplate(d.values.whatsapp_message_template); })
+      .catch(() => {});
+  }, []);
 
   const f = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
 
@@ -61,7 +81,7 @@ export default function LeadSearchView() {
     setSaving(true); setBanner(null);
     try {
       const res = await api.post<{ saved: number }>("/api/leads/save", toSave);
-      setBanner({ kind: "success", text: `${res.saved} lead(s) saved.` });
+      setBanner({ kind: "success", text: `${res.saved} lead(s) saved to Prospects.` });
       setSelected(new Set());
     } catch (e: any) {
       setBanner({ kind: "error", text: e.message });
@@ -89,7 +109,7 @@ export default function LeadSearchView() {
 
       if (res.phoneWebhookPending) {
         setPhonePending(p => new Set([...p, lead.id]));
-        setBanner({ kind: "info", text: `${res.emails.length ? `Email: ${res.emails[0]}. ` : ""}Phone request sent — polling for result…` });
+        setBanner({ kind: "info", text: `Phone request sent — polling…` });
         const leadId = lead.id;
         let attempts = 0;
         const timer = setInterval(async () => {
@@ -102,11 +122,8 @@ export default function LeadSearchView() {
               setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: updated.phones } : l));
               setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
             }
-          } catch { /* ignore */ }
-          if (attempts >= 24) {
-            clearInterval(timer);
-            setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
-          }
+          } catch { }
+          if (attempts >= 24) { clearInterval(timer); setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; }); }
         }, 5000);
       } else if (res.phones.length > 0) {
         setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")} — auto-saved.` });
@@ -128,7 +145,7 @@ export default function LeadSearchView() {
           <div className="card" style={{ width: 380, margin: 0 }}>
             <div className="card-title">⚠ Enrich uses Apollo credits</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
-              Enriching <strong>{enrichConfirm.name}</strong> consumes credits. Phone reveal is async — Apollo will post it back automatically within 1–3 min.
+              Enriching <strong>{enrichConfirm.name}</strong> consumes credits. Phone reveal is async.
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost" onClick={() => setEnrichConfirm(null)}>Cancel</button>
@@ -141,7 +158,7 @@ export default function LeadSearchView() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Lead Search</h1>
-          <div className="page-sub">Search free · Enrich uses Apollo credits · Phone auto-saved via webhook</div>
+          <div className="page-sub">Search free · Enrich uses Apollo credits · Phone links open WhatsApp</div>
         </div>
         {selected.size > 0 && (
           <button className="btn btn-primary" onClick={onSave} disabled={saving}>
@@ -209,7 +226,7 @@ export default function LeadSearchView() {
                       <th>Company</th>
                       <th>Location</th>
                       <th>Email</th>
-                      <th>Phone</th>
+                      <th>Phone (WhatsApp)</th>
                       <th style={{ width: 100 }}></th>
                     </tr>
                   </thead>
@@ -234,18 +251,14 @@ export default function LeadSearchView() {
                         </td>
                         <td style={{ fontSize: 12 }}>
                           {lead.phones?.[0]
-                            ? <span className="chip chip-green" style={{ fontSize: 11 }}>{lead.phones[0]}</span>
+                            ? <WaLink phone={lead.phones[0]} message={waTemplate} name={lead.name} />
                             : phonePending.has(lead.id)
                               ? <span className="chip chip-orange">pending…</span>
                               : <span style={{ color: "var(--dim)" }}>—</span>}
                         </td>
                         <td>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setEnrichConfirm(lead)}
-                            disabled={revealingId === lead.id}
-                            title="Uses Apollo credits"
-                          >
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEnrichConfirm(lead)}
+                            disabled={revealingId === lead.id} title="Uses Apollo credits">
                             {revealingId === lead.id ? <span className="spinner spinner-dark" /> : "Enrich"}
                           </button>
                         </td>

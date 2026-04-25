@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, API_BASE } from "../../lib/api";
 
-// Mirror SettingKeys.cs exactly.
 const KEYS = {
   AzureOpenAiEndpoint: "azure_openai_endpoint",
   AzureOpenAiKey: "azure_openai_key",
@@ -15,21 +14,11 @@ const KEYS = {
   GraphClientSecret: "graph_client_secret",
   GraphSenderEmail: "graph_sender_email",
   WhatsappCountryCode: "whatsapp_cc",
+  WhatsappMessageTemplate: "whatsapp_message_template",
 };
 
-interface Field {
-  key: string;
-  label: string;
-  placeholder: string;
-  secret?: boolean;
-  full?: boolean;
-}
-
-interface Group {
-  title: string;
-  subtitle: string;
-  fields: Field[];
-}
+interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
+interface Group { title: string; subtitle: string; fields: Field[]; }
 
 const GROUPS: Group[] = [
   {
@@ -70,28 +59,22 @@ const GROUPS: Group[] = [
     subtitle: "Outreach via wa.me deep links",
     fields: [
       { key: KEYS.WhatsappCountryCode, label: "Default Country Code", placeholder: "+91" },
+      { key: KEYS.WhatsappMessageTemplate, label: "Message Template", placeholder: "Hi {name}, I'd love to connect!", full: true, textarea: true },
     ],
   },
 ];
 
 interface Diag {
-  connStringSet: boolean;
-  connStringNormalized: boolean;
-  dbReachable: boolean;
-  tableExists: boolean;
-  rowCount: number;
-  keysStored: number;
-  error?: string | null;
+  connStringSet: boolean; connStringNormalized: boolean;
+  dbReachable: boolean; tableExists: boolean;
+  rowCount: number; keysStored: number; error?: string | null;
 }
 
 export default function SettingsView() {
-  // form: only the values the user has edited. Keys not in form = "leave as-is".
   const [form, setForm] = useState<Record<string, string>>({});
-  // baseline: what backend reports for non-secret keys (so the UI can show current value).
   const [serverValues, setServerValues] = useState<Record<string, string>>({});
-  const [isSet, setIsSet] = useState<Record<string, boolean>>({});
+  const [isSet, setIsSet] = useState<Record<string, bool>>({});
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ kind: "error" | "success" | "info"; text: string } | null>(null);
@@ -103,12 +86,10 @@ export default function SettingsView() {
       const data = await api.get<{ values: Record<string, string>; isSet: Record<string, boolean> }>("/api/settings");
       setServerValues(data.values || {});
       setIsSet(data.isSet || {});
-      setForm({}); // start empty form on every load
+      setForm({});
     } catch (e: any) {
       setBanner({ kind: "error", text: `Load failed: ${e.message}` });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
   const loadDiag = useCallback(async () => {
@@ -116,11 +97,7 @@ export default function SettingsView() {
       const d = await api.get<Diag>("/api/settings/diag");
       setDiag(d);
     } catch (e: any) {
-      setDiag({
-        connStringSet: false, connStringNormalized: false,
-        dbReachable: false, tableExists: false, rowCount: 0, keysStored: 0,
-        error: e.message,
-      });
+      setDiag({ connStringSet: false, connStringNormalized: false, dbReachable: false, tableExists: false, rowCount: 0, keysStored: 0, error: e.message });
     }
   }, []);
 
@@ -130,27 +107,20 @@ export default function SettingsView() {
 
   const valueShown = (f: Field): string => {
     if (f.key in form) return form[f.key];
-    if (f.secret) return ""; // never echo secrets
+    if (f.secret) return "";
     return serverValues[f.key] || "";
   };
 
   const onSave = async () => {
-    if (Object.keys(form).length === 0) {
-      setBanner({ kind: "info", text: "Nothing to save — no fields changed." });
-      return;
-    }
-    setSaving(true);
-    setBanner(null);
+    if (Object.keys(form).length === 0) { setBanner({ kind: "info", text: "Nothing to save." }); return; }
+    setSaving(true); setBanner(null);
     try {
       const res = await api.post<{ ok: boolean; rowsAffected: number }>("/api/settings", { values: form });
-      setBanner({ kind: "success", text: `Saved. ${res.rowsAffected} field(s) written to DB.` });
-      await load();
-      await loadDiag();
+      setBanner({ kind: "success", text: `Saved. ${res.rowsAffected} field(s) written.` });
+      await load(); await loadDiag();
     } catch (e: any) {
       setBanner({ kind: "error", text: `Save failed: ${e.message}` });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   return (
@@ -158,12 +128,10 @@ export default function SettingsView() {
       <div className="header">
         <div>
           <h1 className="h1">TEKLead AI — Settings</h1>
-          <div className="sub">Configure API keys. Phase 1: Settings persistence.</div>
+          <div className="sub">Configure API keys and outreach templates.</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => { load(); loadDiag(); }} disabled={loading}>
-            Reload
-          </button>
+          <button className="btn btn-ghost" onClick={() => { load(); loadDiag(); }} disabled={loading}>Reload</button>
           <button className="btn btn-primary" onClick={onSave} disabled={saving || loading}>
             {saving ? <span className="spinner" /> : null}
             {saving ? "Saving..." : "Save"}
@@ -181,8 +149,7 @@ export default function SettingsView() {
       <div className="card" style={{ background: "var(--accent-light)", borderColor: "#bfdbfe" }}>
         <div className="card-title" style={{ color: "var(--accent)" }}>How saving works</div>
         <div style={{ fontSize: 12, color: "var(--accent)", lineHeight: 1.6 }}>
-          Leave a secret field empty to keep the existing stored value (✓ stored badge). Type a new value only to set or replace.
-          Empty fields you didn't touch are not sent to the server.
+          Leave a secret field empty to keep the existing stored value. Type a new value to set or replace.
         </div>
       </div>
 
@@ -199,12 +166,8 @@ export default function SettingsView() {
               <span className="chip chip-blue">Rows: {diag.rowCount}</span>
               <span className="chip chip-blue">Keys stored: {diag.keysStored}</span>
             </div>
-            {diag.error && (
-              <div style={{ marginTop: 10, fontSize: 12, color: "var(--red)" }}>Error: {diag.error}</div>
-            )}
-            <div style={{ marginTop: 10, fontSize: 11, color: "var(--dim)" }}>
-              API: <code>{API_BASE || "(not set)"}</code>
-            </div>
+            {diag.error && <div style={{ marginTop: 10, fontSize: 12, color: "var(--red)" }}>Error: {diag.error}</div>}
+            <div style={{ marginTop: 10, fontSize: 11, color: "var(--dim)" }}>API: <code>{API_BASE || "(not set)"}</code></div>
           </>
         )}
       </div>
@@ -213,30 +176,37 @@ export default function SettingsView() {
         <div key={group.title} className="card">
           <div className="card-title">{group.title}</div>
           <div className="card-sub">{group.subtitle}</div>
-
           <div className="grid-2">
-            {group.fields.map(f => (
-              <div key={f.key} className={f.full ? "full" : ""}>
+            {group.fields.map(field => (
+              <div key={field.key} className={field.full ? "full" : ""}>
                 <div className="field-label">
-                  <span>{f.label}</span>
-                  {f.secret && isSet[f.key] && <span className="chip chip-green">✓ stored</span>}
+                  <span>{field.label}</span>
+                  {field.secret && isSet[field.key] && <span className="chip chip-green">✓ stored</span>}
                 </div>
                 <div style={{ position: "relative" }}>
-                  <input
-                    className="input"
-                    style={{ paddingRight: f.secret ? 56 : 12 }}
-                    type={f.secret && !reveal[f.key] ? "password" : "text"}
-                    placeholder={f.placeholder}
-                    value={valueShown(f)}
-                    onChange={e => setVal(f.key, e.target.value)}
-                  />
-                  {f.secret && (
-                    <button
-                      className="icon-btn"
+                  {field.textarea ? (
+                    <textarea
+                      className="input"
+                      style={{ minHeight: 80, resize: "vertical", fontFamily: "inherit" }}
+                      placeholder={field.placeholder}
+                      value={valueShown(field)}
+                      onChange={e => setVal(field.key, e.target.value)}
+                    />
+                  ) : (
+                    <input
+                      className="input"
+                      style={{ paddingRight: field.secret ? 56 : 12 }}
+                      type={field.secret && !reveal[field.key] ? "password" : "text"}
+                      placeholder={field.placeholder}
+                      value={valueShown(field)}
+                      onChange={e => setVal(field.key, e.target.value)}
+                    />
+                  )}
+                  {field.secret && (
+                    <button className="icon-btn"
                       style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}
-                      onClick={() => setReveal(p => ({ ...p, [f.key]: !p[f.key] }))}
-                    >
-                      {reveal[f.key] ? "Hide" : "Show"}
+                      onClick={() => setReveal(p => ({ ...p, [field.key]: !p[field.key] }))}>
+                      {reveal[field.key] ? "Hide" : "Show"}
                     </button>
                   )}
                 </div>
@@ -245,7 +215,6 @@ export default function SettingsView() {
           </div>
         </div>
       ))}
-
       <div style={{ height: 40 }} />
     </div>
   );
