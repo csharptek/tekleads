@@ -61,14 +61,11 @@ public class ApolloService
             throw new Exception($"Apollo API error {(int)res.StatusCode}: {body}");
         }
 
+        _log.LogInformation("APOLLO_BODY_FIRST2000: {Body}", body.Length > 2000 ? body[..2000] : body);
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
         var total = root.TryGetProperty("pagination", out var pg) && pg.TryGetProperty("total_entries", out var te)
             ? te.GetInt32() : 0;
-
-        // LOG first person raw — see Railway logs for exact Apollo field names
-        if (root.TryGetProperty("people", out var dbg) && dbg.GetArrayLength() > 0)
-            _log.LogInformation("APOLLO_RAW_PERSON: {0}", dbg[0].ToString());
 
         var leads = new List<Lead>();
         if (root.TryGetProperty("people", out var people))
