@@ -68,7 +68,7 @@ public class LeadsController : ControllerBase
         try
         {
             var request = HttpContext.Request;
-            var webhookUrl = $"{request.Scheme}://{request.Host}/api/leads/phone-webhook/{id}";
+            var webhookUrl = $"https://{request.Host}/api/leads/phone-webhook/{id}";
             var (emails, phones) = await _apollo.Enrich(lead.ApolloId, webhookUrl);
 
             var updated = false;
