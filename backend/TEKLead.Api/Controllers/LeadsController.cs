@@ -19,11 +19,9 @@ public class LeadsController : ControllerBase
         _log = log;
     }
 
-    // GET /api/leads — saved leads
     [HttpGet]
     public async Task<IActionResult> GetSaved() => Ok(await _leads.GetAll());
 
-    // POST /api/leads/search
     [HttpPost("search")]
     public async Task<IActionResult> Search([FromBody] LeadSearchRequest req)
     {
@@ -41,45 +39,60 @@ public class LeadsController : ControllerBase
         }
     }
 
-    // POST /api/leads/save — save selected leads (multi)
     [HttpPost("save")]
     public async Task<IActionResult> Save([FromBody] List<Lead> leads)
     {
-        var saved = new List<Lead>();
+        var saved = 0;
         foreach (var l in leads)
         {
             if (l.Id == Guid.Empty) l.Id = Guid.NewGuid();
             l.SavedAt = DateTime.UtcNow;
-            saved.Add(await _leads.Upsert(l));
+            await _leads.Upsert(l);
+            saved++;
         }
-        return Ok(new { saved = saved.Count });
+        return Ok(new { saved });
     }
 
-    // POST /api/leads/{id}/reveal-phone
-    // Reveal phone via Apollo. If phone found → auto-save/update lead.
+    /// <summary>
+    /// Enrich a lead by Apollo ID → get email + any available phones.
+    /// If phone found → auto-save the lead with phone.
+    /// Phone reveal via webhook is NOT supported (no webhook infrastructure).
+    /// </summary>
     [HttpPost("{id}/reveal-phone")]
     public async Task<IActionResult> RevealPhone(Guid id)
     {
         var lead = await _leads.GetById(id);
-        if (lead == null) return NotFound(new { error = "Lead not found" });
+        if (lead == null) return NotFound(new { error = "Lead not found. Save the lead first." });
         if (string.IsNullOrEmpty(lead.ApolloId))
-            return BadRequest(new { error = "Lead has no Apollo ID — cannot reveal phone." });
+            return BadRequest(new { error = "Lead has no Apollo ID." });
 
         try
         {
-            var phones = await _apollo.RevealPhone(lead.ApolloId);
-            if (phones.Length > 0)
+            var (emails, phones) = await _apollo.Enrich(lead.ApolloId);
+
+            var updated = false;
+            if (emails.Length > 0 && lead.Emails.Length == 0)  { lead.Emails = emails; updated = true; }
+            if (phones.Length > 0)                             { lead.Phones = phones; updated = true; }
+
+            if (updated)
             {
-                lead.Phones = phones;
-                await _leads.Upsert(lead); // auto-save with phone
-                _log.LogInformation("Phone revealed + auto-saved for lead {0}", id);
-                return Ok(new { phones, autoSaved = true });
+                await _leads.Upsert(lead);
+                _log.LogInformation("Auto-saved enriched data for lead {0}", id);
             }
-            return Ok(new { phones = Array.Empty<string>(), autoSaved = false });
+
+            return Ok(new
+            {
+                emails,
+                phones,
+                autoSaved = updated,
+                note = phones.Length == 0
+                    ? "No phone available. Apollo phone reveal requires a webhook (async) — not supported in this setup."
+                    : null
+            });
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Reveal phone failed for {0}", id);
+            _log.LogError(ex, "Enrich failed for {0}", id);
             return StatusCode(500, new { error = ex.Message });
         }
     }
