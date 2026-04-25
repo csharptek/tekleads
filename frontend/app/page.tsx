@@ -1,5 +1,2 @@
-import SettingsView from "./components/SettingsView";
-
-export default function Page() {
-  return <SettingsView />;
-}
+import Shell from "./components/Shell";
+export default function Page() { return <Shell />; }

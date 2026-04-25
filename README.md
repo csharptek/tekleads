@@ -1,36 +1,40 @@
-# TEKLead AI
+# TEKLead AI — v2 (Phase 1: Settings)
 
-## Stack
-- Frontend: Next.js → Railway
-- Backend: .NET 8 API → Railway
-- Database: Railway PostgreSQL + pgvector
-- AI: Azure OpenAI
-- Storage: Azure Blob
-- Email: SendGrid | WhatsApp: Twilio | Leads: Apollo.io
+Fresh rewrite. Phase 1 = Settings only. Save + verify works end-to-end before adding more.
 
-## Deploy
+## Structure
 
-### 1. Railway PostgreSQL
-New project → Add PostgreSQL service → copy `DATABASE_URL`
+```
+backend/TEKLead.Api/   .NET 8 API
+frontend/              Next.js 14 (App Router)
+```
 
-### 2. Backend
-Add service → GitHub repo (backend folder) → set env vars:
-- `PG_CONNECTION_STRING` = DATABASE_URL from above
+## Railway Deploy
 
-Generate domain → copy URL
+### Postgres
+1. Add Postgres plugin to project.
+2. Note the `DATABASE_URL` — you'll wire it as `PG_CONNECTION_STRING` on the API service.
 
-### 3. Frontend
-Add service → GitHub repo (frontend folder) → set env vars:
-- `NEXT_PUBLIC_API_URL` = backend URL from above
+### Backend service (root: `backend/TEKLead.Api`)
+- Build/start: Railway auto-detects .NET via `Dockerfile`.
+- Env vars:
+  - `PG_CONNECTION_STRING` = (Railway Postgres connection string, `postgresql://...`)
+  - `ASPNETCORE_URLS` = `http://0.0.0.0:${PORT}`
+- Generate a public domain.
 
-Generate domain → open app
+### Frontend service (root: `frontend`)
+- Env var:
+  - `NEXT_PUBLIC_API_URL` = `https://<backend-domain>` (set BEFORE first deploy — baked at build time)
+- Generate public domain.
 
-### 4. Settings page — enter:
-- Azure OpenAI: endpoint, key, deployment name
-- Azure Blob: connection string
-- Apollo: API key
-- SendGrid: API key, from email
-- Twilio: account SID, auth token, WhatsApp from
-- PostgreSQL: same connection string as PG_CONNECTION_STRING
+## Verify Phase 1
 
-DB tables and pgvector extension are auto-created on first run.
+1. Open backend `/health` → `{"status":"ok"}`
+2. Open backend `/api/settings/diag` → shows DB connectivity + table existence
+3. Open frontend `/` → Settings page loads
+4. Enter Apollo key + Azure OpenAI keys → Save
+5. Reload page → secret fields show `✓ stored` badges
+6. Open `/api/settings/diag` → shows `keysStored > 0`
+
+## Phase 2 (next)
+Lead search + save. Will be added only after Phase 1 is confirmed working.
