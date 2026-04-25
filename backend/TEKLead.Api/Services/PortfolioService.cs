@@ -471,22 +471,23 @@ DOCUMENT:
             name = indexName,
             fields = new object[]
             {
-                new { name = "id",        type = "Edm.String",              key = true,  searchable = false, filterable = true  },
-                new { name = "title",     type = "Edm.String",              key = false, searchable = true,  filterable = true  },
-                new { name = "industry",  type = "Edm.String",              key = false, searchable = true,  filterable = true  },
-                new { name = "tags",      type = "Collection(Edm.String)",  key = false, searchable = true,  filterable = true  },
-                new { name = "problem",   type = "Edm.String",              key = false, searchable = true,  filterable = false },
-                new { name = "solution",  type = "Edm.String",              key = false, searchable = true,  filterable = false },
-                new { name = "tech_stack",type = "Edm.String",              key = false, searchable = true,  filterable = false },
-                new { name = "outcomes",  type = "Edm.String",              key = false, searchable = true,  filterable = false },
-                new { name = "links",     type = "Edm.String",              key = false, searchable = false, filterable = false },
+                new { name = "id",        type = "Edm.String",              key = true,  searchable = false, filterable = true,  retrievable = true  },
+                new { name = "title",     type = "Edm.String",              key = false, searchable = true,  filterable = true,  retrievable = true  },
+                new { name = "industry",  type = "Edm.String",              key = false, searchable = true,  filterable = true,  retrievable = true  },
+                new { name = "tags",      type = "Collection(Edm.String)",  key = false, searchable = true,  filterable = true,  retrievable = true  },
+                new { name = "problem",   type = "Edm.String",              key = false, searchable = true,  filterable = false, retrievable = true  },
+                new { name = "solution",  type = "Edm.String",              key = false, searchable = true,  filterable = false, retrievable = true  },
+                new { name = "tech_stack",type = "Edm.String",              key = false, searchable = true,  filterable = false, retrievable = true  },
+                new { name = "outcomes",  type = "Edm.String",              key = false, searchable = true,  filterable = false, retrievable = true  },
+                new { name = "links",     type = "Edm.String",              key = false, searchable = false, filterable = false, retrievable = true  },
                 new
                 {
                     name = "embedding",
                     type = "Collection(Edm.Single)",
                     searchable = true,
-                    vectorSearchDimensions = 1536,
-                    vectorSearchProfileName = "portfolio-profile"
+                    retrievable = false,
+                    dimensions = 1536,
+                    vectorSearchProfile = "portfolio-profile"
                 }
             },
             vectorSearch = new
