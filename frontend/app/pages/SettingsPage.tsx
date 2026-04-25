@@ -7,9 +7,10 @@ interface SettingField {
   key: string;
   label: string;
   placeholder: string;
-  type?: string;
+  type?: "text" | "password";
   hint?: string;
   full?: boolean;
+  secret?: boolean;
 }
 
 interface SettingGroup {
@@ -24,78 +25,92 @@ const SETTING_GROUPS: SettingGroup[] = [
     subtitle: "AI email generation",
     fields: [
       { key: "azureOpenAiEndpoint", label: "Endpoint URL", placeholder: "https://your-resource.openai.azure.com/", full: true },
-      { key: "azureOpenAiKey", label: "API Key", placeholder: "••••••••••••", type: "password" },
-      { key: "azureOpenAiDeployment", label: "Deployment Name", placeholder: "gpt-4o", hint: "Azure OpenAI deployment name" },
+      { key: "azureOpenAiKey", label: "API Key", placeholder: "Enter key to set / replace", type: "password", secret: true },
+      { key: "azureOpenAiDeployment", label: "Deployment Name", placeholder: "gpt-4o" },
     ],
   },
   {
     title: "Azure Blob Storage",
     subtitle: "File attachments",
     fields: [
-      { key: "azureBlobConnectionString", label: "Connection String", placeholder: "DefaultEndpointsProtocol=https;AccountName=...", type: "password", full: true },
+      { key: "azureBlobConnectionString", label: "Connection String", placeholder: "DefaultEndpointsProtocol=https;AccountName=...", type: "password", secret: true, full: true },
     ],
   },
   {
     title: "Apollo.io",
     subtitle: "Lead data provider",
     fields: [
-      { key: "apolloApiKey", label: "API Key", placeholder: "••••••••••••", type: "password", full: true },
+      { key: "apolloApiKey", label: "API Key", placeholder: "Enter key to set / replace", type: "password", secret: true, full: true },
     ],
   },
   {
-    title: "SendGrid",
-    subtitle: "Email delivery",
+    title: "Microsoft Graph (Email)",
+    subtitle: "Primary email provider via Entra ID app registration",
     fields: [
-      { key: "sendgridApiKey", label: "API Key", placeholder: "SG.••••••••••••", type: "password" },
-      { key: "sendgridFromEmail", label: "From Email", placeholder: "outreach@yourcompany.com" },
+      { key: "graphTenantId", label: "Tenant ID", placeholder: "00000000-0000-0000-0000-000000000000" },
+      { key: "graphClientId", label: "Client (App) ID", placeholder: "00000000-0000-0000-0000-000000000000" },
+      { key: "graphClientSecret", label: "Client Secret", placeholder: "Enter secret to set / replace", type: "password", secret: true },
+      { key: "graphSenderEmail", label: "Sender Email", placeholder: "outreach@yourcompany.com" },
     ],
   },
   {
-    title: "Twilio WhatsApp",
-    subtitle: "WhatsApp messaging",
+    title: "WhatsApp",
+    subtitle: "Outreach via wa.me deep links",
     fields: [
-      { key: "twilioAccountSid", label: "Account SID", placeholder: "AC••••••••••••", type: "password" },
-      { key: "twilioAuthToken", label: "Auth Token", placeholder: "••••••••••••", type: "password" },
-      { key: "twilioWhatsappFrom", label: "WhatsApp Number", placeholder: "whatsapp:+14155238886", full: true },
-    ],
-  },
-  {
-    title: "PostgreSQL",
-    subtitle: "Primary data store (Railway)",
-    fields: [
-      { key: "pgConnectionString", label: "Connection String", placeholder: "Host=...;Database=...;Username=...;Password=...", type: "password", full: true, hint: "Usually set via PG_CONNECTION_STRING env var on Railway" },
+      { key: "whatsappDefaultCountryCode", label: "Default Country Code", placeholder: "+91", hint: "Used when a lead's number has no country code" },
     ],
   },
 ];
 
 const ICON = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 );
 
+interface SettingsState {
+  values: Record<string, string>;
+  isSet: Record<string, boolean>;
+}
+
 export default function SettingsPage() {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [state, setState] = useState<SettingsState>({ values: {}, isSet: {} });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<Record<string, boolean> | null>(null);
 
   const loadSettings = useCallback(async () => {
     try {
-      const data: Record<string, string> = await get("/api/settings");
-      setValues(data || {});
+      const data: any = await get("/api/settings");
+      const { isSet = {}, ...values } = data || {};
+      setState({ values, isSet });
     } catch (e: any) {
       setError(e.message);
     }
   }, []);
 
-  useEffect(() => { loadSettings(); }, [loadSettings]);
+  const loadStatus = useCallback(async () => {
+    try {
+      const data = await get("/api/settings/status");
+      setStatus(data);
+    } catch { /* non-fatal */ }
+  }, []);
+
+  useEffect(() => { loadSettings(); loadStatus(); }, [loadSettings, loadStatus]);
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      await post("/api/settings", values);
+      // Only send non-empty values; empty secrets = keep existing
+      const payload: Record<string, string> = {};
+      for (const [k, v] of Object.entries(state.values)) {
+        if (v !== undefined && v !== null && String(v).length > 0) payload[k] = String(v);
+      }
+      await post("/api/settings", payload);
       setSaved(true);
+      await loadSettings();
+      await loadStatus();
       setTimeout(() => setSaved(false), 2500);
     } catch (e: any) {
       setError(e.message);
@@ -103,6 +118,9 @@ export default function SettingsPage() {
       setSaving(false);
     }
   };
+
+  const setValue = (key: string, v: string) =>
+    setState(p => ({ ...p, values: { ...p.values, [key]: v } }));
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -129,9 +147,22 @@ export default function SettingsPage() {
         <div style={{ maxWidth: 840, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
           <div className="card" style={{ padding: "14px 18px", background: "var(--accent-light)", borderColor: "var(--accent-light)" }}>
             <div style={{ fontSize: 12, color: "var(--accent-text)", lineHeight: 1.6 }}>
-              <strong>Note:</strong> All keys stored encrypted in PostgreSQL. Loaded at runtime by the .NET API — never exposed to the frontend. Masked values shown as dots won't overwrite stored keys on save.
+              <strong>How saving works:</strong> Leave a secret field empty to keep the existing stored value. Enter a new value only when you want to set or replace it. A <strong>✓ stored</strong> badge means that secret is already saved in the database.
             </div>
           </div>
+
+          {status && (
+            <div className="card" style={{ padding: "14px 18px" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Integration Status</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <StatusChip label="DB Reachable" ok={status.dbReachable} />
+                <StatusChip label="Azure OpenAI" ok={status.azureOpenAi} />
+                <StatusChip label="Apollo" ok={status.apollo} />
+                <StatusChip label="Graph Email" ok={status.graphEmail} />
+                <StatusChip label="WhatsApp" ok={status.whatsapp} />
+              </div>
+            </div>
+          )}
 
           {SETTING_GROUPS.map(group => (
             <div key={group.title} className="card" style={{ padding: "20px 22px" }}>
@@ -141,40 +172,49 @@ export default function SettingsPage() {
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                {group.fields.map(field => (
-                  <div key={field.key} style={{ gridColumn: field.full ? "1 / -1" : undefined }}>
-                    <div className="label">{field.label}</div>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        className="input"
-                        style={{ paddingRight: field.type === "password" ? 56 : 12 }}
-                        type={field.type === "password" && !reveal[field.key] ? "password" : "text"}
-                        placeholder={field.placeholder}
-                        value={values[field.key] || ""}
-                        onChange={e => setValues(p => ({ ...p, [field.key]: e.target.value }))}
-                      />
-                      {field.type === "password" && (
-                        <button
-                          onClick={() => setReveal(p => ({ ...p, [field.key]: !p[field.key] }))}
-                          style={{
-                            position: "absolute", right: 8, top: "50%",
-                            transform: "translateY(-50%)",
-                            background: "none", border: "none",
-                            cursor: "pointer",
-                            fontSize: 11,
-                            color: "var(--text-muted)",
-                            fontWeight: 500,
-                          }}
-                        >
-                          {reveal[field.key] ? "Hide" : "Show"}
-                        </button>
+                {group.fields.map(field => {
+                  const isStored = !!state.isSet[field.key];
+                  const isPassword = field.type === "password";
+                  return (
+                    <div key={field.key} style={{ gridColumn: field.full ? "1 / -1" : undefined }}>
+                      <div className="label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>{field.label}</span>
+                        {field.secret && isStored && (
+                          <span className="chip chip-green" style={{ fontSize: 10 }}>✓ stored</span>
+                        )}
+                      </div>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          className="input"
+                          style={{ paddingRight: isPassword ? 56 : 12 }}
+                          type={isPassword && !reveal[field.key] ? "password" : "text"}
+                          placeholder={field.placeholder}
+                          value={state.values[field.key] || ""}
+                          onChange={e => setValue(field.key, e.target.value)}
+                        />
+                        {isPassword && (
+                          <button
+                            onClick={() => setReveal(p => ({ ...p, [field.key]: !p[field.key] }))}
+                            style={{
+                              position: "absolute", right: 8, top: "50%",
+                              transform: "translateY(-50%)",
+                              background: "none", border: "none",
+                              cursor: "pointer",
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              fontWeight: 500,
+                            }}
+                          >
+                            {reveal[field.key] ? "Hide" : "Show"}
+                          </button>
+                        )}
+                      </div>
+                      {field.hint && (
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5 }}>{field.hint}</div>
                       )}
                     </div>
-                    {field.hint && (
-                      <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5 }}>{field.hint}</div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -183,5 +223,13 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function StatusChip({ label, ok }: { label: string; ok: boolean }) {
+  return (
+    <span className={`chip ${ok ? "chip-green" : "chip-red"}`} style={{ fontSize: 11 }}>
+      {ok ? "●" : "○"} {label}
+    </span>
   );
 }

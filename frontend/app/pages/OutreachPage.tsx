@@ -3,13 +3,22 @@ import { useState, useEffect, useCallback } from "react";
 import PageHeader from "../components/PageHeader";
 import { get, post } from "../../lib/api";
 
+interface Lead {
+  id: string;
+  name: string;
+  title: string;
+  company: string;
+  emails: string[];
+  phones: string[];
+}
+
 interface OutreachRecord {
   id: string;
-  recipient: string;
-  company: string;
+  leadName: string;
   channel: "email" | "whatsapp";
   subject?: string;
-  status: "sent" | "pending" | "failed";
+  body: string;
+  status: "sent" | "queued" | "failed";
   sentAt: string;
 }
 
@@ -26,36 +35,58 @@ const WhatsAppIcon = () => (
 );
 
 export default function OutreachPage() {
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [selectedLeadId, setSelectedLeadId] = useState<string>("");
   const [channel, setChannel] = useState<"email" | "whatsapp">("email");
-  const [form, setForm] = useState({ to: "", subject: "", body: "", phone: "" });
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [result, setResult] = useState<{ type: "success" | "info"; text: string } | null>(null);
   const [history, setHistory] = useState<OutreachRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const loadLeads = useCallback(async () => {
+    try {
+      const data: Lead[] = await get("/api/leads");
+      setLeads(data || []);
+    } catch (e: any) { console.error(e.message); }
+  }, []);
 
   const loadHistory = useCallback(async () => {
     try {
       const data: OutreachRecord[] = await get("/api/outreach/history");
       setHistory(data || []);
-    } catch (e: any) {
-      console.error(e.message);
-    }
+    } catch (e: any) { console.error(e.message); }
   }, []);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  useEffect(() => { loadLeads(); loadHistory(); }, [loadLeads, loadHistory]);
+
+  const selectedLead = leads.find(l => l.id === selectedLeadId);
 
   const handleSend = async () => {
+    if (!selectedLeadId) { setError("Select a lead first"); return; }
     setSending(true);
     setError(null);
+    setResult(null);
     try {
-      const payload = channel === "email"
-        ? { channel: "email", to: form.to, subject: form.subject, body: form.body }
-        : { channel: "whatsapp", phone: form.phone, body: form.body };
-      await post("/api/outreach/send", payload);
-      setSent(true);
-      setForm({ to: "", subject: "", body: "", phone: "" });
+      if (channel === "email") {
+        if (!subject || !body) { setError("Subject and body required"); setSending(false); return; }
+        await post("/api/outreach/email", { leadId: selectedLeadId, subject, body });
+        setResult({ type: "success", text: "Email sent via Microsoft Graph" });
+        setSubject(""); setBody("");
+      } else {
+        if (!body) { setError("Message required"); setSending(false); return; }
+        const res: { url: string; number: string } = await post("/api/outreach/whatsapp", {
+          leadId: selectedLeadId,
+          message: body,
+        });
+        // Open wa.me in new tab
+        window.open(res.url, "_blank", "noopener,noreferrer");
+        setResult({ type: "info", text: `WhatsApp opened for +${res.number}` });
+        setBody("");
+      }
       loadHistory();
-      setTimeout(() => setSent(false), 3000);
+      setTimeout(() => setResult(null), 4000);
     } catch (e: any) {
       setError(e.message || "Send failed");
     } finally {
@@ -63,11 +94,10 @@ export default function OutreachPage() {
     }
   };
 
-  const statusClass = { sent: "chip-green", pending: "chip-orange", failed: "chip-red" };
+  const statusClass: Record<string, string> = { sent: "chip-green", queued: "chip-orange", failed: "chip-red" };
   const relTime = (iso: string) => {
     try {
-      const d = new Date(iso);
-      const diff = (Date.now() - d.getTime()) / 1000;
+      const diff = (Date.now() - new Date(iso).getTime()) / 1000;
       if (diff < 60) return "just now";
       if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
       if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -75,17 +105,11 @@ export default function OutreachPage() {
     } catch { return iso; }
   };
 
-  const counts = {
-    sent: history.filter(h => h.status === "sent").length,
-    pending: history.filter(h => h.status === "pending").length,
-    failed: history.filter(h => h.status === "failed").length,
-  };
-
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <PageHeader
         title="Outreach"
-        subtitle="Send via SendGrid email or Twilio WhatsApp"
+        subtitle="Send email via Microsoft Graph, or open WhatsApp via wa.me"
         icon={ICON}
       />
 
@@ -98,7 +122,7 @@ export default function OutreachPage() {
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Compose */}
-        <div style={{ width: 400, borderRight: "1px solid var(--border)", background: "var(--bg-card)", display: "flex", flexDirection: "column" }}>
+        <div style={{ width: 420, borderRight: "1px solid var(--border)", background: "var(--bg-card)", display: "flex", flexDirection: "column" }}>
           <div className="tab-bar">
             <button className={`tab ${channel === "email" ? "tab-active" : ""}`} onClick={() => setChannel("email")}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><EmailIcon /> Email</span>
@@ -109,62 +133,66 @@ export default function OutreachPage() {
           </div>
 
           <div className="scroll-y" style={{ flex: 1, padding: "18px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <div className="label">Lead</div>
+              <select className="input" value={selectedLeadId} onChange={e => setSelectedLeadId(e.target.value)}>
+                <option value="">— Select a saved lead —</option>
+                {leads.map(l => (
+                  <option key={l.id} value={l.id}>{l.name} — {l.company}</option>
+                ))}
+              </select>
+              {selectedLead && (
+                <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-dim)" }}>
+                  {channel === "email"
+                    ? (selectedLead.emails?.[0] || "⚠ No email on file")
+                    : (selectedLead.phones?.[0] || "⚠ No phone on file")}
+                </div>
+              )}
+            </div>
+
             {channel === "email" ? (
               <>
                 <div>
-                  <div className="label">To</div>
-                  <input className="input" placeholder="recipient@company.com" value={form.to} onChange={e => setForm(p => ({ ...p, to: e.target.value }))} />
-                </div>
-                <div>
                   <div className="label">Subject</div>
-                  <input className="input" placeholder="Email subject" value={form.subject} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} />
+                  <input className="input" placeholder="Email subject" value={subject} onChange={e => setSubject(e.target.value)} />
                 </div>
                 <div>
                   <div className="label">Body</div>
-                  <textarea className="textarea" rows={12} placeholder="Email body..." value={form.body} onChange={e => setForm(p => ({ ...p, body: e.target.value }))} />
+                  <textarea className="textarea" rows={12} placeholder="Email body..." value={body} onChange={e => setBody(e.target.value)} />
                 </div>
               </>
             ) : (
               <>
                 <div className="card" style={{ padding: "12px 14px", background: "var(--accent-light)", borderColor: "var(--accent-light)" }}>
-                  <div style={{ fontSize: 12, color: "var(--accent-text)", fontWeight: 600, marginBottom: 2 }}>Twilio WhatsApp Business</div>
-                  <div style={{ fontSize: 11, color: "var(--accent-text)", opacity: 0.8 }}>Sends via Twilio Business API</div>
-                </div>
-                <div>
-                  <div className="label">Phone Number</div>
-                  <input className="input" placeholder="+1 555 000 0000" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
+                  <div style={{ fontSize: 12, color: "var(--accent-text)", fontWeight: 600, marginBottom: 2 }}>wa.me Deep Link</div>
+                  <div style={{ fontSize: 11, color: "var(--accent-text)", opacity: 0.8 }}>Opens WhatsApp Web/app with pre-filled message. You click Send inside WhatsApp.</div>
                 </div>
                 <div>
                   <div className="label">Message</div>
-                  <textarea className="textarea" rows={10} placeholder="WhatsApp message..." value={form.body} onChange={e => setForm(p => ({ ...p, body: e.target.value }))} />
+                  <textarea className="textarea" rows={10} placeholder="WhatsApp message..." value={body} onChange={e => setBody(e.target.value)} />
                 </div>
               </>
             )}
           </div>
 
           <div style={{ padding: "14px 16px", borderTop: "1px solid var(--border)" }}>
-            {sent && (
+            {result && (
               <div className="card fade-in" style={{ padding: "10px 14px", marginBottom: 10, background: "var(--green-light)", borderColor: "var(--green-light)", display: "flex", alignItems: "center", gap: 8 }}>
                 <span className="status-dot" />
-                <span style={{ fontSize: 12, color: "#166534", fontWeight: 500 }}>Sent successfully</span>
+                <span style={{ fontSize: 12, color: "#166534", fontWeight: 500 }}>{result.text}</span>
               </div>
             )}
-            <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSend} disabled={sending}>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSend} disabled={sending || !selectedLeadId}>
               {sending ? <span className="spinner" /> : null}
-              {sending ? "Sending..." : `Send ${channel === "email" ? "Email" : "WhatsApp"}`}
+              {sending ? "Processing..." : channel === "email" ? "Send Email" : "Open WhatsApp"}
             </button>
           </div>
         </div>
 
         {/* History */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)" }}>
             <h3 style={{ fontSize: 14, fontWeight: 600 }}>Outreach History</h3>
-            <div style={{ display: "flex", gap: 6 }}>
-              <span className="chip chip-green">{counts.sent} sent</span>
-              <span className="chip chip-orange">{counts.pending} pending</span>
-              <span className="chip chip-red">{counts.failed} failed</span>
-            </div>
           </div>
 
           <div className="scroll-y" style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -179,8 +207,7 @@ export default function OutreachPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{r.recipient}</span>
-                      {r.company && <span className="chip">{r.company}</span>}
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{r.leadName}</span>
                       <span className={`chip ${r.channel === "email" ? "chip-accent" : "chip-green"}`} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                         {r.channel === "email" ? <EmailIcon /> : <WhatsAppIcon />}
                         {r.channel}
@@ -191,7 +218,7 @@ export default function OutreachPage() {
                     )}
                     <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{relTime(r.sentAt)}</div>
                   </div>
-                  <span className={`chip ${(statusClass as any)[r.status]}`}>{r.status}</span>
+                  <span className={`chip ${statusClass[r.status] || "chip"}`}>{r.status}</span>
                 </div>
               </div>
             ))}

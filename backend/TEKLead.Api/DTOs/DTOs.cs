@@ -9,7 +9,7 @@ public record LeadSearchRequest(
 public record EmailGenerateRequest(string LeadId, string? AdditionalContext, string Tone = "professional");
 public record EmailGenerateResponse(string Subject, string Body);
 public record SendEmailRequest(string LeadId, string Subject, string Body);
-public record SendWhatsAppRequest(string To, string Message);
+public record SendWhatsAppRequest(string LeadId, string Message);
+public record WhatsAppLinkResponse(string Url, string Number);
 public record RevealPhoneRequest(string ApolloPersonId);
-
 public record UpdatePhonesRequest(string[] Phones);

@@ -48,10 +48,15 @@ public class AppSettings
     public string AzureOpenAiDeployment { get; set; } = "gpt-4";
     public string AzureBlobConnectionString { get; set; } = "";
     public string ApolloApiKey { get; set; } = "";
-    public string SendgridApiKey { get; set; } = "";
-    public string SendgridFromEmail { get; set; } = "";
-    public string TwilioAccountSid { get; set; } = "";
-    public string TwilioAuthToken { get; set; } = "";
-    public string TwilioWhatsappFrom { get; set; } = "";
+
+    // Microsoft Graph (email provider)
+    public string GraphTenantId { get; set; } = "";
+    public string GraphClientId { get; set; } = "";
+    public string GraphClientSecret { get; set; } = "";
+    public string GraphSenderEmail { get; set; } = "";
+
+    // WhatsApp via wa.me
+    public string WhatsappDefaultCountryCode { get; set; } = "+91";
+
     public string PgConnectionString { get; set; } = "";
 }
