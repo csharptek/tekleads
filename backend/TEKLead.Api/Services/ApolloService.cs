@@ -28,38 +28,34 @@ public class ApolloService
 
     private HttpClient MakeClient(string key)
     {
-        var client = _http.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Api-Key", key);
-        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        return client;
+        var c = _http.CreateClient();
+        c.DefaultRequestHeaders.Add("X-Api-Key", key);
+        c.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        return c;
     }
 
-    /// <summary>
-    /// Search people via GET /api/v1/mixed_people/api_search (new endpoint).
-    /// Does NOT return emails or phones — use Enrich for that.
-    /// </summary>
+    /// POST /api/v1/mixed_people/api_search — query params, no body.
+    /// No emails/phones returned. Similar matches included by default.
     public async Task<(List<Lead> Leads, int Total)> Search(
         string? name, string? title, string? company,
         string? industry, string? location,
         int page = 1, int perPage = 25)
     {
         var key = await GetKey();
-        var qs = new List<string>
-        {
-            $"page={page}",
-            $"per_page={perPage}",
-        };
-        if (!string.IsNullOrEmpty(name))     qs.Add($"q_keywords={Uri.EscapeDataString(name)}");
+
+        // Build keywords: name + company + industry all go into q_keywords
+        var kw = string.Join(" ", new[] { name, company, industry }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+
+        var qs = new List<string> { $"page={page}", $"per_page={perPage}" };
+        if (!string.IsNullOrEmpty(kw))       qs.Add($"q_keywords={Uri.EscapeDataString(kw)}");
         if (!string.IsNullOrEmpty(title))    qs.Add($"person_titles[]={Uri.EscapeDataString(title)}");
-        if (!string.IsNullOrEmpty(company))  qs.Add($"q_organization_name={Uri.EscapeDataString(company)}");
         if (!string.IsNullOrEmpty(location)) qs.Add($"person_locations[]={Uri.EscapeDataString(location)}");
-        // industry is not a direct filter in new endpoint — use q_keywords fallback
-        if (!string.IsNullOrEmpty(industry) && string.IsNullOrEmpty(name))
-            qs.Add($"q_keywords={Uri.EscapeDataString(industry)}");
 
         var url = $"https://api.apollo.io/api/v1/mixed_people/api_search?{string.Join("&", qs)}";
-        var client = MakeClient(key);
-        var res = await client.GetAsync(url);
+        _log.LogInformation("Apollo search URL: {0}", url);
+
+        var res = await MakeClient(key).PostAsync(url, null); // POST with no body, params in QS
         var body = await res.Content.ReadAsStringAsync();
 
         if (!res.IsSuccessStatusCode)
@@ -70,8 +66,8 @@ public class ApolloService
 
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
-        var total = root.TryGetProperty("pagination", out var pg)
-            ? (pg.TryGetProperty("total_entries", out var te) ? te.GetInt32() : 0) : 0;
+        var total = root.TryGetProperty("pagination", out var pg) && pg.TryGetProperty("total_entries", out var te)
+            ? te.GetInt32() : 0;
 
         var leads = new List<Lead>();
         if (root.TryGetProperty("people", out var people))
@@ -81,15 +77,15 @@ public class ApolloService
                 leads.Add(new Lead
                 {
                     Id          = Guid.NewGuid(),
-                    ApolloId    = p.TryGetProperty("id", out var aid) ? aid.GetString() : null,
-                    Name        = p.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
-                    Title       = p.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "",
-                    Company     = p.TryGetProperty("organization", out var org) && org.ValueKind == JsonValueKind.Object && org.TryGetProperty("name", out var on) ? on.GetString() ?? "" : "",
-                    Industry    = p.TryGetProperty("organization", out var org2) && org2.ValueKind == JsonValueKind.Object && org2.TryGetProperty("industry", out var ind) ? ind.GetString() ?? "" : "",
-                    Location    = p.TryGetProperty("city", out var city) ? city.GetString() ?? "" : "",
-                    Emails      = Array.Empty<string>(), // not returned by search endpoint
-                    Phones      = Array.Empty<string>(), // not returned by search endpoint
-                    LinkedinUrl = p.TryGetProperty("linkedin_url", out var li) ? li.GetString() : null,
+                    ApolloId    = Str(p, "id"),
+                    Name        = Str(p, "name"),
+                    Title       = Str(p, "title"),
+                    Company     = p.TryGetProperty("organization", out var org) && org.ValueKind == JsonValueKind.Object ? Str(org, "name") : "",
+                    Industry    = p.TryGetProperty("organization", out var org2) && org2.ValueKind == JsonValueKind.Object ? Str(org2, "industry") : "",
+                    Location    = Str(p, "city"),
+                    Emails      = Array.Empty<string>(),
+                    Phones      = Array.Empty<string>(),
+                    LinkedinUrl = Str(p, "linkedin_url"),
                 });
             }
         }
@@ -97,18 +93,12 @@ public class ApolloService
         return (leads, total);
     }
 
-    /// <summary>
-    /// Enrich a person by Apollo ID to get email.
-    /// Phone reveal is async (webhook) — not supported here. Returns email only.
-    /// </summary>
+    /// Enrich by Apollo ID — returns email synchronously, phones if available without webhook.
     public async Task<(string[] Emails, string[] Phones)> Enrich(string apolloPersonId)
     {
         var key = await GetKey();
-        var client = MakeClient(key);
-
-        // Use GET with id param for enrichment (synchronous, no webhook needed for email)
-        var url = $"https://api.apollo.io/api/v1/people/match?id={Uri.EscapeDataString(apolloPersonId)}&reveal_personal_emails=false";
-        var res = await client.GetAsync(url);
+        var url = $"https://api.apollo.io/api/v1/people/match?id={Uri.EscapeDataString(apolloPersonId)}&reveal_personal_emails=false&reveal_phone_number=false";
+        var res = await MakeClient(key).PostAsync(url, null);
         var body = await res.Content.ReadAsStringAsync();
 
         if (!res.IsSuccessStatusCode)
@@ -123,24 +113,20 @@ public class ApolloService
 
         if (doc.RootElement.TryGetProperty("person", out var person))
         {
-            if (person.TryGetProperty("email", out var em) && em.ValueKind == JsonValueKind.String)
-            {
-                var e = em.GetString();
-                if (!string.IsNullOrEmpty(e)) emails.Add(e);
-            }
+            var email = Str(person, "email");
+            if (!string.IsNullOrEmpty(email)) emails.Add(email);
 
-            // phone_numbers may be present without webhook for some accounts
             if (person.TryGetProperty("phone_numbers", out var pns) && pns.ValueKind == JsonValueKind.Array)
-            {
                 foreach (var pn in pns.EnumerateArray())
                 {
-                    var num = pn.TryGetProperty("sanitized_number", out var sn) ? sn.GetString()
-                            : pn.TryGetProperty("raw_number", out var rn) ? rn.GetString() : null;
-                    if (!string.IsNullOrEmpty(num)) phones.Add(num!);
+                    var num = Str(pn, "sanitized_number") is { Length: > 0 } s ? s : Str(pn, "raw_number");
+                    if (!string.IsNullOrEmpty(num)) phones.Add(num);
                 }
-            }
         }
 
         return (emails.ToArray(), phones.ToArray());
     }
+
+    private static string Str(JsonElement el, string key) =>
+        el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
 }
