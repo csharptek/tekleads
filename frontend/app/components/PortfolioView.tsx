@@ -16,9 +16,15 @@ interface Project {
   createdAt: string;
 }
 
-const empty = (): Omit<Project, "id" | "embeddingIndexed" | "createdAt"> => ({
+interface FormState {
+  title: string; industry: string; tags: string[];
+  problem: string; solution: string; techStack: string;
+  outcomes: string; links: string[];
+}
+
+const empty = (): FormState => ({
   title: "", industry: "", tags: [], problem: "",
-  solution: "", techStack: "", outcomes: "", links: "",
+  solution: "", techStack: "", outcomes: "", links: [""],
 });
 
 function Banner({ b, onClose }: { b: { kind: "error"|"success"|"info"; text: string }; onClose: () => void }) {
@@ -32,7 +38,7 @@ function Banner({ b, onClose }: { b: { kind: "error"|"success"|"info"; text: str
 
 export default function PortfolioView() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [form, setForm] = useState(empty());
+  const [form, setForm] = useState<FormState>(empty());
   const [tagInput, setTagInput] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -62,8 +68,11 @@ export default function PortfolioView() {
 
   function startEdit(p: Project) {
     setEditId(p.id);
+    const linksArr = Array.isArray(p.links)
+      ? p.links
+      : (typeof p.links === "string" && p.links ? p.links.split("\n").filter(Boolean) : [""]);
     setForm({ title: p.title, industry: p.industry, tags: p.tags, problem: p.problem,
-               solution: p.solution, techStack: p.techStack, outcomes: p.outcomes, links: p.links });
+               solution: p.solution, techStack: p.techStack, outcomes: p.outcomes, links: linksArr.length ? linksArr : [""] });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -82,14 +91,15 @@ export default function PortfolioView() {
         r.onerror = () => rej(new Error("File read failed"));
         r.readAsDataURL(file);
       });
-      const result = await api.post<{ ok: boolean; message: string; project: typeof form }>(
+      const result = await api.post<{ ok: boolean; message: string; project: { title: string; industry: string; tags: string[]; problem: string; solution: string; techStack: string; outcomes: string; links: string } }>(
         "/api/portfolio/extract", { fileName: file.name, base64 });
       if (!result.ok) { setBanner({ kind: "error", text: result.message }); return; }
       const p = result.project;
+      const linksArr = typeof p.links === "string" && p.links ? p.links.split("\n").filter(Boolean) : [];
       setForm({
         title: p.title || "", industry: p.industry || "", tags: p.tags || [],
         problem: p.problem || "", solution: p.solution || "",
-        techStack: p.techStack || "", outcomes: p.outcomes || "", links: p.links || "",
+        techStack: p.techStack || "", outcomes: p.outcomes || "", links: linksArr.length ? linksArr : [""],
       });
       setShowForm(true);
       setBanner({ kind: "success", text: "Fields extracted — review and save." });
@@ -101,12 +111,13 @@ export default function PortfolioView() {
   async function handleSubmit() {
     if (!form.title.trim()) { setBanner({ kind: "error", text: "Title is required." }); return; }
     setLoading(true);
+    const payload = { ...form, links: form.links.filter(l => l.trim()).join("\n") };
     try {
       if (editId) {
-        await api.put(`/api/portfolio/${editId}`, form);
+        await api.put(`/api/portfolio/${editId}`, payload);
         setBanner({ kind: "success", text: "Project updated." });
       } else {
-        await api.post("/api/portfolio", form);
+        await api.post("/api/portfolio", payload);
         setBanner({ kind: "success", text: "Project saved." });
       }
       cancelForm();
@@ -205,7 +216,27 @@ export default function PortfolioView() {
             </div>
             <div className="full">
               <div className="field-label">Links</div>
-              <input className="input" value={form.links} onChange={e => f("links")(e.target.value)} placeholder="https://..." />
+              {form.links.map((link, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <input className="input" style={{ flex: 1 }} value={link}
+                    onChange={e => {
+                      const arr = [...form.links];
+                      arr[i] = e.target.value;
+                      setForm(p => ({ ...p, links: arr }));
+                    }}
+                    placeholder="https://..." />
+                  {form.links.length > 1 && (
+                    <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)" }}
+                      onClick={() => setForm(p => ({ ...p, links: p.links.filter((_, j) => j !== i) }))}>
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 2 }}
+                onClick={() => setForm(p => ({ ...p, links: [...p.links, ""] }))}>
+                + Add Link
+              </button>
             </div>
           </div>
 
@@ -282,9 +313,14 @@ export default function PortfolioView() {
                 {indexingId === p.id ? <><span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> Indexing…</> : p.embeddingIndexed ? "Re-index" : "Index for AI"}
               </button>
               {p.links && (
-                <a href={p.links} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ textDecoration: "none" }}>
-                  ↗ View
-                </a>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  {p.links.split("\n").filter(Boolean).map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noreferrer"
+                      className="btn btn-ghost btn-sm" style={{ textDecoration: "none", fontSize: 11 }}>
+                      ↗ Link {p.links.split("\n").filter(Boolean).length > 1 ? i + 1 : ""}
+                    </a>
+                  ))}
+                </div>
               )}
               <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)", marginLeft: "auto" }} onClick={() => handleDelete(p.id)}>Delete</button>
             </div>
