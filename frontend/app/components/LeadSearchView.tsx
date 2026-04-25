@@ -89,7 +89,25 @@ export default function LeadSearchView() {
 
       if (res.phoneWebhookPending) {
         setPhonePending(p => new Set([...p, lead.id]));
-        setBanner({ kind: "info", text: `${res.emails.length ? `Email: ${res.emails[0]}. ` : ""}Phone request sent to Apollo — will auto-save when delivered (usually 1–3 min).` });
+        setBanner({ kind: "info", text: `${res.emails.length ? `Email: ${res.emails[0]}. ` : ""}Phone request sent — polling for result…` });
+        const leadId = lead.id;
+        let attempts = 0;
+        const timer = setInterval(async () => {
+          attempts++;
+          try {
+            const updated = await api.get<Lead>(`/api/leads/${leadId}`);
+            if (updated.phones && updated.phones.length > 0) {
+              clearInterval(timer);
+              setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+              setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: updated.phones } : l));
+              setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
+            }
+          } catch { /* ignore */ }
+          if (attempts >= 24) {
+            clearInterval(timer);
+            setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+          }
+        }, 5000);
       } else if (res.phones.length > 0) {
         setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")} — auto-saved.` });
       } else if (res.emails.length > 0) {

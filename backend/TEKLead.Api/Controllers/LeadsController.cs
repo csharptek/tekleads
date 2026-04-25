@@ -22,6 +22,13 @@ public class LeadsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetSaved() => Ok(await _leads.GetAll());
 
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var lead = await _leads.GetById(id);
+        return lead == null ? NotFound() : Ok(lead);
+    }
+
     [HttpPost("search")]
     public async Task<IActionResult> Search([FromBody] LeadSearchRequest req)
     {
