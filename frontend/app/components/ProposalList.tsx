@@ -57,9 +57,11 @@ const PAGE_SIZE = 10;
 
 export default function ProposalList({
   onNew,
+  onEdit,
   onGenerateProposal,
 }: {
   onNew: () => void;
+  onEdit?: (proposalId: string) => void;
   onGenerateProposal?: (ctx: GenerateProposalCtx) => void;
 }) {
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -262,6 +264,8 @@ export default function ProposalList({
                   <td style={td}><StatusBadge status={p.status} /></td>
                   <td style={{ ...td, minWidth: 160 }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {onEdit && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => onEdit(p.id)}>Edit</button>}
+                      {onGenerateProposal && <button className="btn btn-sm" style={{ fontSize: 11, background: "#0f172a", color: "white", border: "none" }} onClick={() => onGenerateProposal({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientCompany: p.clientCompany })}>Generate</button>}
                       {p.status !== "sent" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => changeStatus(p, "sent")} disabled={statusChanging}>Sent</button>}
                       {p.status !== "won" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: "var(--green)" }} onClick={() => changeStatus(p, "won")} disabled={statusChanging}>Won</button>}
                       {p.status !== "lost" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: "var(--red)" }} onClick={() => changeStatus(p, "lost")} disabled={statusChanging}>Lost</button>}
@@ -447,6 +451,9 @@ export default function ProposalList({
             {/* Drawer footer */}
             <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8, background: "white", flexWrap: "wrap" }}>
               <button className="btn btn-ghost btn-sm" onClick={closeDrawer}>Close</button>
+              {onEdit && (
+                <button className="btn btn-ghost btn-sm" onClick={() => { closeDrawer(); onEdit(drawer.id); }}>Edit</button>
+              )}
               <button className="btn btn-primary btn-sm" onClick={saveDrawer} disabled={drawerSaving}>
                 {drawerSaving ? <span className="spinner" /> : null}Save Changes
               </button>
