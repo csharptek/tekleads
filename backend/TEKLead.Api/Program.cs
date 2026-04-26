@@ -13,6 +13,7 @@ builder.Services.AddScoped<ProposalService>();
 builder.Services.AddScoped<ProposalGenerationService>();
 builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<LogService>();
+builder.Services.AddScoped<ProposalExportService>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 

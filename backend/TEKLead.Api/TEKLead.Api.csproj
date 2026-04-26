@@ -11,4 +11,8 @@
     <PackageReference Include="Dapper" Version="2.1.35" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.20.0" />
   </ItemGroup>
+  <!-- Include Scripts folder in publish output -->
+  <ItemGroup>
+    <None Include="Scripts\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

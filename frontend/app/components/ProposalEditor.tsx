@@ -86,6 +86,9 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
   const [generating, setGenerating] = useState(false);
   const [rightPanel, setRightPanel] = useState<"portfolio" | "prompt" | "versions" | "sections" | null>("portfolio");
   const [loadError, setLoadError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Portfolio selector
   const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([]);
@@ -162,6 +165,46 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
         setActiveVersion(mapped[mapped.length - 1].id);
       }
     } catch { /* no versions yet */ }
+  };
+
+  const handleSave = async () => {
+    if (!content.trim()) return;
+    setSaving(true); setSaved(false);
+    try {
+      await api.post(, { content });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      setLoadError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExportWord = async () => {
+    if (!content.trim()) { setLoadError("No content to export. Generate the proposal first."); return; }
+    setExporting(true);
+    try {
+      const BASE = process.env.NEXT_PUBLIC_API_URL || "";
+      const res = await fetch();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || "Export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const cd = res.headers.get("content-disposition") || "";
+      const match = cd.match(/filename="?([^"]+)"?/);
+      a.download = match?.[1] || "proposal.docx";
+      a.href = url;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setLoadError(e.message);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const activePrompt = promptEdited ? customPrompt : defaultPrompt;
@@ -317,8 +360,10 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
         </button>
 
         {/* Save */}
-        <button style={{ padding: "7px 14px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: "pointer", color: "#0f172a", flexShrink: 0 }}>
-          Save
+        <button onClick={handleSave} disabled={saving}
+          style={{ padding: "7px 14px", background: saving ? "#e2e8f0" : "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: saving ? "not-allowed" : "pointer", color: "#0f172a", flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+          {saving && <span style={{ width: 10, height: 10, border: "2px solid #cbd5e1", borderTopColor: "#64748b", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />}
+          {saved ? "✓ Saved" : "Save"}
         </button>
       </div>
 
@@ -602,10 +647,12 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
 
           {/* Bottom actions */}
           <div style={{ padding: "12px 14px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 8, flexShrink: 0 }}>
-            <button style={{ flex: 1, padding: "7px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 12, cursor: "pointer", color: "#0f172a" }}>
-              Export Word
+            <button onClick={handleExportWord} disabled={exporting || !content}
+              style={{ flex: 1, padding: "7px", background: exporting ? "#e2e8f0" : "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 12, cursor: exporting || !content ? "not-allowed" : "pointer", color: exporting ? "#94a3b8" : "#0f172a", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              {exporting && <span style={{ width: 10, height: 10, border: "2px solid #cbd5e1", borderTopColor: "#64748b", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />}
+              {exporting ? "Exporting…" : "Export Word"}
             </button>
-            <button style={{ flex: 1, padding: "7px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 12, cursor: "pointer", color: "#0f172a" }}>
+            <button disabled style={{ flex: 1, padding: "7px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 12, cursor: "not-allowed", color: "#cbd5e1" }}>
               Export PDF
             </button>
           </div>
