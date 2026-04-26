@@ -442,12 +442,7 @@ export default function ProposalView({ onViewList }: { onViewList?: () => void }
       </div>
 
       {/* Fixed bottom bar */}
-      <div style={{
-        position: "fixed", bottom: 0, left: 220, right: 0,
-        background: "white", borderTop: "1px solid var(--border)",
-        padding: "12px 24px", display: "flex", justifyContent: "space-between",
-        alignItems: "center", zIndex: 100, boxShadow: "0 -2px 8px rgba(0,0,0,0.06)"
-      }}>
+      <div className="bottom-bar">
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           {savedId ? `ID: ${savedId.slice(0, 8)}…` : "Not saved yet"}
           {form.documentUrls.length > 0 && ` · ${form.documentUrls.length} file(s)`}

@@ -142,7 +142,7 @@ export default function LeadSearchView() {
     <div className="page">
       {enrichConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: 380, margin: 0 }}>
+          <div className="card" style={{ maxWidth: 480, margin: 0, width: "100%" }}>
             <div className="card-title">⚠ Enrich uses Apollo credits</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
               Enriching <strong>{enrichConfirm.name}</strong> consumes credits. Phone reveal is async.

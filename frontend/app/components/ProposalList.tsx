@@ -402,7 +402,8 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
       {drawer && (
         <>
           <div onClick={closeDrawer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 200 }} />
-          <div style={{
+          <div className="drawer-panel"
+            style={{
             position: "fixed", top: 0, right: 0, bottom: 0, width: 560,
             background: "white", zIndex: 201, boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
             display: "flex", flexDirection: "column", overflowY: "auto",
