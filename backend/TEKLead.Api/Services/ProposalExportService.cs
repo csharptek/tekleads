@@ -267,7 +267,7 @@ public class ProposalExportService
         sp.Settings = new Settings(new Compatibility(new CompatibilitySetting
         {
             Name = CompatSettingNameValues.CompatibilityMode,
-            Uri  = new Uri("http://schemas.microsoft.com/office/word"),
+            Uri  = "http://schemas.microsoft.com/office/word",
             Val  = "15"
         }));
     }
