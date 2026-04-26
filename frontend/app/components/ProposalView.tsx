@@ -192,7 +192,6 @@ export default function ProposalView() {
     if (!linkedContact?.id) return;
     setEnriching(true); setApolloError("");
     try {
-      // Save lead first (required before reveal-phone, same as LeadSearchView)
       await api.post("/api/leads/save", [linkedContact]);
       const res: any = await api.post(`/api/leads/${linkedContact.id}/reveal-phone`, {});
       setEnrichResult(res);
@@ -204,6 +203,24 @@ export default function ProposalView() {
         emails: res.emails?.length ? res.emails : c.emails,
         phones: res.phones?.length ? res.phones : c.phones,
       } : c);
+
+      // Poll webhook for phone if pending (same flow as LeadSearchView)
+      if (res.phoneWebhookPending && linkedContact.id) {
+        const leadId = linkedContact.id;
+        let attempts = 0;
+        const timer = setInterval(async () => {
+          attempts++;
+          try {
+            const updated: any = await api.get(`/api/leads/${leadId}`);
+            if (updated.phones && updated.phones.length > 0) {
+              clearInterval(timer);
+              setLinkedContact(c => c ? { ...c, phones: updated.phones } : c);
+              setEnrichResult(prev => prev ? { ...prev, phones: updated.phones, phoneWebhookPending: false } : prev);
+            }
+          } catch { }
+          if (attempts >= 24) clearInterval(timer);
+        }, 5000);
+      }
     } catch (e: any) {
       setApolloError(e.message);
     } finally {
