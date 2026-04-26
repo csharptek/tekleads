@@ -171,7 +171,7 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
     if (!content.trim()) return;
     setSaving(true); setSaved(false);
     try {
-      await api.post(, { content });
+      await api.post(`/api/proposals/${proposalId}/save-content`, { content });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e: any) {
@@ -186,7 +186,7 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
     setExporting(true);
     try {
       const BASE = process.env.NEXT_PUBLIC_API_URL || "";
-      const res = await fetch();
+      const res = await fetch(`${BASE}/api/proposals/${proposalId}/export/word`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || "Export failed");
