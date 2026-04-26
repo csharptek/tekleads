@@ -69,6 +69,8 @@ export default function ProposalView() {
   const [apolloError, setApolloError] = useState("");
   const [linkedContact, setLinkedContact] = useState<Lead | null>(null);
   const [linkSaving, setLinkSaving] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichResult, setEnrichResult] = useState<{emails:string[],phones:string[],fullName:string,location:string,phoneWebhookPending?:boolean}|null>(null);
 
   const set = (k: keyof Proposal, v: any) => setForm(f => ({ ...f, [k]: v }));
 
@@ -128,9 +130,14 @@ export default function ProposalView() {
     }
     setApolloSearching(true); setApolloError(""); setApolloResults([]);
     try {
-      const res: any = await api.post(`/api/proposals/apollo-search`, {
+      const res: any = await api.post(`/api/leads/search`, {
         name: form.clientName || null,
         company: form.clientCompany || null,
+        title: null,
+        industry: null,
+        location: null,
+        page: 1,
+        perPage: 10,
       });
       setApolloResults(res.leads || []);
       if (!res.leads?.length) setApolloError("No results found.");
@@ -148,24 +155,59 @@ export default function ProposalView() {
     }
     setLinkSaving(true);
     try {
-      await api.post(`/api/proposals/${savedId}/link-contact`, {
-        leadId: lead.id || null,
+      const res: any = await api.post(`/api/proposals/${savedId}/link-contact`, {
         apolloContactJson: JSON.stringify(lead),
         clientName: lead.name || form.clientName,
         clientCompany: lead.company || form.clientCompany,
+        lead: {
+          apolloId: lead.apolloId,
+          name: lead.name,
+          title: lead.title,
+          company: lead.company,
+          industry: lead.industry,
+          location: lead.location,
+          emails: lead.emails || [],
+          phones: lead.phones || [],
+          linkedinUrl: lead.linkedinUrl || null,
+        },
       });
-      setLinkedContact(lead);
+      setLinkedContact({ ...lead, id: res.leadId });
       setForm(f => ({
         ...f,
         clientName: lead.name || f.clientName,
         clientCompany: lead.company || f.clientCompany,
+        linkedLeadId: res.leadId,
       }));
       setApolloResults([]);
-      setSuccess("Contact linked.");
+      setEnrichResult(null);
+      setSuccess("Contact linked and saved to leads.");
     } catch (e: any) {
       setApolloError(e.message);
     } finally {
       setLinkSaving(false);
+    }
+  };
+
+  const handleRevealContact = async () => {
+    if (!linkedContact?.id) return;
+    setEnriching(true); setApolloError("");
+    try {
+      // Save lead first (required before reveal-phone, same as LeadSearchView)
+      await api.post("/api/leads/save", [linkedContact]);
+      const res: any = await api.post(`/api/leads/${linkedContact.id}/reveal-phone`, {});
+      setEnrichResult(res);
+      if (res.emails?.length > 0) setForm(f => ({ ...f, clientEmail: f.clientEmail || res.emails[0] }));
+      setLinkedContact(c => c ? {
+        ...c,
+        name: res.fullName?.trim() ? res.fullName : c.name,
+        location: res.location?.trim() ? res.location : c.location,
+        emails: res.emails?.length ? res.emails : c.emails,
+        phones: res.phones?.length ? res.phones : c.phones,
+      } : c);
+    } catch (e: any) {
+      setApolloError(e.message);
+    } finally {
+      setEnriching(false);
     }
   };
 
@@ -248,12 +290,27 @@ export default function ProposalView() {
           </div>
 
           {linkedContact && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--green-light)", borderRadius: 8, marginBottom: 8 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
-              <span style={{ fontSize: 12, color: "var(--green)", fontWeight: 500 }}>
-                Linked: {linkedContact.name} — {linkedContact.title} at {linkedContact.company}
-              </span>
-              <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={() => setLinkedContact(null)}>✕</button>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--green-light)", borderRadius: 8, marginBottom: 6 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>{linkedContact.name} — {linkedContact.title} at {linkedContact.company}</div>
+                  {enrichResult && (
+                    <div style={{ fontSize: 11, color: "var(--green)", marginTop: 2 }}>
+                      {enrichResult.emails?.length > 0 && <span>📧 {enrichResult.emails.join(", ")} </span>}
+                      {enrichResult.phones?.length > 0 && <span>📞 {enrichResult.phones.join(", ")}</span>}
+                      {enrichResult.phoneWebhookPending && <span style={{ color: "var(--orange)" }}> · Phone pending webhook</span>}
+                    </div>
+                  )}
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={handleRevealContact} disabled={enriching} style={{ flexShrink: 0 }}>
+                  {enriching ? <span className="spinner spinner-dark" /> : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                  )}
+                  Reveal Email & Phone
+                </button>
+                <button className="icon-btn" onClick={() => { setLinkedContact(null); setEnrichResult(null); }}>✕</button>
+              </div>
             </div>
           )}
 
