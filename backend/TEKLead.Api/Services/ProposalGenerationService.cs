@@ -255,12 +255,13 @@ Guidelines:
 - Write in a professional but approachable tone
 - Reference specific portfolio projects by name and include their links/demo URLs
 - Include a clear project scope breakdown with numbered phases or sprints
-- Add a timeline and budget table using the provided figures
+- Add a timeline table using the provided timeline if given
 - Address each client question directly if provided
 - End with a strong ""Why Us"" section that references the portfolio
 - Use markdown formatting with headers and tables
 - Keep total length between 800–1400 words
-- Return only the proposal text — no preamble, no explanation";
+- Return only the proposal text — no preamble, no explanation
+- CRITICAL: Never mention, reference, or repeat the client's stated budget or budget range anywhere in the proposal. Do not include lines like "Within your stated range of..." or any budget allocation breakdown referencing their budget. The pricing section should present your value and price independently.";
     }
 
     private string BuildUserMessage(Proposal p, List<PortfolioProject> portfolio, GenerateProposalRequest req)
