@@ -261,7 +261,7 @@ Guidelines:
 - Use markdown formatting with headers and tables
 - Keep total length between 800–1400 words
 - Return only the proposal text — no preamble, no explanation
-- CRITICAL: Never mention, reference, or repeat the client's stated budget or budget range anywhere in the proposal. Do not include lines like "Within your stated range of..." or any budget allocation breakdown referencing their budget. The pricing section should present your value and price independently.";
+- CRITICAL: Never mention, reference, or repeat the client's stated budget or budget range anywhere in the proposal. Do not include lines like ""Within your stated range of..."" or any budget allocation breakdown referencing their budget. The pricing section should present your value and price independently.";
     }
 
     private string BuildUserMessage(Proposal p, List<PortfolioProject> portfolio, GenerateProposalRequest req)
