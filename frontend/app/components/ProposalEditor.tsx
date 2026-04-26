@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { api } from "../../lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -51,80 +52,6 @@ type ProposalEditorProps = {
 
 // ── Mock data for UI-only phase ───────────────────────────────────────────────
 
-const MOCK_PORTFOLIO: PortfolioItem[] = [
-  {
-    id: "p1", title: "Clinical Bio-Print Platform", industry: "Healthcare",
-    tags: ["React", ".NET", "Three.js", "HIPAA"], problem: "Complex patient biomarker tracking",
-    solution: "AI-powered 3D visualization platform", techStack: "React, .NET 9, PostgreSQL, Three.js",
-    outcomes: "40% faster clinical decision making", links: "https://vitality-demo-chi.vercel.app/",
-    embeddingIndexed: true,
-  },
-  {
-    id: "p2", title: "AI Invoice Processor", industry: "Fintech",
-    tags: ["Azure OpenAI", ".NET", "PostgreSQL"], problem: "Manual invoice processing was slow and error-prone",
-    solution: "AI-powered extraction and categorisation", techStack: ".NET 8, Azure OpenAI, PostgreSQL",
-    outcomes: "85% reduction in processing time", links: "", embeddingIndexed: true,
-  },
-  {
-    id: "p3", title: "SaaS Lead Generation Platform", industry: "B2B SaaS",
-    tags: ["Next.js", ".NET", "Apollo", "AI"], problem: "No unified tool for lead search + outreach",
-    solution: "Full-stack AI lead platform with RAG email gen", techStack: "Next.js, .NET 8, Railway, Apollo.io",
-    outcomes: "3x outreach efficiency", links: "", embeddingIndexed: false,
-  },
-];
-
-const MOCK_PROPOSAL = `# Proposal: AI-Powered Clinical Platform
-
-## Executive Summary
-
-CSharpTek is a specialist software development team with deep expertise in AI-powered platforms, 3D web visualization, and HIPAA-compliant healthcare systems.
-
-We have reviewed your requirements carefully and are excited to present this proposal for an AI-powered clinical platform that will transform your patient data management.
-
-## Understanding Your Requirements
-
-Based on your job post, you need a robust solution that handles:
-- Real-time patient biomarker tracking
-- AI-driven clinical recommendations  
-- HIPAA-compliant data management
-- Integration with wearable devices
-
-## Our Approach
-
-We will build a production-ready platform using our proven stack:
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | React + Next.js |
-| Backend | .NET 9 Core API |
-| Database | PostgreSQL |
-| AI | Azure OpenAI |
-
-## Relevant Portfolio Projects
-
-### Clinical Bio-Print Platform
-We recently delivered a HIPAA-compliant clinical platform with 3D bio-print visualization. The platform includes:
-- 21-question clinical intake with weighted scoring
-- Glass avatar visualization using Three.js
-- Full Admin CMS with zero-hardcoding architecture
-
-[View Live Demo →](https://vitality-demo-chi.vercel.app/)
-
-### AI Invoice Processor
-Built for a Fintech client — demonstrates our Azure OpenAI integration expertise with 85% processing time reduction.
-
-## Project Timeline & Investment
-
-**Timeline:** 4 Months (14 Sprints)  
-**Investment:** $28,000 — $35,000 USD (Fixed Price)
-
-## Why CSharpTek
-
-We don't just build — we partner. Our team has delivered complex AI platforms on time with full documentation and post-launch support.
-
-**Bhanu | CSharpTek**  
-csharptek2026.vercel.app`;
-
 const DEFAULT_SECTIONS: SectionLock[] = [
   { id: "executive", label: "Executive Summary", locked: false },
   { id: "scope", label: "Project Scope", locked: false },
@@ -155,13 +82,14 @@ Guidelines:
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProposalEditor({ proposalId, proposalHeadline, clientName, clientCompany, onBack }: ProposalEditorProps) {
-  const [content, setContent] = useState(MOCK_PROPOSAL);
+  const [content, setContent] = useState("");
   const [generating, setGenerating] = useState(false);
   const [rightPanel, setRightPanel] = useState<"portfolio" | "prompt" | "versions" | "sections" | null>("portfolio");
+  const [loadError, setLoadError] = useState("");
 
   // Portfolio selector
-  const [portfolioItems] = useState<PortfolioItem[]>(MOCK_PORTFOLIO);
-  const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<Set<string>>(new Set(["p1", "p2"]));
+  const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([]);
+  const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<Set<string>>(new Set());
 
   // Prompt
   const [defaultPrompt, setDefaultPrompt] = useState(DEFAULT_PROMPT);
@@ -175,67 +103,140 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
   const [showHistory, setShowHistory] = useState(false);
 
   // Versions
-  const [versions, setVersions] = useState<ProposalVersion[]>([
-    { id: "v1", label: "v1 — Initial", content: MOCK_PROPOSAL, createdAt: new Date().toISOString() },
-  ]);
-  const [activeVersion, setActiveVersion] = useState("v1");
+  const [versions, setVersions] = useState<ProposalVersion[]>([]);
+  const [activeVersion, setActiveVersion] = useState("");
 
   // Section locks
   const [sections, setSections] = useState<SectionLock[]>(DEFAULT_SECTIONS);
 
   // Quality score
-  const [quality, setQuality] = useState<QualityScore | null>({ score: 7, reason: "Good structure and portfolio references. Consider adding more specific metrics and a stronger CTA." });
+  const [quality, setQuality] = useState<QualityScore | null>(null);
 
   // Tone
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
+  // Load real data on mount
+  useEffect(() => {
+    loadPortfolio();
+    loadProposal();
+    loadVersions();
+  }, [proposalId]);
+
+  const loadPortfolio = async () => {
+    try {
+      const items = await api.get<PortfolioItem[]>("/api/portfolio");
+      setPortfolioItems(items || []);
+    } catch { /* keep mock */ }
+  };
+
+  const loadProposal = async () => {
+    try {
+      const p: any = await api.get(`/api/proposals/${proposalId}`);
+      if (p.generatedResponse) {
+        setContent(p.generatedResponse);
+      }
+      if (p.selectedPortfolioIds?.length > 0) {
+        setSelectedPortfolioIds(new Set(p.selectedPortfolioIds));
+      }
+      if (p.customPrompt) {
+        setCustomPrompt(p.customPrompt);
+        setPromptEdited(true);
+      }
+    } catch (e: any) {
+      setLoadError(e.message);
+    }
+  };
+
+  const loadVersions = async () => {
+    try {
+      const vlist = await api.get<any[]>(`/api/proposals/${proposalId}/versions`);
+      if (vlist?.length > 0) {
+        const mapped = vlist.map(v => ({
+          id: v.id,
+          label: v.label,
+          content: v.content,
+          createdAt: v.createdAt,
+          prompt: v.prompt,
+        }));
+        setVersions(mapped);
+        setActiveVersion(mapped[mapped.length - 1].id);
+      }
+    } catch { /* no versions yet */ }
+  };
+
   const activePrompt = promptEdited ? customPrompt : defaultPrompt;
   const lockedSections = sections.filter(s => s.locked).map(s => s.label);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setGenerating(true);
-    // Simulate generation
-    setTimeout(() => {
-      const newVersion: ProposalVersion = {
+    setLoadError("");
+    try {
+      const res: any = await api.post(`/api/proposals/${proposalId}/generate`, {
+        selectedPortfolioIds: selectedPortfolioIds.size > 0 ? Array.from(selectedPortfolioIds) : null,
+        customPrompt: promptEdited ? customPrompt : null,
+      });
+      if (!res.ok) { setLoadError(res.error || "Generation failed."); return; }
+      setContent(res.generatedText || "");
+      if (res.qualityScore) setQuality({ score: res.qualityScore.score, reason: res.qualityScore.reason });
+      // Add to versions list
+      const newV: ProposalVersion = {
         id: `v${versions.length + 1}`,
-        label: `v${versions.length + 1} — Regenerated`,
-        content: MOCK_PROPOSAL + "\n\n*(Regenerated with updated portfolio selection)*",
+        label: res.versionLabel || `v${versions.length + 1} — Generated`,
+        content: res.generatedText || "",
         createdAt: new Date().toISOString(),
-        prompt: activePrompt,
       };
-      setVersions(v => [...v, newVersion]);
-      setActiveVersion(newVersion.id);
-      setContent(newVersion.content);
-      setQuality({ score: 8, reason: "Improved structure. Portfolio references are now more specific." });
+      setVersions(v => [...v, newV]);
+      setActiveVersion(newV.id);
+      // Also refresh versions from server
+      await loadVersions();
+      // Update selected portfolio from response
+      if (res.portfolioItemsUsed?.length > 0) {
+        setSelectedPortfolioIds(new Set(res.portfolioItemsUsed.map((p: any) => p.id)));
+      }
+    } catch (e: any) {
+      setLoadError(e.message);
+    } finally {
       setGenerating(false);
-    }, 2000);
+    }
   };
 
-  const handleRefine = () => {
+  const handleRefine = async () => {
     if (!aiInstruction.trim()) return;
     setRefining(true);
     const userMsg: AIMessage = { role: "user", content: aiInstruction, timestamp: new Date().toISOString() };
     setAiMessages(m => [...m, userMsg]);
+    const instruction = aiInstruction;
     setAiInstruction("");
-
-    setTimeout(() => {
-      const assistantMsg: AIMessage = {
-        role: "assistant",
-        content: `Applied: "${userMsg.content}". Proposal updated accordingly.`,
-        timestamp: new Date().toISOString(),
-      };
+    try {
+      const res: any = await api.post(`/api/proposals/${proposalId}/refine`, {
+        instruction,
+        lockedSections: sections.filter(s => s.locked).map(s => s.label),
+        conversationHistory: aiMessages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
+      });
+      if (!res.ok) {
+        const errMsg: AIMessage = { role: "assistant", content: `Error: ${res.error}`, timestamp: new Date().toISOString() };
+        setAiMessages(m => [...m, errMsg]);
+        return;
+      }
+      const assistantMsg: AIMessage = { role: "assistant", content: `Applied: "${instruction}". Proposal updated.`, timestamp: new Date().toISOString() };
       setAiMessages(m => [...m, assistantMsg]);
-      const newVersion: ProposalVersion = {
+      setContent(res.generatedText || "");
+      if (res.qualityScore) setQuality({ score: res.qualityScore.score, reason: res.qualityScore.reason });
+      const newV: ProposalVersion = {
         id: `v${versions.length + 1}`,
-        label: `v${versions.length + 1} — "${userMsg.content.slice(0, 25)}…"`,
-        content: content + `\n\n*(Refined: ${userMsg.content})*`,
+        label: res.versionLabel || `v${versions.length + 1} — Refined`,
+        content: res.generatedText || "",
         createdAt: new Date().toISOString(),
       };
-      setVersions(v => [...v, newVersion]);
-      setActiveVersion(newVersion.id);
-      setContent(newVersion.content);
+      setVersions(v => [...v, newV]);
+      setActiveVersion(newV.id);
+      await loadVersions();
+    } catch (e: any) {
+      const errMsg: AIMessage = { role: "assistant", content: `Error: ${e.message}`, timestamp: new Date().toISOString() };
+      setAiMessages(m => [...m, errMsg]);
+    } finally {
       setRefining(false);
-    }, 1500);
+    }
   };
 
   const togglePortfolio = (id: string) => {
@@ -321,6 +322,13 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
         </button>
       </div>
 
+      {/* Error banner */}
+      {loadError && (
+        <div style={{ padding: "10px 20px", background: "#fee2e2", color: "#dc2626", fontSize: 13, borderBottom: "1px solid #fecaca", flexShrink: 0 }}>
+          ⚠ {loadError}
+          <button onClick={() => setLoadError("")} style={{ marginLeft: 12, background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>✕</button>
+        </div>
+      )}
       {/* ── Main area ────────────────────────────────────────────────── */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
@@ -376,6 +384,13 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
 
           {/* Editor */}
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+            {!content && !generating && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#94a3b8", pointerEvents: "none" }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" style={{ marginBottom: 12 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>No proposal generated yet</div>
+                <div style={{ fontSize: 12 }}>Click "Generate Proposal" to start</div>
+              </div>
+            )}
             <textarea
               ref={editorRef}
               value={content}
