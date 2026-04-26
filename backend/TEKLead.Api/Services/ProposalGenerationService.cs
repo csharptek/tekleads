@@ -353,7 +353,7 @@ Guidelines:
         client.Timeout = TimeSpan.FromSeconds(120);
 
         var url = $"{endpoint.TrimEnd('/')}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01";
-        var body = JsonSerializer.Serialize(new { messages, max_tokens = 2500, temperature = 0.7 });
+        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 2500 });
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var json = await resp.Content.ReadAsStringAsync();
