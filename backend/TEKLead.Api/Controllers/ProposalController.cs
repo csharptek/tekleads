@@ -53,8 +53,8 @@ public class ProposalController : ControllerBase
         return Ok(new { deleted = true });
     }
 
-    [HttpPost("{id}/apollo-search")]
-    public async Task<IActionResult> ApolloSearch(Guid id, [FromBody] ApolloSearchForProposalRequest req)
+    [HttpPost("apollo-search")]
+    public async Task<IActionResult> ApolloSearch([FromBody] ApolloSearchForProposalRequest req)
     {
         try
         {

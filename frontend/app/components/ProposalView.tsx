@@ -128,8 +128,7 @@ export default function ProposalView() {
     }
     setApolloSearching(true); setApolloError(""); setApolloResults([]);
     try {
-      const pid = savedId || "new";
-      const res: any = await api.post(`/api/proposals/${pid}/apollo-search`, {
+      const res: any = await api.post(`/api/proposals/apollo-search`, {
         name: form.clientName || null,
         company: form.clientCompany || null,
       });
