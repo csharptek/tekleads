@@ -9,6 +9,7 @@ builder.Services.AddScoped<LeadService>();
 builder.Services.AddScoped<ApolloService>();
 builder.Services.AddScoped<PortfolioService>();
 builder.Services.AddScoped<ProposalService>();
+builder.Services.AddScoped<BlobService>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 

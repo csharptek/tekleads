@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { api } from "../../lib/api";
 
 type Lead = {
@@ -28,10 +28,15 @@ type Proposal = {
   clientQuestions: string[];
   links: string[];
   linkLabels: string[];
+  documentUrls: string[];
+  documentNames: string[];
   timelineValue: string;
   timelineUnit: string;
   budgetMin: string;
   budgetMax: string;
+  notes: string;
+  tags: string;
+  followUpDate: string;
   status: string;
   linkedLeadId?: string;
   apolloContactJson?: string;
@@ -49,53 +54,53 @@ const EMPTY: Proposal = {
   clientQuestions: [""],
   links: [""],
   linkLabels: [""],
+  documentUrls: [],
+  documentNames: [],
   timelineValue: "",
   timelineUnit: "weeks",
   budgetMin: "",
   budgetMax: "",
+  notes: "",
+  tags: "",
+  followUpDate: "",
   status: "draft",
 };
 
-export default function ProposalView() {
+export default function ProposalView({ onViewList }: { onViewList?: () => void }) {
   const [form, setForm] = useState<Proposal>({ ...EMPTY });
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  // Apollo search
   const [apolloSearching, setApolloSearching] = useState(false);
   const [apolloResults, setApolloResults] = useState<Lead[]>([]);
   const [apolloError, setApolloError] = useState("");
   const [linkedContact, setLinkedContact] = useState<Lead | null>(null);
-  const [linkSaving, setLinkSaving] = useState(false);
   const [enriching, setEnriching] = useState(false);
-  const [enrichResult, setEnrichResult] = useState<{emails:string[],phones:string[],fullName:string,location:string,phoneWebhookPending?:boolean}|null>(null);
+  const [enrichResult, setEnrichResult] = useState<{ emails: string[]; phones: string[]; fullName: string; location: string; phoneWebhookPending?: boolean } | null>(null);
 
   const set = (k: keyof Proposal, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   const setQuestion = (i: number, v: string) => {
-    const arr = [...form.clientQuestions];
-    arr[i] = v;
-    set("clientQuestions", arr);
+    const arr = [...form.clientQuestions]; arr[i] = v; set("clientQuestions", arr);
   };
   const addQuestion = () => set("clientQuestions", [...form.clientQuestions, ""]);
   const removeQuestion = (i: number) => set("clientQuestions", form.clientQuestions.filter((_, j) => j !== i));
 
   const setLink = (i: number, field: "url" | "label", v: string) => {
-    const urls = [...form.links];
-    const labels = [...form.linkLabels];
+    const urls = [...form.links]; const labels = [...form.linkLabels];
     if (field === "url") urls[i] = v; else labels[i] = v;
     setForm(f => ({ ...f, links: urls, linkLabels: labels }));
   };
   const addLink = () => setForm(f => ({ ...f, links: [...f.links, ""], linkLabels: [...f.linkLabels, ""] }));
   const removeLink = (i: number) => setForm(f => ({
-    ...f,
-    links: f.links.filter((_, j) => j !== i),
-    linkLabels: f.linkLabels.filter((_, j) => j !== i),
+    ...f, links: f.links.filter((_, j) => j !== i), linkLabels: f.linkLabels.filter((_, j) => j !== i),
   }));
 
-  const handleSave = async () => {
+  const handleSave = async (andNew = false) => {
     if (!form.jobPostBody.trim()) { setError("Job post is required."); return; }
     setSaving(true); setError(""); setSuccess("");
     try {
@@ -105,8 +110,7 @@ export default function ProposalView() {
         budgetMax: form.budgetMax ? parseFloat(form.budgetMax) : null,
         clientQuestions: form.clientQuestions.filter(q => q.trim()),
         links: form.links.filter(l => l.trim()),
-        linkLabels: form.linkLabels,
-        documentUrls: [],
+        followUpDate: form.followUpDate || null,
         linkedLeadId: linkedContact?.id || null,
         apolloContactJson: linkedContact ? JSON.stringify(linkedContact) : null,
       };
@@ -117,7 +121,17 @@ export default function ProposalView() {
         res = await api.post("/api/proposals", payload);
         setSavedId(res.id);
       }
-      setSuccess("Proposal saved.");
+      setSuccess(andNew ? "Saved! Starting new proposal." : "Proposal saved.");
+      if (andNew) {
+        setTimeout(() => {
+          setForm({ ...EMPTY });
+          setSavedId(null);
+          setLinkedContact(null);
+          setApolloResults([]);
+          setEnrichResult(null);
+          setSuccess("");
+        }, 800);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -125,105 +139,115 @@ export default function ProposalView() {
     }
   };
 
-  const handleApolloSearch = async () => {
-    if (!form.clientName && !form.clientCompany) {
-      setApolloError("Enter client name or company first.");
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || !files.length) return;
+    if (!savedId) {
+      setError("Save the proposal first before uploading files.");
+      e.target.value = "";
       return;
     }
+    setUploading(true); setError("");
+    try {
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res: any = await api.upload(`/api/proposals/${savedId}/upload`, fd);
+        setForm(f => ({
+          ...f,
+          documentUrls: [...f.documentUrls, res.url],
+          documentNames: [...f.documentNames, res.name],
+        }));
+      }
+      setSuccess("File(s) uploaded.");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleRemoveDoc = async (i: number) => {
+    const url = form.documentUrls[i];
+    if (savedId && url) {
+      try { await api.del(`/api/proposals/${savedId}/document`, { url }); } catch { }
+    }
+    setForm(f => ({
+      ...f,
+      documentUrls: f.documentUrls.filter((_, j) => j !== i),
+      documentNames: f.documentNames.filter((_, j) => j !== i),
+    }));
+  };
+
+  const handleApolloSearch = async () => {
+    if (!form.clientName && !form.clientCompany) { setApolloError("Enter client name or company first."); return; }
     setApolloSearching(true); setApolloError(""); setApolloResults([]);
     try {
       const res: any = await api.post(`/api/leads/search`, {
-        name: form.clientName || null,
-        company: form.clientCompany || null,
-        title: null,
-        industry: null,
-        location: null,
-        page: 1,
-        perPage: 10,
+        name: form.clientName || null, company: form.clientCompany || null,
+        title: null, industry: null, location: null, page: 1, perPage: 10,
       });
       setApolloResults(res.leads || []);
       if (!res.leads?.length) setApolloError("No results found.");
-    } catch (e: any) {
-      setApolloError(e.message);
-    } finally {
-      setApolloSearching(false);
-    }
+    } catch (e: any) { setApolloError(e.message); } finally { setApolloSearching(false); }
   };
 
   const handleLinkContact = (lead: Lead) => {
     setLinkedContact(lead);
-    setForm(f => ({
-      ...f,
-      clientName: lead.name || f.clientName,
-      clientCompany: lead.company || f.clientCompany,
-    }));
-    setApolloResults([]);
-    setEnrichResult(null);
+    setForm(f => ({ ...f, clientName: lead.name || f.clientName, clientCompany: lead.company || f.clientCompany }));
+    setApolloResults([]); setEnrichResult(null);
   };
 
   const handleRevealContact = async () => {
     if (!linkedContact) return;
     setEnriching(true); setApolloError("");
     try {
-      // Save the lead to DB first (needed for reveal-phone endpoint)
-      const savedLead: any = (await api.post("/api/leads/save", [linkedContact]));
-      // Reuse the apolloId-based lookup; need lead's actual DB id
-      // Fetch the saved lead by apolloId from saved list
+      await api.post("/api/leads/save", [linkedContact]);
       const allLeads: any = await api.get("/api/leads");
       const dbLead = (allLeads || []).find((l: any) => l.apolloId === linkedContact.apolloId);
       if (!dbLead) throw new Error("Could not find saved lead in DB.");
-
-      const leadId = dbLead.id;
-      const res: any = await api.post(`/api/leads/${leadId}/reveal-phone`, {});
+      const res: any = await api.post(`/api/leads/${dbLead.id}/reveal-phone`, {});
       setEnrichResult(res);
       if (res.emails?.length > 0) setForm(f => ({ ...f, clientEmail: f.clientEmail || res.emails[0] }));
-      setLinkedContact(c => c ? {
-        ...c,
-        id: leadId,
-        name: res.fullName?.trim() ? res.fullName : c.name,
-        location: res.location?.trim() ? res.location : c.location,
-        emails: res.emails?.length ? res.emails : c.emails,
-        phones: res.phones?.length ? res.phones : c.phones,
-      } : c);
-
-      if (res.phoneWebhookPending) {
-        let attempts = 0;
-        const timer = setInterval(async () => {
-          attempts++;
-          try {
-            const updated: any = await api.get(`/api/leads/${leadId}`);
-            if (updated.phones && updated.phones.length > 0) {
-              clearInterval(timer);
-              setLinkedContact(c => c ? { ...c, phones: updated.phones } : c);
-              setEnrichResult(prev => prev ? { ...prev, phones: updated.phones, phoneWebhookPending: false } : prev);
-            }
-          } catch { }
-          if (attempts >= 24) clearInterval(timer);
-        }, 5000);
-      }
-    } catch (e: any) {
-      setApolloError(e.message);
-    } finally {
-      setEnriching(false);
-    }
+      setLinkedContact(c => c ? { ...c, id: dbLead.id, name: res.fullName?.trim() ? res.fullName : c.name, emails: res.emails?.length ? res.emails : c.emails, phones: res.phones?.length ? res.phones : c.phones } : c);
+    } catch (e: any) { setApolloError(e.message); } finally { setEnriching(false); }
   };
 
+  const resetForm = () => {
+    setForm({ ...EMPTY });
+    setSavedId(null);
+    setLinkedContact(null);
+    setApolloResults([]);
+    setSuccess("");
+    setError("");
+    setEnrichResult(null);
+  };
+
+  const SaveButtons = ({ sm = false }: { sm?: boolean }) => (
+    <div style={{ display: "flex", gap: 8 }}>
+      <button className={`btn btn-ghost ${sm ? "btn-sm" : ""}`} onClick={resetForm}>Clear</button>
+      {onViewList && (
+        <button className={`btn btn-ghost ${sm ? "btn-sm" : ""}`} onClick={onViewList}>View All</button>
+      )}
+      <button className={`btn btn-secondary ${sm ? "btn-sm" : ""}`} onClick={() => handleSave(true)} disabled={saving}>
+        {saving ? <span className="spinner" /> : null}Save & New
+      </button>
+      <button className={`btn btn-primary ${sm ? "btn-sm" : ""}`} onClick={() => handleSave(false)} disabled={saving}>
+        {saving ? <span className="spinner" /> : null}
+        {savedId ? "Update" : "Save Draft"}
+      </button>
+    </div>
+  );
+
   return (
-    <div className="page">
+    <div className="page" style={{ paddingBottom: 80 }}>
       <div className="page-header">
         <div>
           <div className="page-title">New Proposal</div>
           <div className="page-sub">Job post, client info, and Apollo contact lookup</div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => { setForm({ ...EMPTY }); setSavedId(null); setLinkedContact(null); setApolloResults([]); setSuccess(""); setError(""); }}>
-            Clear
-          </button>
-          <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-            {saving ? <span className="spinner" /> : null}
-            {savedId ? "Update" : "Save Draft"}
-          </button>
-        </div>
+        <SaveButtons sm />
       </div>
 
       {error && <div className="banner banner-error">{error}</div>}
@@ -232,7 +256,7 @@ export default function ProposalView() {
       {/* Job Post */}
       <div className="card">
         <div className="card-title">Job Post</div>
-        <div className="card-sub">Paste the Upwork job post or any brief from the client</div>
+        <div className="card-sub">Paste the job post or client brief</div>
         <div style={{ marginBottom: 12 }}>
           <div className="field-label">Headline (optional)</div>
           <input className="input" placeholder="e.g. Need a .NET developer for SaaS platform..." value={form.jobPostHeadline} onChange={e => set("jobPostHeadline", e.target.value)} />
@@ -246,73 +270,43 @@ export default function ProposalView() {
       {/* Client Info */}
       <div className="card">
         <div className="card-title">Client Information</div>
-        <div className="card-sub">All fields optional except for Apollo lookup</div>
+        <div className="card-sub">All fields optional</div>
         <div className="grid-2" style={{ marginBottom: 12 }}>
-          <div>
-            <div className="field-label">Client Name</div>
-            <input className="input" placeholder="John Smith" value={form.clientName} onChange={e => set("clientName", e.target.value)} />
-          </div>
-          <div>
-            <div className="field-label">Company</div>
-            <input className="input" placeholder="Acme Corp" value={form.clientCompany} onChange={e => set("clientCompany", e.target.value)} />
-          </div>
-          <div>
-            <div className="field-label">Country</div>
-            <input className="input" placeholder="United States" value={form.clientCountry} onChange={e => set("clientCountry", e.target.value)} />
-          </div>
-          <div>
-            <div className="field-label">City</div>
-            <input className="input" placeholder="New York" value={form.clientCity} onChange={e => set("clientCity", e.target.value)} />
-          </div>
-          <div>
-            <div className="field-label">Email</div>
-            <input className="input" placeholder="client@example.com" value={form.clientEmail} onChange={e => set("clientEmail", e.target.value)} />
-          </div>
-          <div>
-            <div className="field-label">LinkedIn</div>
-            <input className="input" placeholder="https://linkedin.com/in/..." value={form.clientLinkedin} onChange={e => set("clientLinkedin", e.target.value)} />
-          </div>
+          <div><div className="field-label">Client Name</div><input className="input" placeholder="John Smith" value={form.clientName} onChange={e => set("clientName", e.target.value)} /></div>
+          <div><div className="field-label">Company</div><input className="input" placeholder="Acme Corp" value={form.clientCompany} onChange={e => set("clientCompany", e.target.value)} /></div>
+          <div><div className="field-label">Country</div><input className="input" placeholder="United States" value={form.clientCountry} onChange={e => set("clientCountry", e.target.value)} /></div>
+          <div><div className="field-label">City</div><input className="input" placeholder="New York" value={form.clientCity} onChange={e => set("clientCity", e.target.value)} /></div>
+          <div><div className="field-label">Email</div><input className="input" placeholder="client@example.com" value={form.clientEmail} onChange={e => set("clientEmail", e.target.value)} /></div>
+          <div><div className="field-label">LinkedIn</div><input className="input" placeholder="https://linkedin.com/in/..." value={form.clientLinkedin} onChange={e => set("clientLinkedin", e.target.value)} /></div>
         </div>
-
-        {/* Apollo lookup */}
         <div style={{ marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div className="field-label" style={{ margin: 0 }}>Apollo Contact Lookup</div>
             <button className="btn btn-ghost btn-sm" onClick={handleApolloSearch} disabled={apolloSearching}>
-              {apolloSearching ? <span className="spinner spinner-dark" /> : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              )}
+              {apolloSearching ? <span className="spinner spinner-dark" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>}
               Search Apollo
             </button>
           </div>
-
           {linkedContact && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--green-light)", borderRadius: 8, marginBottom: 6 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>{linkedContact.name} — {linkedContact.title} at {linkedContact.company}</div>
-                  {enrichResult && (
-                    <div style={{ fontSize: 11, color: "var(--green)", marginTop: 2 }}>
-                      {enrichResult.emails?.length > 0 && <span>📧 {enrichResult.emails.join(", ")} </span>}
-                      {enrichResult.phones?.length > 0 && <span>📞 {enrichResult.phones.join(", ")}</span>}
-                      {enrichResult.phoneWebhookPending && <span style={{ color: "var(--orange)" }}> · Phone pending webhook</span>}
-                    </div>
-                  )}
-                </div>
-                <button className="btn btn-ghost btn-sm" onClick={handleRevealContact} disabled={enriching} style={{ flexShrink: 0 }}>
-                  {enriching ? <span className="spinner spinner-dark" /> : (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-                  )}
-                  Reveal Email & Phone
-                </button>
-                <button className="icon-btn" onClick={() => { setLinkedContact(null); setEnrichResult(null); }}>✕</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--green-light)", borderRadius: 8, marginBottom: 6 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>{linkedContact.name} — {linkedContact.title} at {linkedContact.company}</div>
+                {enrichResult && (
+                  <div style={{ fontSize: 11, color: "var(--green)", marginTop: 2 }}>
+                    {enrichResult.emails?.length > 0 && <span>📧 {enrichResult.emails.join(", ")} </span>}
+                    {enrichResult.phones?.length > 0 && <span>📞 {enrichResult.phones.join(", ")}</span>}
+                  </div>
+                )}
               </div>
+              <button className="btn btn-ghost btn-sm" onClick={handleRevealContact} disabled={enriching}>
+                {enriching ? <span className="spinner spinner-dark" /> : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" /></svg>}
+                Reveal Email & Phone
+              </button>
+              <button className="icon-btn" onClick={() => { setLinkedContact(null); setEnrichResult(null); }}>✕</button>
             </div>
           )}
-
           {apolloError && <div className="banner banner-error" style={{ marginBottom: 8 }}>{apolloError}</div>}
-
           {apolloResults.length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
               {apolloResults.map((lead, i) => (
@@ -322,9 +316,7 @@ export default function ProposalView() {
                     <div style={{ fontSize: 12, color: "var(--muted)" }}>{lead.title}{lead.company ? ` · ${lead.company}` : ""}{lead.location ? ` · ${lead.location}` : ""}</div>
                     {lead.emails?.length > 0 && <div style={{ fontSize: 11, color: "var(--accent)" }}>{lead.emails[0]}</div>}
                   </div>
-                  <button className="btn btn-primary btn-sm" onClick={() => handleLinkContact(lead)} disabled={linkSaving}>
-                    {linkSaving ? <span className="spinner" /> : "Link"}
-                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => handleLinkContact(lead)}>Link</button>
                 </div>
               ))}
             </div>
@@ -332,21 +324,55 @@ export default function ProposalView() {
         </div>
       </div>
 
-      {/* Client Questions */}
+      {/* Documents */}
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <div className="card-title" style={{ marginBottom: 0 }}>Documents</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>Word, PDF, images — save proposal first to enable upload</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {uploading && <span className="spinner spinner-dark" />}
+            <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading || !savedId}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+              Upload
+            </button>
+            <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp" style={{ display: "none" }} onChange={handleFileUpload} />
+          </div>
+        </div>
+        {!savedId && (
+          <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "var(--surface)", borderRadius: 6 }}>
+            💡 Save the proposal first, then upload files.
+          </div>
+        )}
+        {form.documentUrls.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {form.documentUrls.map((url, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 13, color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {form.documentNames[i] || `Document ${i + 1}`}
+                </a>
+                <button className="icon-btn" onClick={() => handleRemoveDoc(i)}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Questions */}
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div>
             <div className="card-title" style={{ marginBottom: 0 }}>Client Questions</div>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>Questions the client asked — optional</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>Questions from the client — optional</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={addQuestion}>+ Add</button>
         </div>
         {form.clientQuestions.map((q, i) => (
           <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <input className="input" placeholder={`Question ${i + 1}`} value={q} onChange={e => setQuestion(i, e.target.value)} />
-            {form.clientQuestions.length > 1 && (
-              <button className="btn btn-ghost btn-sm" onClick={() => removeQuestion(i)} style={{ flexShrink: 0 }}>✕</button>
-            )}
+            {form.clientQuestions.length > 1 && <button className="btn btn-ghost btn-sm" onClick={() => removeQuestion(i)}>✕</button>}
           </div>
         ))}
       </div>
@@ -364,18 +390,16 @@ export default function ProposalView() {
           <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 8, marginBottom: 8 }}>
             <input className="input" placeholder="Label (e.g. Demo)" value={form.linkLabels[i] || ""} onChange={e => setLink(i, "label", e.target.value)} />
             <input className="input" placeholder="https://..." value={l} onChange={e => setLink(i, "url", e.target.value)} />
-            {form.links.length > 1 && (
-              <button className="btn btn-ghost btn-sm" onClick={() => removeLink(i)}>✕</button>
-            )}
+            {form.links.length > 1 && <button className="btn btn-ghost btn-sm" onClick={() => removeLink(i)}>✕</button>}
           </div>
         ))}
       </div>
 
       {/* Timeline & Budget */}
       <div className="card">
-        <div className="card-title">Timeline & Budget</div>
+        <div className="card-title">Timeline, Budget & Meta</div>
         <div className="card-sub">Optional — used for proposal generation context</div>
-        <div className="grid-2">
+        <div className="grid-2" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 8 }}>
             <div style={{ flex: 1 }}>
               <div className="field-label">Timeline</div>
@@ -400,14 +424,35 @@ export default function ProposalView() {
               <input className="input" type="number" placeholder="5000" value={form.budgetMax} onChange={e => set("budgetMax", e.target.value)} />
             </div>
           </div>
+          <div>
+            <div className="field-label">Tags (comma separated)</div>
+            <input className="input" placeholder="urgent, long-term, react" value={form.tags} onChange={e => set("tags", e.target.value)} />
+          </div>
+          <div>
+            <div className="field-label">Follow-up Date</div>
+            <input className="input" type="date" value={form.followUpDate} onChange={e => set("followUpDate", e.target.value)} />
+          </div>
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-          {saving ? <span className="spinner" /> : null}
-          {savedId ? "Update Proposal" : "Save Proposal"}
-        </button>
+      {/* Notes */}
+      <div className="card">
+        <div className="card-title">Internal Notes</div>
+        <textarea className="input" rows={3} placeholder="Private notes about this proposal..." value={form.notes} onChange={e => set("notes", e.target.value)} style={{ resize: "vertical", fontFamily: "inherit" }} />
+      </div>
+
+      {/* Fixed bottom bar */}
+      <div style={{
+        position: "fixed", bottom: 0, left: 220, right: 0,
+        background: "white", borderTop: "1px solid var(--border)",
+        padding: "12px 24px", display: "flex", justifyContent: "space-between",
+        alignItems: "center", zIndex: 100, boxShadow: "0 -2px 8px rgba(0,0,0,0.06)"
+      }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
+          {savedId ? `ID: ${savedId.slice(0, 8)}…` : "Not saved yet"}
+          {form.documentUrls.length > 0 && ` · ${form.documentUrls.length} file(s)`}
+        </div>
+        <SaveButtons />
       </div>
     </div>
   );
