@@ -1,3 +1,4 @@
+using TEKLead.Api.Middleware;
 using TEKLead.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,7 @@ builder.Services.AddScoped<ApolloService>();
 builder.Services.AddScoped<PortfolioService>();
 builder.Services.AddScoped<ProposalService>();
 builder.Services.AddScoped<BlobService>();
+builder.Services.AddScoped<LogService>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
@@ -24,6 +26,7 @@ if (!string.IsNullOrEmpty(port) && string.IsNullOrEmpty(Environment.GetEnvironme
     app.Urls.Add($"http://0.0.0.0:{port}");
 
 app.UseCors();
+app.UseRequestLogging();
 app.MapGet("/", () => Results.Ok(new { service = "tekleads-api", phase = 2 }));
 app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }));
 
@@ -35,6 +38,7 @@ using (var scope = app.Services.CreateScope())
     try { await leadSvc.EnsureSchema();  } catch (Exception ex) { app.Logger.LogError(ex, "Leads schema failed"); }
     try { var portSvc = scope.ServiceProvider.GetRequiredService<PortfolioService>(); await portSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Portfolio schema failed"); }
     try { var propSvc = scope.ServiceProvider.GetRequiredService<ProposalService>(); await propSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Proposal schema failed"); }
+    try { var logSvc = scope.ServiceProvider.GetRequiredService<LogService>(); await logSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Log schema failed"); }
 }
 
 app.MapControllers();

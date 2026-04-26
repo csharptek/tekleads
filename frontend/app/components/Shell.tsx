@@ -6,8 +6,9 @@ import SavedLeadsView from "./SavedLeadsView";
 import PortfolioView from "./PortfolioView";
 import ProposalView from "./ProposalView";
 import ProposalList from "./ProposalList";
+import LogsView from "./LogsView";
 
-type Page = "leads" | "prospects" | "portfolio" | "proposals" | "proposal-list" | "settings";
+type Page = "leads" | "prospects" | "portfolio" | "proposals" | "proposal-list" | "settings" | "logs";
 
 type NavItem = {
   id: Page;
@@ -64,6 +65,11 @@ const CATEGORIES: NavCategory[] = [
   {
     label: "System",
     items: [
+      {
+        id: "logs",
+        label: "API Logs",
+        icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
+      },
       {
         id: "settings",
         label: "Settings",
@@ -188,6 +194,7 @@ export default function Shell() {
         {page === "proposals"     && <ProposalView onViewList={() => navigate("proposal-list")} />}
         {page === "proposal-list" && <ProposalList onNew={() => navigate("proposals")} />}
         {page === "settings"      && <SettingsView />}
+        {page === "logs"          && <LogsView />}
       </div>
     </div>
   );
