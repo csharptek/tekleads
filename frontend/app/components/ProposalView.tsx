@@ -99,7 +99,7 @@ export default function ProposalView() {
     if (!form.jobPostBody.trim()) { setError("Job post is required."); return; }
     setSaving(true); setError(""); setSuccess("");
     try {
-      const payload = {
+      const payload: any = {
         ...form,
         budgetMin: form.budgetMin ? parseFloat(form.budgetMin) : null,
         budgetMax: form.budgetMax ? parseFloat(form.budgetMax) : null,
@@ -107,6 +107,8 @@ export default function ProposalView() {
         links: form.links.filter(l => l.trim()),
         linkLabels: form.linkLabels,
         documentUrls: [],
+        linkedLeadId: linkedContact?.id || null,
+        apolloContactJson: linkedContact ? JSON.stringify(linkedContact) : null,
       };
       let res: any;
       if (savedId) {
@@ -115,7 +117,7 @@ export default function ProposalView() {
         res = await api.post("/api/proposals", payload);
         setSavedId(res.id);
       }
-      setSuccess("Saved.");
+      setSuccess("Proposal saved.");
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -148,65 +150,43 @@ export default function ProposalView() {
     }
   };
 
-  const handleLinkContact = async (lead: Lead) => {
-    if (!savedId) {
-      setApolloError("Save the proposal first before linking a contact.");
-      return;
-    }
-    setLinkSaving(true);
-    try {
-      const res: any = await api.post(`/api/proposals/${savedId}/link-contact`, {
-        apolloContactJson: JSON.stringify(lead),
-        clientName: lead.name || form.clientName,
-        clientCompany: lead.company || form.clientCompany,
-        lead: {
-          apolloId: lead.apolloId,
-          name: lead.name,
-          title: lead.title,
-          company: lead.company,
-          industry: lead.industry,
-          location: lead.location,
-          emails: lead.emails || [],
-          phones: lead.phones || [],
-          linkedinUrl: lead.linkedinUrl || null,
-        },
-      });
-      setLinkedContact({ ...lead, id: res.leadId });
-      setForm(f => ({
-        ...f,
-        clientName: lead.name || f.clientName,
-        clientCompany: lead.company || f.clientCompany,
-        linkedLeadId: res.leadId,
-      }));
-      setApolloResults([]);
-      setEnrichResult(null);
-      setSuccess("Contact linked and saved to leads.");
-    } catch (e: any) {
-      setApolloError(e.message);
-    } finally {
-      setLinkSaving(false);
-    }
+  const handleLinkContact = (lead: Lead) => {
+    setLinkedContact(lead);
+    setForm(f => ({
+      ...f,
+      clientName: lead.name || f.clientName,
+      clientCompany: lead.company || f.clientCompany,
+    }));
+    setApolloResults([]);
+    setEnrichResult(null);
   };
 
   const handleRevealContact = async () => {
-    if (!linkedContact?.id) return;
+    if (!linkedContact) return;
     setEnriching(true); setApolloError("");
     try {
-      await api.post("/api/leads/save", [linkedContact]);
-      const res: any = await api.post(`/api/leads/${linkedContact.id}/reveal-phone`, {});
+      // Save the lead to DB first (needed for reveal-phone endpoint)
+      const savedLead: any = (await api.post("/api/leads/save", [linkedContact]));
+      // Reuse the apolloId-based lookup; need lead's actual DB id
+      // Fetch the saved lead by apolloId from saved list
+      const allLeads: any = await api.get("/api/leads");
+      const dbLead = (allLeads || []).find((l: any) => l.apolloId === linkedContact.apolloId);
+      if (!dbLead) throw new Error("Could not find saved lead in DB.");
+
+      const leadId = dbLead.id;
+      const res: any = await api.post(`/api/leads/${leadId}/reveal-phone`, {});
       setEnrichResult(res);
       if (res.emails?.length > 0) setForm(f => ({ ...f, clientEmail: f.clientEmail || res.emails[0] }));
       setLinkedContact(c => c ? {
         ...c,
+        id: leadId,
         name: res.fullName?.trim() ? res.fullName : c.name,
         location: res.location?.trim() ? res.location : c.location,
         emails: res.emails?.length ? res.emails : c.emails,
         phones: res.phones?.length ? res.phones : c.phones,
       } : c);
 
-      // Poll webhook for phone if pending (same flow as LeadSearchView)
-      if (res.phoneWebhookPending && linkedContact.id) {
-        const leadId = linkedContact.id;
+      if (res.phoneWebhookPending) {
         let attempts = 0;
         const timer = setInterval(async () => {
           attempts++;
