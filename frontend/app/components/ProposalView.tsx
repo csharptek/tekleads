@@ -220,8 +220,10 @@ export default function ProposalView({
       if (!dbLead) throw new Error("Could not find saved lead in DB.");
       const res: any = await api.post(`/api/leads/${dbLead.id}/reveal-phone`, {});
       setEnrichResult(res);
+      const enrichedName = res.fullName?.trim() ? res.fullName : null;
       if (res.emails?.length > 0) setForm(f => ({ ...f, clientEmail: f.clientEmail || res.emails[0] }));
-      setLinkedContact(c => c ? { ...c, id: dbLead.id, name: res.fullName?.trim() ? res.fullName : c.name, emails: res.emails?.length ? res.emails : c.emails, phones: res.phones?.length ? res.phones : c.phones } : c);
+      if (enrichedName) setForm(f => ({ ...f, clientName: enrichedName }));
+      setLinkedContact(c => c ? { ...c, id: dbLead.id, name: enrichedName || c.name, emails: res.emails?.length ? res.emails : c.emails, phones: res.phones?.length ? res.phones : c.phones } : c);
     } catch (e: any) { setApolloError(e.message); } finally { setEnriching(false); }
   };
 
