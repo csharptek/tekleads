@@ -15,7 +15,8 @@ builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<LogService>();
 builder.Services.AddScoped<ProposalExportService>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+    p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()
+     .WithExposedHeaders("Access-Control-Allow-Private-Network")));
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -28,6 +29,14 @@ if (!string.IsNullOrEmpty(port) && string.IsNullOrEmpty(Environment.GetEnvironme
     app.Urls.Add($"http://0.0.0.0:{port}");
 
 app.UseCors();
+
+// Chrome 130+ Private Network Access — required for newer Android devices
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Headers.ContainsKey("Access-Control-Request-Private-Network"))
+        ctx.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
+    await next();
+});
 app.UseRequestLogging();
 app.MapGet("/", () => Results.Ok(new { service = "tekleads-api", phase = 2 }));
 app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }));
