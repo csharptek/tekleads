@@ -187,8 +187,6 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
   const [quality, setQuality] = useState<QualityScore | null>({ score: 7, reason: "Good structure and portfolio references. Consider adding more specific metrics and a stronger CTA." });
 
   // Tone
-  const [tone, setTone] = useState("professional");
-
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const activePrompt = promptEdited ? customPrompt : defaultPrompt;
@@ -301,15 +299,6 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
             ★ {quality.score}/10
           </div>
         )}
-
-        {/* Tone */}
-        <select value={tone} onChange={e => setTone(e.target.value)}
-          style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 8px", color: "#0f172a", background: "white", flexShrink: 0 }}>
-          <option value="professional">Professional</option>
-          <option value="friendly">Friendly</option>
-          <option value="aggressive">Aggressive</option>
-          <option value="concise">Concise</option>
-        </select>
 
         {/* Generate */}
         <button onClick={handleGenerate} disabled={generating}
@@ -535,8 +524,11 @@ export default function ProposalEditor({ proposalId, proposalHeadline, clientNam
             {/* Section locks */}
             {rightPanel === "sections" && (
               <div style={{ padding: 14 }}>
-                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12, lineHeight: 1.5 }}>
-                  Locked sections are preserved during regeneration.
+                <div style={{ padding: "10px 12px", background: "#eff6ff", borderRadius: 8, border: "1px solid #bfdbfe", marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#1d4ed8", marginBottom: 4 }}>What are section locks?</div>
+                  <div style={{ fontSize: 12, color: "#1e40af", lineHeight: 1.6 }}>
+                    When you regenerate the proposal, locked sections are kept exactly as-is — only unlocked sections get rewritten by AI. Use this to protect finalised content like your Terms & Conditions or "Why CSharpTek" while still refining the scope or timeline.
+                  </div>
                 </div>
                 {sections.map(sec => (
                   <div key={sec.id} onClick={() => toggleSection(sec.id)}

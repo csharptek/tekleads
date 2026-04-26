@@ -54,11 +54,13 @@ public class ProposalService
                 apollo_contact_json TEXT,
                 contacts_json TEXT,
                 generated_response TEXT,
+                selected_portfolio_ids UUID[] NOT NULL DEFAULT '{}',
+                custom_prompt TEXT,
+                generated_at TIMESTAMPTZ,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )");
 
-        // Migrations for existing tables
         var migrations = new[]
         {
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS document_names TEXT[] NOT NULL DEFAULT '{}'",
@@ -71,10 +73,13 @@ public class ProposalService
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS won_at TIMESTAMPTZ",
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS lost_at TIMESTAMPTZ",
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS contacts_json TEXT",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS selected_portfolio_ids UUID[] NOT NULL DEFAULT '{}'",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS custom_prompt TEXT",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ",
         };
         foreach (var m in migrations)
         {
-            try { await c.ExecuteAsync(m); } catch { /* column may exist */ }
+            try { await c.ExecuteAsync(m); } catch { }
         }
 
         _log.LogInformation("proposals table OK");
@@ -113,14 +118,16 @@ public class ProposalService
                     budget_min, budget_max, final_price, status, lost_reason, notes, tags,
                     follow_up_date, sent_at, won_at, lost_at,
                     linked_lead_id, apollo_contact_json, contacts_json,
-                    generated_response, created_at, updated_at)
+                    generated_response, selected_portfolio_ids, custom_prompt, generated_at,
+                    created_at, updated_at)
                 VALUES (@Id, @JobPostHeadline, @JobPostBody, @ClientName, @ClientCompany,
                     @ClientCountry, @ClientCity, @ClientEmail, @ClientLinkedin, @ClientQuestions,
                     @Links, @LinkLabels, @DocumentUrls, @DocumentNames, @TimelineValue, @TimelineUnit,
                     @BudgetMin, @BudgetMax, @FinalPrice, @Status, @LostReason, @Notes, @Tags,
                     @FollowUpDate, @SentAt, @WonAt, @LostAt,
                     @LinkedLeadId, @ApolloContactJson, @ContactsJson,
-                    @GeneratedResponse, @CreatedAt, @UpdatedAt)", p);
+                    @GeneratedResponse, @SelectedPortfolioIds, @CustomPrompt, @GeneratedAt,
+                    @CreatedAt, @UpdatedAt)", p);
         }
         else
         {
@@ -138,7 +145,8 @@ public class ProposalService
                     follow_up_date=@FollowUpDate, sent_at=@SentAt, won_at=@WonAt, lost_at=@LostAt,
                     linked_lead_id=@LinkedLeadId, apollo_contact_json=@ApolloContactJson,
                     contacts_json=@ContactsJson, generated_response=@GeneratedResponse,
-                    updated_at=@UpdatedAt
+                    selected_portfolio_ids=@SelectedPortfolioIds, custom_prompt=@CustomPrompt,
+                    generated_at=@GeneratedAt, updated_at=@UpdatedAt
                 WHERE id=@Id", p);
         }
 
@@ -186,6 +194,9 @@ public class ProposalService
         ApolloContactJson = r.apollo_contact_json,
         ContactsJson = r.contacts_json,
         GeneratedResponse = r.generated_response,
+        SelectedPortfolioIds = r.selected_portfolio_ids ?? Array.Empty<Guid>(),
+        CustomPrompt = r.custom_prompt,
+        GeneratedAt = r.generated_at,
         CreatedAt = r.created_at,
         UpdatedAt = r.updated_at,
     };

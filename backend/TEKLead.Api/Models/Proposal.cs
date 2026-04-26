@@ -21,7 +21,7 @@ public class Proposal
     public decimal? BudgetMin { get; set; }
     public decimal? BudgetMax { get; set; }
     public decimal? FinalPrice { get; set; }
-    public string Status { get; set; } = "draft"; // draft, sent, won, lost, follow_up
+    public string Status { get; set; } = "draft";
     public string? LostReason { get; set; }
     public string? Notes { get; set; }
     public string? Tags { get; set; }
@@ -33,6 +33,10 @@ public class Proposal
     public string? ApolloContactJson { get; set; }
     public string? ContactsJson { get; set; }
     public string? GeneratedResponse { get; set; }
+    // ── Generation fields ──
+    public Guid[] SelectedPortfolioIds { get; set; } = Array.Empty<Guid>();
+    public string? CustomPrompt { get; set; }
+    public DateTime? GeneratedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

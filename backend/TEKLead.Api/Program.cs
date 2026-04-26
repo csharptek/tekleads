@@ -10,6 +10,7 @@ builder.Services.AddScoped<LeadService>();
 builder.Services.AddScoped<ApolloService>();
 builder.Services.AddScoped<PortfolioService>();
 builder.Services.AddScoped<ProposalService>();
+builder.Services.AddScoped<ProposalGenerationService>();
 builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<LogService>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
@@ -39,6 +40,7 @@ using (var scope = app.Services.CreateScope())
     try { var portSvc = scope.ServiceProvider.GetRequiredService<PortfolioService>(); await portSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Portfolio schema failed"); }
     try { var propSvc = scope.ServiceProvider.GetRequiredService<ProposalService>(); await propSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Proposal schema failed"); }
     try { var logSvc = scope.ServiceProvider.GetRequiredService<LogService>(); await logSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Log schema failed"); }
+    try { var genSvc = scope.ServiceProvider.GetRequiredService<ProposalGenerationService>(); await genSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "ProposalGeneration schema failed"); }
 }
 
 app.MapControllers();
