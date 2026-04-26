@@ -59,6 +59,7 @@ export default function Shell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [editorCtx, setEditorCtx] = useState<EditorContext | null>(null);
+  const [editProposalId, setEditProposalId] = useState<string | null>(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 768);
@@ -72,6 +73,11 @@ export default function Shell() {
   const openEditor = (ctx: EditorContext) => {
     setEditorCtx(ctx);
     navigate("proposal-editor");
+  };
+
+  const openEdit = (proposalId: string) => {
+    setEditProposalId(proposalId);
+    navigate("proposals");
   };
 
   // If proposal editor is full-screen, render without shell
@@ -137,8 +143,8 @@ export default function Shell() {
         {page === "leads"             && <LeadSearchView />}
         {page === "prospects"         && <SavedLeadsView />}
         {page === "portfolio"         && <PortfolioView />}
-        {page === "proposals"         && <ProposalView onViewList={() => navigate("proposal-list")} onGenerateProposal={openEditor} />}
-        {page === "proposal-list"     && <ProposalList onNew={() => navigate("proposals")} onGenerateProposal={openEditor} />}
+        {page === "proposals"         && <ProposalView onViewList={() => navigate("proposal-list")} onGenerateProposal={openEditor} editProposalId={editProposalId} onEditDone={() => setEditProposalId(null)} />}
+        {page === "proposal-list"     && <ProposalList onNew={() => navigate("proposals")} onEdit={openEdit} onGenerateProposal={openEditor} />}
         {page === "proposal-settings" && <ProposalSettings />}
         {page === "settings"          && <SettingsView />}
         {page === "logs"              && <LogsView />}
