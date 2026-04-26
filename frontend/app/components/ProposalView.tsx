@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { api } from "../../lib/api";
 
 type GenerateProposalCtx = {
@@ -76,9 +76,13 @@ const EMPTY: Proposal = {
 export default function ProposalView({
   onViewList,
   onGenerateProposal,
+  editProposalId,
+  onEditDone,
 }: {
   onViewList?: () => void;
   onGenerateProposal?: (ctx: GenerateProposalCtx) => void;
+  editProposalId?: string | null;
+  onEditDone?: () => void;
 }) {
   const [form, setForm] = useState<Proposal>({ ...EMPTY });
   const [saving, setSaving] = useState(false);
@@ -89,6 +93,39 @@ export default function ProposalView({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [apolloSearching, setApolloSearching] = useState(false);
+
+  useEffect(() => {
+    if (!editProposalId) return;
+    api.get<any>(`/api/proposals/${editProposalId}`).then(p => {
+      setSavedId(p.id);
+      setForm({
+        jobPostHeadline: p.jobPostHeadline || "",
+        jobPostBody: p.jobPostBody || "",
+        clientName: p.clientName || "",
+        clientCompany: p.clientCompany || "",
+        clientCountry: p.clientCountry || "",
+        clientCity: p.clientCity || "",
+        clientEmail: p.clientEmail || "",
+        clientLinkedin: p.clientLinkedin || "",
+        clientQuestions: p.clientQuestions?.length ? p.clientQuestions : [""],
+        links: p.links?.length ? p.links : [""],
+        linkLabels: p.linkLabels?.length ? p.linkLabels : [""],
+        documentUrls: p.documentUrls || [],
+        documentNames: p.documentNames || [],
+        timelineValue: p.timelineValue || "",
+        timelineUnit: p.timelineUnit || "weeks",
+        budgetMin: p.budgetMin?.toString() || "",
+        budgetMax: p.budgetMax?.toString() || "",
+        notes: p.notes || "",
+        tags: p.tags || "",
+        followUpDate: p.followUpDate ? p.followUpDate.split("T")[0] : "",
+        status: p.status || "draft",
+        linkedLeadId: p.linkedLeadId,
+        apolloContactJson: p.apolloContactJson,
+      });
+      onEditDone?.();
+    }).catch(() => {});
+  }, [editProposalId]);
   const [apolloResults, setApolloResults] = useState<Lead[]>([]);
   const [apolloError, setApolloError] = useState("");
   const [linkedContact, setLinkedContact] = useState<Lead | null>(null);
@@ -206,7 +243,12 @@ export default function ProposalView({
 
   const handleLinkContact = (lead: Lead) => {
     setLinkedContact(lead);
-    setForm(f => ({ ...f, clientName: lead.name || f.clientName, clientCompany: lead.company || f.clientCompany }));
+    setForm(f => ({
+      ...f,
+      clientName: lead.name || f.clientName,
+      clientCompany: lead.company || f.clientCompany,
+      clientEmail: f.clientEmail || lead.emails?.[0] || "",
+    }));
     setApolloResults([]); setEnrichResult(null);
   };
 
@@ -221,9 +263,26 @@ export default function ProposalView({
       const res: any = await api.post(`/api/leads/${dbLead.id}/reveal-phone`, {});
       setEnrichResult(res);
       const enrichedName = res.fullName?.trim() ? res.fullName : null;
-      if (res.emails?.length > 0) setForm(f => ({ ...f, clientEmail: f.clientEmail || res.emails[0] }));
-      if (enrichedName) setForm(f => ({ ...f, clientName: enrichedName }));
-      setLinkedContact(c => c ? { ...c, id: dbLead.id, name: enrichedName || c.name, emails: res.emails?.length ? res.emails : c.emails, phones: res.phones?.length ? res.phones : c.phones } : c);
+      // Parse location string "City, State, Country" from Apollo
+      const locationParts = (res.location || "").split(",").map((s: string) => s.trim()).filter(Boolean);
+      const enrichedCity    = locationParts[0] || "";
+      const enrichedCountry = locationParts[locationParts.length - 1] || "";
+
+      setForm(f => ({
+        ...f,
+        ...(enrichedName ? { clientName: enrichedName } : {}),
+        ...(res.emails?.length > 0 ? { clientEmail: f.clientEmail || res.emails[0] } : {}),
+        ...(enrichedCity    && !f.clientCity    ? { clientCity: enrichedCity }       : {}),
+        ...(enrichedCountry && !f.clientCountry ? { clientCountry: enrichedCountry } : {}),
+      }));
+      setLinkedContact(c => c ? {
+        ...c,
+        id: dbLead.id,
+        name: enrichedName || c.name,
+        emails: res.emails?.length ? res.emails : c.emails,
+        phones: res.phones?.length ? res.phones : c.phones,
+        location: res.location || c.location,
+      } : c);
     } catch (e: any) { setApolloError(e.message); } finally { setEnriching(false); }
   };
 
@@ -311,7 +370,8 @@ export default function ProposalView({
                 {enrichResult && (
                   <div style={{ fontSize: 11, color: "var(--green)", marginTop: 2 }}>
                     {enrichResult.emails?.length > 0 && <span>📧 {enrichResult.emails.join(", ")} </span>}
-                    {enrichResult.phones?.length > 0 && <span>📞 {enrichResult.phones.join(", ")}</span>}
+                    {enrichResult.phones?.length > 0 && <span>📞 {enrichResult.phones.join(", ")} </span>}
+                    {enrichResult.location && <span>📍 {enrichResult.location}</span>}
                   </div>
                 )}
               </div>
