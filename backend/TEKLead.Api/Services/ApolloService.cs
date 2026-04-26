@@ -41,18 +41,25 @@ public class ApolloService
     {
         var key = await GetKey();
 
+        var payload = new Dictionary<string, object>
+        {
+            ["page"] = page,
+            ["per_page"] = perPage,
+        };
+
         var kw = string.Join(" ", new[] { name, company, industry }
             .Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (!string.IsNullOrEmpty(kw))
+            payload["q_keywords"] = kw;
+        if (!string.IsNullOrEmpty(title))
+            payload["person_titles"] = new[] { title };
+        if (!string.IsNullOrEmpty(location))
+            payload["person_locations"] = new[] { location };
 
-        var qs = new List<string> { $"page={page}", $"per_page={perPage}" };
-        if (!string.IsNullOrEmpty(kw))       qs.Add($"q_keywords={Uri.EscapeDataString(kw)}");
-        if (!string.IsNullOrEmpty(title))    qs.Add($"person_titles[]={Uri.EscapeDataString(title)}");
-        if (!string.IsNullOrEmpty(location)) qs.Add($"person_locations[]={Uri.EscapeDataString(location)}");
-
-        var url = $"https://api.apollo.io/api/v1/mixed_people/api_search?{string.Join("&", qs)}";
+        var url = "https://api.apollo.io/api/v1/mixed_people/search";
         _log.LogInformation("Apollo search: {0}", url);
 
-        var res = await MakeClient(key).PostAsync(url, null);
+        var res = await MakeClient(key).PostAsJsonAsync(url, payload);
         var body = await res.Content.ReadAsStringAsync();
 
         if (!res.IsSuccessStatusCode)
@@ -72,8 +79,9 @@ public class ApolloService
             foreach (var p in people.EnumerateArray())
             {
                 var firstName   = Str(p, "first_name");
-                var lastNameObf = Str(p, "last_name_obfuscated");
-                var fullName    = $"{firstName} {lastNameObf}".Trim();
+                var lastName = Str(p, "last_name");
+                if (string.IsNullOrEmpty(lastName)) lastName = Str(p, "last_name_obfuscated");
+                var fullName = $"{firstName} {lastName}".Trim();
 
                 var orgName = "";
                 var orgIndustry = "";
