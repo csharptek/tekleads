@@ -56,7 +56,7 @@ public class ApolloService
         if (!string.IsNullOrEmpty(location))
             payload["person_locations"] = new[] { location };
 
-        var url = "https://api.apollo.io/api/v1/mixed_people/search";
+        var url = "https://api.apollo.io/api/v1/mixed_people/api_search";
         _log.LogInformation("Apollo search: {0}", url);
 
         var res = await MakeClient(key).PostAsJsonAsync(url, payload);
