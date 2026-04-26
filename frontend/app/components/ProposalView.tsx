@@ -2,6 +2,13 @@
 import { useState, useRef } from "react";
 import { api } from "../../lib/api";
 
+type GenerateProposalCtx = {
+  proposalId: string;
+  proposalHeadline?: string;
+  clientName?: string;
+  clientCompany?: string;
+};
+
 type Lead = {
   id?: string;
   apolloId?: string;
@@ -66,7 +73,13 @@ const EMPTY: Proposal = {
   status: "draft",
 };
 
-export default function ProposalView({ onViewList }: { onViewList?: () => void }) {
+export default function ProposalView({
+  onViewList,
+  onGenerateProposal,
+}: {
+  onViewList?: () => void;
+  onGenerateProposal?: (ctx: GenerateProposalCtx) => void;
+}) {
   const [form, setForm] = useState<Proposal>({ ...EMPTY });
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -132,62 +145,60 @@ export default function ProposalView({ onViewList }: { onViewList?: () => void }
           setSuccess("");
         }, 800);
       }
+      return res?.id ?? savedId;
     } catch (e: any) {
       setError(e.message);
+      return null;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleGenerateProposal = async () => {
+    if (!form.jobPostBody.trim()) { setError("Job post is required to generate a proposal."); return; }
+    let id = savedId;
+    if (!id) {
+      id = await handleSave(false);
+    }
+    if (onGenerateProposal) {
+      onGenerateProposal({
+        proposalId: id || "new",
+        proposalHeadline: form.jobPostHeadline || form.jobPostBody.slice(0, 60),
+        clientName: form.clientName,
+        clientCompany: form.clientCompany,
+      });
     }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || !files.length) return;
-    if (!savedId) {
-      setError("Save the proposal first before uploading files.");
-      e.target.value = "";
-      return;
-    }
+    if (!savedId) { setError("Save the proposal first before uploading files."); e.target.value = ""; return; }
     setUploading(true); setError("");
     try {
       for (const file of Array.from(files)) {
         const fd = new FormData();
         fd.append("file", file);
         const res: any = await api.upload(`/api/proposals/${savedId}/upload`, fd);
-        setForm(f => ({
-          ...f,
-          documentUrls: [...f.documentUrls, res.url],
-          documentNames: [...f.documentNames, res.name],
-        }));
+        setForm(f => ({ ...f, documentUrls: [...f.documentUrls, res.url], documentNames: [...f.documentNames, res.name] }));
       }
       setSuccess("File(s) uploaded.");
     } catch (e: any) {
       setError(e.message);
-    } finally {
-      setUploading(false);
-      e.target.value = "";
-    }
+    } finally { setUploading(false); e.target.value = ""; }
   };
 
   const handleRemoveDoc = async (i: number) => {
     const url = form.documentUrls[i];
-    if (savedId && url) {
-      try { await api.del(`/api/proposals/${savedId}/document`, { url }); } catch { }
-    }
-    setForm(f => ({
-      ...f,
-      documentUrls: f.documentUrls.filter((_, j) => j !== i),
-      documentNames: f.documentNames.filter((_, j) => j !== i),
-    }));
+    if (savedId && url) { try { await api.del(`/api/proposals/${savedId}/document`, { url }); } catch { } }
+    setForm(f => ({ ...f, documentUrls: f.documentUrls.filter((_, j) => j !== i), documentNames: f.documentNames.filter((_, j) => j !== i) }));
   };
 
   const handleApolloSearch = async () => {
     if (!form.clientName && !form.clientCompany) { setApolloError("Enter client name or company first."); return; }
     setApolloSearching(true); setApolloError(""); setApolloResults([]);
     try {
-      const res: any = await api.post(`/api/leads/search`, {
-        name: form.clientName || null, company: form.clientCompany || null,
-        title: null, industry: null, location: null, page: 1, perPage: 10,
-      });
+      const res: any = await api.post(`/api/leads/search`, { name: form.clientName || null, company: form.clientCompany || null, title: null, industry: null, location: null, page: 1, perPage: 10 });
       setApolloResults(res.leads || []);
       if (!res.leads?.length) setApolloError("No results found.");
     } catch (e: any) { setApolloError(e.message); } finally { setApolloSearching(false); }
@@ -215,17 +226,12 @@ export default function ProposalView({ onViewList }: { onViewList?: () => void }
   };
 
   const resetForm = () => {
-    setForm({ ...EMPTY });
-    setSavedId(null);
-    setLinkedContact(null);
-    setApolloResults([]);
-    setSuccess("");
-    setError("");
-    setEnrichResult(null);
+    setForm({ ...EMPTY }); setSavedId(null); setLinkedContact(null);
+    setApolloResults([]); setSuccess(""); setError(""); setEnrichResult(null);
   };
 
   const SaveButtons = ({ sm = false }: { sm?: boolean }) => (
-    <div style={{ display: "flex", gap: 8 }}>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       <button className={`btn btn-ghost ${sm ? "btn-sm" : ""}`} onClick={resetForm}>Clear</button>
       {onViewList && (
         <button className={`btn btn-ghost ${sm ? "btn-sm" : ""}`} onClick={onViewList}>View All</button>
@@ -236,6 +242,14 @@ export default function ProposalView({ onViewList }: { onViewList?: () => void }
       <button className={`btn btn-primary ${sm ? "btn-sm" : ""}`} onClick={() => handleSave(false)} disabled={saving}>
         {saving ? <span className="spinner" /> : null}
         {savedId ? "Update" : "Save Draft"}
+      </button>
+      <button
+        className={`btn ${sm ? "btn-sm" : ""}`}
+        onClick={handleGenerateProposal}
+        disabled={saving}
+        style={{ background: "#0f172a", color: "white", border: "none" }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Generate Proposal
       </button>
     </div>
   );
@@ -283,13 +297,13 @@ export default function ProposalView({ onViewList }: { onViewList?: () => void }
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div className="field-label" style={{ margin: 0 }}>Apollo Contact Lookup</div>
             <button className="btn btn-ghost btn-sm" onClick={handleApolloSearch} disabled={apolloSearching}>
-              {apolloSearching ? <span className="spinner spinner-dark" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>}
+              {apolloSearching ? <span className="spinner spinner-dark" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>}
               Search Apollo
             </button>
           </div>
           {linkedContact && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--green-light)", borderRadius: 8, marginBottom: 6 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>{linkedContact.name} — {linkedContact.title} at {linkedContact.company}</div>
                 {enrichResult && (
@@ -300,7 +314,7 @@ export default function ProposalView({ onViewList }: { onViewList?: () => void }
                 )}
               </div>
               <button className="btn btn-ghost btn-sm" onClick={handleRevealContact} disabled={enriching}>
-                {enriching ? <span className="spinner spinner-dark" /> : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" /></svg>}
+                {enriching ? <span className="spinner spinner-dark" /> : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>}
                 Reveal Email & Phone
               </button>
               <button className="icon-btn" onClick={() => { setLinkedContact(null); setEnrichResult(null); }}>✕</button>
@@ -334,22 +348,18 @@ export default function ProposalView({ onViewList }: { onViewList?: () => void }
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {uploading && <span className="spinner spinner-dark" />}
             <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading || !savedId}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               Upload
             </button>
             <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp" style={{ display: "none" }} onChange={handleFileUpload} />
           </div>
         </div>
-        {!savedId && (
-          <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "var(--surface)", borderRadius: 6 }}>
-            💡 Save the proposal first, then upload files.
-          </div>
-        )}
+        {!savedId && <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "var(--surface)", borderRadius: 6 }}>💡 Save the proposal first, then upload files.</div>}
         {form.documentUrls.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {form.documentUrls.map((url, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)" }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 13, color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {form.documentNames[i] || `Document ${i + 1}`}
                 </a>

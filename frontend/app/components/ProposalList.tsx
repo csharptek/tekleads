@@ -2,6 +2,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../../lib/api";
 
+type GenerateProposalCtx = {
+  proposalId: string;
+  proposalHeadline?: string;
+  clientName?: string;
+  clientCompany?: string;
+};
+
 type Proposal = {
   id: string;
   jobPostHeadline: string;
@@ -36,13 +43,7 @@ type Proposal = {
   updatedAt: string;
 };
 
-type Contact = {
-  name: string;
-  email: string;
-  phone?: string;
-  role?: string;
-  linkedin?: string;
-};
+type Contact = { name: string; email: string; phone?: string; role?: string; linkedin?: string; };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   draft:      { label: "Draft",      color: "#6b7280", bg: "#f3f4f6" },
@@ -54,19 +55,21 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
 
 const PAGE_SIZE = 10;
 
-export default function ProposalList({ onNew }: { onNew: () => void }) {
+export default function ProposalList({
+  onNew,
+  onGenerateProposal,
+}: {
+  onNew: () => void;
+  onGenerateProposal?: (ctx: GenerateProposalCtx) => void;
+}) {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  // Filter/sort
   const [activeTab, setActiveTab] = useState<"all" | "draft" | "sent" | "follow_up" | "won" | "lost">("all");
   const [sortField, setSortField] = useState<"createdAt" | "clientCompany" | "budgetMax" | "status">("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-
-  // Drawer
   const [drawer, setDrawer] = useState<Proposal | null>(null);
   const [drawerTab, setDrawerTab] = useState<"details" | "contacts" | "docs" | "notes">("details");
   const [drawerSaving, setDrawerSaving] = useState(false);
@@ -78,8 +81,6 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
   const [notes, setNotes] = useState("");
   const [uploading, setUploading] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
-
-  // Collapsed sections for lost/won
   const [lostOpen, setLostOpen] = useState(false);
   const [wonOpen, setWonOpen] = useState(false);
 
@@ -99,12 +100,8 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
     .filter(p => {
       if (!search.trim()) return true;
       const s = search.toLowerCase();
-      return (
-        p.clientName?.toLowerCase().includes(s) ||
-        p.clientCompany?.toLowerCase().includes(s) ||
-        p.jobPostHeadline?.toLowerCase().includes(s) ||
-        p.tags?.toLowerCase().includes(s)
-      );
+      return p.clientName?.toLowerCase().includes(s) || p.clientCompany?.toLowerCase().includes(s) ||
+        p.jobPostHeadline?.toLowerCase().includes(s) || p.tags?.toLowerCase().includes(s);
     })
     .sort((a, b) => {
       let va: any = a[sortField as keyof Proposal] ?? "";
@@ -116,7 +113,6 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
   const won = proposals.filter(p => p.status === "won");
   const lost = proposals.filter(p => p.status === "lost");
 
@@ -126,33 +122,19 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
   };
 
   const openDrawer = (p: Proposal) => {
-    setDrawer(p);
-    setDrawerTab("details");
-    setDrawerError("");
-    setDrawerSuccess("");
-    setFinalPrice(p.finalPrice?.toString() || "");
-    setLostReason(p.lostReason || "");
-    setNotes(p.notes || "");
+    setDrawer(p); setDrawerTab("details"); setDrawerError(""); setDrawerSuccess("");
+    setFinalPrice(p.finalPrice?.toString() || ""); setLostReason(p.lostReason || ""); setNotes(p.notes || "");
     try { setContacts(p.contactsJson ? JSON.parse(p.contactsJson) : []); } catch { setContacts([]); }
   };
-
   const closeDrawer = () => { setDrawer(null); setDrawerError(""); setDrawerSuccess(""); };
 
   const saveDrawer = async () => {
     if (!drawer) return;
     setDrawerSaving(true); setDrawerError(""); setDrawerSuccess("");
     try {
-      const payload = {
-        ...drawer,
-        finalPrice: finalPrice ? parseFloat(finalPrice) : null,
-        lostReason,
-        notes,
-        contactsJson: JSON.stringify(contacts),
-      };
+      const payload = { ...drawer, finalPrice: finalPrice ? parseFloat(finalPrice) : null, lostReason, notes, contactsJson: JSON.stringify(contacts) };
       const res: any = await api.put(`/api/proposals/${drawer.id}`, payload);
-      setDrawer(res);
-      setProposals(ps => ps.map(p => p.id === res.id ? res : p));
-      setDrawerSuccess("Saved.");
+      setDrawer(res); setProposals(ps => ps.map(p => p.id === res.id ? res : p)); setDrawerSuccess("Saved.");
     } catch (e: any) { setDrawerError(e.message); }
     finally { setDrawerSaving(false); }
   };
@@ -161,13 +143,7 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
     setStatusChanging(true);
     try {
       const now = new Date().toISOString();
-      const updated: any = {
-        ...p,
-        status,
-        sentAt: status === "sent" ? (p.sentAt || now) : p.sentAt,
-        wonAt: status === "won" ? (p.wonAt || now) : p.wonAt,
-        lostAt: status === "lost" ? (p.lostAt || now) : p.lostAt,
-      };
+      const updated: any = { ...p, status, sentAt: status === "sent" ? (p.sentAt || now) : p.sentAt, wonAt: status === "won" ? (p.wonAt || now) : p.wonAt, lostAt: status === "lost" ? (p.lostAt || now) : p.lostAt };
       const res: any = await api.put(`/api/proposals/${p.id}`, updated);
       setProposals(ps => ps.map(x => x.id === res.id ? res : x));
       if (drawer?.id === p.id) setDrawer(res);
@@ -182,17 +158,10 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
     setUploading(true); setDrawerError("");
     try {
       for (const file of Array.from(files)) {
-        const fd = new FormData();
-        fd.append("file", file);
+        const fd = new FormData(); fd.append("file", file);
         const res: any = await api.upload(`/api/proposals/${drawer.id}/upload`, fd);
-        setDrawer(d => d ? {
-          ...d,
-          documentUrls: [...d.documentUrls, res.url],
-          documentNames: [...d.documentNames, res.name],
-        } : d);
-        setProposals(ps => ps.map(p => p.id === drawer.id ? {
-          ...p, documentUrls: [...p.documentUrls, res.url], documentNames: [...p.documentNames, res.name]
-        } : p));
+        setDrawer(d => d ? { ...d, documentUrls: [...d.documentUrls, res.url], documentNames: [...d.documentNames, res.name] } : d);
+        setProposals(ps => ps.map(p => p.id === drawer.id ? { ...p, documentUrls: [...p.documentUrls, res.url], documentNames: [...p.documentNames, res.name] } : p));
       }
       setDrawerSuccess("File uploaded.");
     } catch (e: any) { setDrawerError(e.message); }
@@ -215,38 +184,19 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
 
   const StatusBadge = ({ status }: { status: string }) => {
     const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.draft;
-    return (
-      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: cfg.color, background: cfg.bg, whiteSpace: "nowrap" }}>
-        {cfg.label}
-      </span>
-    );
+    return <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: cfg.color, background: cfg.bg, whiteSpace: "nowrap" }}>{cfg.label}</span>;
   };
 
   const SortIcon = ({ field }: { field: typeof sortField }) => (
-    <span style={{ marginLeft: 4, opacity: sortField === field ? 1 : 0.3 }}>
-      {sortField === field && sortDir === "asc" ? "↑" : "↓"}
-    </span>
+    <span style={{ marginLeft: 4, opacity: sortField === field ? 1 : 0.3 }}>{sortField === field && sortDir === "asc" ? "↑" : "↓"}</span>
   );
 
-  const tabCounts = {
-    all: proposals.length,
-    draft: proposals.filter(p => p.status === "draft").length,
-    sent: proposals.filter(p => p.status === "sent").length,
-    follow_up: proposals.filter(p => p.status === "follow_up").length,
-    won: won.length,
-    lost: lost.length,
-  };
-
+  const tabCounts = { all: proposals.length, draft: proposals.filter(p => p.status === "draft").length, sent: proposals.filter(p => p.status === "sent").length, follow_up: proposals.filter(p => p.status === "follow_up").length, won: won.length, lost: lost.length };
   const fmt = (d?: string) => d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
-  const fmtBudget = (min?: number, max?: number) => {
-    if (!min && !max) return "—";
-    if (min && max) return `$${min.toLocaleString()}–$${max.toLocaleString()}`;
-    return `$${(min || max)!.toLocaleString()}`;
-  };
+  const fmtBudget = (min?: number, max?: number) => { if (!min && !max) return "—"; if (min && max) return `$${min.toLocaleString()}–$${max.toLocaleString()}`; return `$${(min || max)!.toLocaleString()}`; };
 
   return (
     <div className="page">
-      {/* Header */}
       <div className="page-header">
         <div>
           <div className="page-title">Proposals</div>
@@ -258,14 +208,10 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
       {error && <div className="banner banner-error">{error}</div>}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 0 }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
         {(["all", "draft", "sent", "follow_up", "won", "lost"] as const).map(tab => (
           <button key={tab} onClick={() => { setActiveTab(tab); setPage(1); }}
-            style={{
-              padding: "8px 14px", fontSize: 13, fontWeight: 500, border: "none", background: "none", cursor: "pointer",
-              borderBottom: activeTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
-              color: activeTab === tab ? "var(--accent)" : "var(--muted)",
-            }}>
+            style={{ padding: "8px 14px", fontSize: 13, fontWeight: 500, border: "none", background: "none", cursor: "pointer", borderBottom: activeTab === tab ? "2px solid var(--accent)" : "2px solid transparent", color: activeTab === tab ? "var(--accent)" : "var(--muted)" }}>
             {STATUS_CONFIG[tab]?.label || "All"} <span style={{ fontSize: 11, opacity: 0.7 }}>({tabCounts[tab]})</span>
           </button>
         ))}
@@ -274,7 +220,7 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
       {/* Search + sort */}
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         <div style={{ position: "relative", flex: 1 }}>
-          <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.4 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+          <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.4 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input className="input" style={{ paddingLeft: 32 }} placeholder="Search company, client, headline, tags..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <select className="input" style={{ width: 160 }} value={sortField} onChange={e => setSortField(e.target.value as any)}>
@@ -283,14 +229,12 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
           <option value="budgetMax">Budget</option>
           <option value="status">Status</option>
         </select>
-        <button className="btn btn-ghost btn-sm" onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}>
-          {sortDir === "asc" ? "↑ Asc" : "↓ Desc"}
-        </button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}>{sortDir === "asc" ? "↑ Asc" : "↓ Desc"}</button>
       </div>
 
       {/* Table */}
       {loading ? (
-        <div style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}><span className="spinner spinner-dark" /></div>
+        <div style={{ textAlign: "center", padding: 40 }}><span className="spinner spinner-dark" /></div>
       ) : paged.length === 0 ? (
         <div className="card" style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>No proposals found.</div>
       ) : (
@@ -309,8 +253,7 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
             </thead>
             <tbody>
               {paged.map((p, i) => (
-                <tr key={p.id} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "white" : "var(--surface-faint, #fafafa)", cursor: "pointer" }}
-                  onClick={() => openDrawer(p)}>
+                <tr key={p.id} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "white" : "#fafafa", cursor: "pointer" }} onClick={() => openDrawer(p)}>
                   <td style={td}><div style={{ fontWeight: 600 }}>{p.clientCompany || "—"}</div></td>
                   <td style={td}><div>{p.clientName || "—"}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{p.clientEmail}</div></td>
                   <td style={td}><div style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60) || "—"}</div></td>
@@ -338,9 +281,7 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
           <button className="btn btn-ghost btn-sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Prev</button>
           {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
             const n = i + 1;
-            return (
-              <button key={n} className={`btn btn-sm ${n === page ? "btn-primary" : "btn-ghost"}`} onClick={() => setPage(n)}>{n}</button>
-            );
+            return <button key={n} className={`btn btn-sm ${n === page ? "btn-primary" : "btn-ghost"}`} onClick={() => setPage(n)}>{n}</button>;
           })}
           <button className="btn btn-ghost btn-sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
         </div>
@@ -357,14 +298,8 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {won.map((p, i) => (
                 <div key={p.id} onClick={() => openDrawer(p)} style={{ display: "flex", gap: 16, padding: "12px 16px", borderBottom: i < won.length - 1 ? "1px solid var(--border)" : "none", cursor: "pointer", alignItems: "center" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600 }}>{p.clientCompany || p.clientName}</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60)}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 600, color: "var(--green)" }}>${(p.finalPrice || p.budgetMax || 0).toLocaleString()}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{fmt(p.wonAt)}</div>
-                  </div>
+                  <div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{p.clientCompany || p.clientName}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60)}</div></div>
+                  <div style={{ textAlign: "right" }}><div style={{ fontWeight: 600, color: "var(--green)" }}>${(p.finalPrice || p.budgetMax || 0).toLocaleString()}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{fmt(p.wonAt)}</div></div>
                 </div>
               ))}
             </div>
@@ -383,14 +318,8 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {lost.map((p, i) => (
                 <div key={p.id} onClick={() => openDrawer(p)} style={{ display: "flex", gap: 16, padding: "12px 16px", borderBottom: i < lost.length - 1 ? "1px solid var(--border)" : "none", cursor: "pointer", alignItems: "center" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600 }}>{p.clientCompany || p.clientName}</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60)}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 11, color: "var(--red)" }}>{p.lostReason || "No reason given"}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{fmt(p.lostAt)}</div>
-                  </div>
+                  <div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{p.clientCompany || p.clientName}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60)}</div></div>
+                  <div style={{ textAlign: "right" }}><div style={{ fontSize: 11, color: "var(--red)" }}>{p.lostReason || "No reason given"}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{fmt(p.lostAt)}</div></div>
                 </div>
               ))}
             </div>
@@ -398,16 +327,11 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
         </div>
       )}
 
-      {/* Drawer overlay */}
+      {/* Drawer */}
       {drawer && (
         <>
           <div onClick={closeDrawer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 200 }} />
-          <div className="drawer-panel"
-            style={{
-            position: "fixed", top: 0, right: 0, bottom: 0, width: 560,
-            background: "white", zIndex: 201, boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
-            display: "flex", flexDirection: "column", overflowY: "auto",
-          }}>
+          <div className="drawer-panel" style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 560, background: "white", zIndex: 201, boxShadow: "-4px 0 24px rgba(0,0,0,0.12)", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             {/* Drawer header */}
             <div style={{ padding: "20px 24px 0", borderBottom: "1px solid var(--border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
@@ -430,7 +354,7 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
                 ))}
               </div>
               {/* Drawer tabs */}
-              <div style={{ display: "flex", gap: 0 }}>
+              <div style={{ display: "flex" }}>
                 {(["details", "contacts", "docs", "notes"] as const).map(t => (
                   <button key={t} onClick={() => setDrawerTab(t)}
                     style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, border: "none", background: "none", cursor: "pointer", borderBottom: drawerTab === t ? "2px solid var(--accent)" : "2px solid transparent", color: drawerTab === t ? "var(--accent)" : "var(--muted)" }}>
@@ -447,7 +371,6 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
 
               {drawerTab === "details" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  {/* Client info read-only summary */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 13 }}>
                     <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Name</span><div>{drawer.clientName || "—"}</div></div>
                     <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Email</span><div>{drawer.clientEmail || "—"}</div></div>
@@ -458,53 +381,12 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
                     <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Created</span><div>{fmt(drawer.createdAt)}</div></div>
                     <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Tags</span><div>{drawer.tags || "—"}</div></div>
                   </div>
-                  {/* Won fields */}
-                  {drawer.status === "won" && (
-                    <div>
-                      <div className="field-label">Final Agreed Price (USD)</div>
-                      <input className="input" type="number" placeholder="Enter final price" value={finalPrice} onChange={e => setFinalPrice(e.target.value)} />
-                    </div>
-                  )}
-                  {/* Lost fields */}
-                  {drawer.status === "lost" && (
-                    <div>
-                      <div className="field-label">Reason Lost</div>
-                      <input className="input" placeholder="e.g. Budget too low, chose another vendor..." value={lostReason} onChange={e => setLostReason(e.target.value)} />
-                    </div>
-                  )}
-                  {/* Follow-up */}
-                  {drawer.followUpDate && (
-                    <div style={{ padding: "10px 12px", background: "#fffbeb", borderRadius: 8, fontSize: 13, color: "#d97706" }}>
-                      📅 Follow up: {fmt(drawer.followUpDate)}
-                    </div>
-                  )}
-                  {/* Job post */}
-                  {drawer.jobPostBody && (
-                    <div>
-                      <div className="field-label">Job Post</div>
-                      <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--surface)", padding: "10px 12px", borderRadius: 6, maxHeight: 200, overflowY: "auto", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{drawer.jobPostBody}</div>
-                    </div>
-                  )}
-                  {/* Links */}
-                  {drawer.links?.filter(l => l).length > 0 && (
-                    <div>
-                      <div className="field-label">Links</div>
-                      {drawer.links.map((l, i) => l && (
-                        <a key={i} href={l} target="_blank" rel="noreferrer" style={{ display: "block", fontSize: 13, color: "var(--accent)", textDecoration: "none", marginBottom: 4 }}>
-                          {drawer.linkLabels?.[i] || l}
-                        </a>
-                      ))}
-                    </div>
-                  )}
-                  {/* Questions */}
-                  {drawer.clientQuestions?.filter(q => q).length > 0 && (
-                    <div>
-                      <div className="field-label">Client Questions</div>
-                      {drawer.clientQuestions.filter(q => q).map((q, i) => (
-                        <div key={i} style={{ fontSize: 13, padding: "6px 10px", background: "var(--surface)", borderRadius: 6, marginBottom: 4 }}>{q}</div>
-                      ))}
-                    </div>
-                  )}
+                  {drawer.status === "won" && <div><div className="field-label">Final Agreed Price (USD)</div><input className="input" type="number" placeholder="Enter final price" value={finalPrice} onChange={e => setFinalPrice(e.target.value)} /></div>}
+                  {drawer.status === "lost" && <div><div className="field-label">Reason Lost</div><input className="input" placeholder="e.g. Budget too low..." value={lostReason} onChange={e => setLostReason(e.target.value)} /></div>}
+                  {drawer.followUpDate && <div style={{ padding: "10px 12px", background: "#fffbeb", borderRadius: 8, fontSize: 13, color: "#d97706" }}>📅 Follow up: {fmt(drawer.followUpDate)}</div>}
+                  {drawer.jobPostBody && <div><div className="field-label">Job Post</div><div style={{ fontSize: 12, color: "var(--muted)", background: "var(--surface)", padding: "10px 12px", borderRadius: 6, maxHeight: 200, overflowY: "auto", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{drawer.jobPostBody}</div></div>}
+                  {drawer.links?.filter(l => l).length > 0 && <div><div className="field-label">Links</div>{drawer.links.map((l, i) => l && <a key={i} href={l} target="_blank" rel="noreferrer" style={{ display: "block", fontSize: 13, color: "var(--accent)", textDecoration: "none", marginBottom: 4 }}>{drawer.linkLabels?.[i] || l}</a>)}</div>}
+                  {drawer.clientQuestions?.filter(q => q).length > 0 && <div><div className="field-label">Client Questions</div>{drawer.clientQuestions.filter(q => q).map((q, i) => <div key={i} style={{ fontSize: 13, padding: "6px 10px", background: "var(--surface)", borderRadius: 6, marginBottom: 4 }}>{q}</div>)}</div>}
                 </div>
               )}
 
@@ -517,9 +399,7 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
                   {contacts.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>No contacts yet.</div>}
                   {contacts.map((c, i) => (
                     <div key={i} style={{ marginBottom: 16, padding: "14px 16px", border: "1px solid var(--border)", borderRadius: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => removeContact(i)} style={{ color: "var(--red)", fontSize: 11 }}>Remove</button>
-                      </div>
+                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}><button className="btn btn-ghost btn-sm" onClick={() => removeContact(i)} style={{ color: "var(--red)", fontSize: 11 }}>Remove</button></div>
                       <div className="grid-2" style={{ gap: 8 }}>
                         <div><div className="field-label">Name</div><input className="input" value={c.name} onChange={e => updateContact(i, "name", e.target.value)} /></div>
                         <div><div className="field-label">Email</div><input className="input" type="email" value={c.email} onChange={e => updateContact(i, "email", e.target.value)} /></div>
@@ -539,7 +419,7 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       {uploading && <span className="spinner spinner-dark" />}
                       <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         Upload
                         <input type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp" style={{ display: "none" }} onChange={handleUploadDoc} />
                       </label>
@@ -548,11 +428,9 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
                   {drawer.documentUrls.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>No documents uploaded.</div>}
                   {drawer.documentUrls.map((url, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)", marginBottom: 8 }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                      <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 13, color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {drawer.documentNames[i] || `Document ${i + 1}`}
-                      </a>
-                      <button className="icon-btn" onClick={() => handleRemoveDoc(i)} title="Remove">✕</button>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 13, color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{drawer.documentNames[i] || `Document ${i + 1}`}</a>
+                      <button className="icon-btn" onClick={() => handleRemoveDoc(i)}>✕</button>
                     </div>
                   ))}
                 </div>
@@ -567,11 +445,18 @@ export default function ProposalList({ onNew }: { onNew: () => void }) {
             </div>
 
             {/* Drawer footer */}
-            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8, background: "white" }}>
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8, background: "white", flexWrap: "wrap" }}>
               <button className="btn btn-ghost btn-sm" onClick={closeDrawer}>Close</button>
               <button className="btn btn-primary btn-sm" onClick={saveDrawer} disabled={drawerSaving}>
                 {drawerSaving ? <span className="spinner" /> : null}Save Changes
               </button>
+              {onGenerateProposal && (
+                <button className="btn btn-sm" onClick={() => onGenerateProposal({ proposalId: drawer.id, proposalHeadline: drawer.jobPostHeadline || drawer.jobPostBody?.slice(0, 60), clientName: drawer.clientName, clientCompany: drawer.clientCompany })}
+                  style={{ background: "#0f172a", color: "white", border: "none" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  Generate Proposal
+                </button>
+              )}
             </div>
           </div>
         </>
