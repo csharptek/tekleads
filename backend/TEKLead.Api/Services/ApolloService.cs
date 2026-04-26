@@ -41,11 +41,13 @@ public class ApolloService
     {
         var key = await GetKey();
 
-        var kw = string.Join(" ", new[] { name, company, industry }
-            .Where(s => !string.IsNullOrWhiteSpace(s)));
+        // Use name as primary keyword; if no name, use company. Combining both gives 0 results.
+        var kw = !string.IsNullOrWhiteSpace(name) ? name
+               : !string.IsNullOrWhiteSpace(company) ? company
+               : industry;
 
         var qs = new List<string> { $"page={page}", $"per_page={perPage}" };
-        if (!string.IsNullOrEmpty(kw))       qs.Add($"q_keywords={Uri.EscapeDataString(kw)}");
+        if (!string.IsNullOrWhiteSpace(kw))  qs.Add($"q_keywords={Uri.EscapeDataString(kw!)}");
         if (!string.IsNullOrEmpty(title))    qs.Add($"person_titles[]={Uri.EscapeDataString(title)}");
         if (!string.IsNullOrEmpty(location)) qs.Add($"person_locations[]={Uri.EscapeDataString(location)}");
 
