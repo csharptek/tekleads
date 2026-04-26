@@ -47,12 +47,10 @@ public class ApolloService
             ["per_page"] = perPage,
         };
 
-        if (!string.IsNullOrWhiteSpace(name))
-            payload["q_person_name"] = name;
-        if (!string.IsNullOrWhiteSpace(company))
-            payload["q_organization_name"] = company;
-        if (!string.IsNullOrWhiteSpace(industry))
-            payload["q_keywords"] = industry;
+        var kw = string.Join(" ", new[] { name, company, industry }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (!string.IsNullOrEmpty(kw))
+            payload["q_keywords"] = kw;
         if (!string.IsNullOrEmpty(title))
             payload["person_titles"] = new[] { title };
         if (!string.IsNullOrEmpty(location))
