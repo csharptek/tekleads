@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api } from "../../lib/api";
 
 const DEFAULT_PROMPT = `You are a professional proposal writer for CSharpTek, a specialist software development company.
 
@@ -18,34 +19,94 @@ Guidelines:
 - Use markdown formatting with tables where appropriate
 - Keep total length between 800-1200 words`;
 
+const KEY_MAP: Record<string, string> = {
+  companyName:         "proposal_company_name",
+  tagline:             "proposal_tagline",
+  website:             "proposal_website",
+  email:               "proposal_email",
+  phone:               "proposal_phone",
+  address:             "proposal_address",
+  signerName:          "proposal_signer_name",
+  signerTitle:         "proposal_signer_title",
+  confidentialityText: "proposal_confidentiality_text",
+  footerText:          "proposal_footer_text",
+  linkedin:            "proposal_linkedin",
+  youtube:             "proposal_youtube",
+  github:              "proposal_github",
+  defaultPrompt:       "proposal_default_prompt",
+};
+
+const DEFAULTS = {
+  companyName: "CSharpTek",
+  tagline: "AI-Powered Software Development",
+  website: "https://csharptek2026.vercel.app",
+  email: "",
+  phone: "",
+  address: "",
+  signerName: "Bhanu",
+  signerTitle: "Lead Developer & Project Manager",
+  confidentialityText: "This document is intended solely for the recipient and may not be shared without written consent.",
+  footerText: "Confidential · CSharpTek",
+  linkedin: "",
+  youtube: "",
+  github: "",
+  defaultPrompt: DEFAULT_PROMPT,
+};
+
 export default function ProposalSettings() {
-  const [form, setForm] = useState({
-    companyName: "CSharpTek",
-    tagline: "AI-Powered Software Development",
-    website: "https://csharptek2026.vercel.app",
-    email: "",
-    phone: "",
-    address: "",
-    signerName: "Bhanu",
-    signerTitle: "Lead Developer & Project Manager",
-    confidentialityText: "This document is intended solely for the recipient and may not be shared without written consent.",
-    footerText: "Confidential · CSharpTek",
-    linkedin: "",
-    youtube: "",
-    github: "",
-    defaultPrompt: DEFAULT_PROMPT,
-  });
+  const [form, setForm] = useState(DEFAULTS);
   const [logoName, setLogoName] = useState("");
   const [signatureName, setSignatureName] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<{ values: Record<string, string> }>("/api/settings")
+      .then(({ values }) => {
+        setForm({
+          companyName:         values["proposal_company_name"]          || DEFAULTS.companyName,
+          tagline:             values["proposal_tagline"]               || DEFAULTS.tagline,
+          website:             values["proposal_website"]               || DEFAULTS.website,
+          email:               values["proposal_email"]                || "",
+          phone:               values["proposal_phone"]                || "",
+          address:             values["proposal_address"]              || "",
+          signerName:          values["proposal_signer_name"]          || DEFAULTS.signerName,
+          signerTitle:         values["proposal_signer_title"]         || DEFAULTS.signerTitle,
+          confidentialityText: values["proposal_confidentiality_text"] || DEFAULTS.confidentialityText,
+          footerText:          values["proposal_footer_text"]          || DEFAULTS.footerText,
+          linkedin:            values["proposal_linkedin"]             || "",
+          youtube:             values["proposal_youtube"]              || "",
+          github:              values["proposal_github"]               || "",
+          defaultPrompt:       values["proposal_default_prompt"]       || DEFAULT_PROMPT,
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
-    setTimeout(() => { setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000); }, 800);
+    setError("");
+    try {
+      const values: Record<string, string> = {};
+      for (const [field, dbKey] of Object.entries(KEY_MAP)) {
+        values[dbKey] = form[field as keyof typeof form];
+      }
+      await api.post("/api/settings", { values });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      setError(e.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) return <div className="page"><div style={{ padding: 40, color: "#64748b" }}>Loading…</div></div>;
 
   return (
     <div className="page">
@@ -60,7 +121,8 @@ export default function ProposalSettings() {
         </button>
       </div>
 
-      {/* Company Info */}
+      {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 16px", color: "#dc2626", marginBottom: 16 }}>{error}</div>}
+
       <div className="card">
         <div className="card-title">Company Information</div>
         <div className="card-sub">Used in proposal header and footer</div>
@@ -74,7 +136,6 @@ export default function ProposalSettings() {
         </div>
       </div>
 
-      {/* Branding */}
       <div className="card">
         <div className="card-title">Branding</div>
         <div className="card-sub">Logos and signature used in Word/PDF export</div>
@@ -98,7 +159,6 @@ export default function ProposalSettings() {
         </div>
       </div>
 
-      {/* Signer */}
       <div className="card">
         <div className="card-title">Proposal Signer</div>
         <div className="grid-2">
@@ -107,7 +167,6 @@ export default function ProposalSettings() {
         </div>
       </div>
 
-      {/* Proposal Defaults */}
       <div className="card">
         <div className="card-title">Proposal Defaults</div>
         <div style={{ marginBottom: 12 }}>
@@ -120,7 +179,6 @@ export default function ProposalSettings() {
         </div>
       </div>
 
-      {/* Social Links */}
       <div className="card">
         <div className="card-title">Social & Links</div>
         <div className="grid-2">
@@ -130,7 +188,6 @@ export default function ProposalSettings() {
         </div>
       </div>
 
-      {/* Default AI Prompt */}
       <div className="card">
         <div className="card-title">Default AI Prompt</div>
         <div className="card-sub">Applied to all proposal generations unless overridden per proposal</div>
