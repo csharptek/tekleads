@@ -49,15 +49,15 @@ public class LeadsController : ControllerBase
     [HttpPost("save")]
     public async Task<IActionResult> Save([FromBody] List<Lead> leads)
     {
-        var saved = 0;
+        var savedLeads = new List<Lead>();
         foreach (var l in leads)
         {
             if (l.Id == Guid.Empty) l.Id = Guid.NewGuid();
             l.SavedAt = DateTime.UtcNow;
-            await _leads.Upsert(l);
-            saved++;
+            var result = await _leads.Upsert(l);
+            savedLeads.Add(result);
         }
-        return Ok(new { saved });
+        return Ok(new { saved = savedLeads.Count, leads = savedLeads });
     }
 
     [HttpPost("{id}/reveal-phone")]

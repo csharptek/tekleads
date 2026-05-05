@@ -93,9 +93,11 @@ export default function LeadSearchView() {
     if (!lead.apolloId) { setBanner({ kind: "info", text: "No Apollo ID — cannot enrich." }); return; }
     setRevealingId(lead.id); setBanner(null);
     try {
-      await api.post("/api/leads/save", [lead]);
+      const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
+      const savedLead = saveRes.leads?.find(l => l.apolloId === lead.apolloId) || lead;
+      const realId = savedLead.id || lead.id;
       const res = await api.post<{ emails: string[]; phones: string[]; fullName?: string; location?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
-        `/api/leads/${lead.id}/reveal-phone`, {});
+        `/api/leads/${realId}/reveal-phone`, {});
 
       setResults(prev => prev.map(l => l.id === lead.id
         ? {
@@ -108,9 +110,9 @@ export default function LeadSearchView() {
         : l));
 
       if (res.phoneWebhookPending) {
-        setPhonePending(p => new Set([...p, lead.id]));
+        setPhonePending(p => new Set([...p, realId]));
         setBanner({ kind: "info", text: `Phone request sent — polling…` });
-        const leadId = lead.id;
+        const leadId = realId;
         let attempts = 0;
         const timer = setInterval(async () => {
           attempts++;
