@@ -29,14 +29,18 @@ var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrEmpty(port) && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
     app.Urls.Add($"http://0.0.0.0:{port}");
 
-app.UseExceptionHandler(err => err.Run(async ctx =>
+app.Use(async (ctx, next) =>
 {
-    ctx.Response.StatusCode = 500;
-    ctx.Response.Headers["Access-Control-Allow-Origin"] = "*";
-    ctx.Response.ContentType = "application/json";
-    var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
-    await ctx.Response.WriteAsync($"{\"error\":\"{(ex?.Error?.Message ?? "Internal server error").Replace("\"", "'")}\"}"}");
-}));
+    try { await next(); }
+    catch (Exception ex)
+    {
+        ctx.Response.StatusCode = 500;
+        ctx.Response.Headers["Access-Control-Allow-Origin"] = "*";
+        ctx.Response.ContentType = "application/json";
+        var msg = ex.Message.Replace("\"", "'");
+        await ctx.Response.WriteAsync("{\"error\":\"" + msg + "\"}");
+    }
+});
 app.UseCors();
 
 // Chrome 130+ Private Network Access — required for newer Android devices
