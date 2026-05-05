@@ -334,7 +334,7 @@ No generic phrases like ""I came across your post"". Be specific.";
             new { role = "system", content = systemPrompt },
             new { role = "user",   content = context },
         };
-        var body = JsonSerializer.Serialize(new { messages, max_tokens = 800 });
+        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 800 });
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var json = await resp.Content.ReadAsStringAsync();
