@@ -27,8 +27,15 @@ public class ArtifactsController : ControllerBase
     [HttpPost("{proposalId}/generate")]
     public async Task<IActionResult> Generate(Guid proposalId)
     {
-        var result = await _svc.Generate(proposalId);
-        if (!result.Ok) return BadRequest(new { error = result.Error });
-        return Ok(result);
+        try
+        {
+            var result = await _svc.Generate(proposalId);
+            if (!result.Ok) return BadRequest(new { error = result.Error });
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
 }
