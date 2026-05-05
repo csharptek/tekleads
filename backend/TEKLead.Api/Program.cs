@@ -14,6 +14,7 @@ builder.Services.AddScoped<ProposalGenerationService>();
 builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<LogService>();
 builder.Services.AddScoped<ProposalExportService>();
+builder.Services.AddScoped<ArtifactsService>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()
      .WithExposedHeaders("Access-Control-Allow-Private-Network")));
@@ -51,6 +52,7 @@ using (var scope = app.Services.CreateScope())
     try { var propSvc = scope.ServiceProvider.GetRequiredService<ProposalService>(); await propSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Proposal schema failed"); }
     try { var logSvc = scope.ServiceProvider.GetRequiredService<LogService>(); await logSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Log schema failed"); }
     try { var genSvc = scope.ServiceProvider.GetRequiredService<ProposalGenerationService>(); await genSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "ProposalGeneration schema failed"); }
+    try { var artSvc = scope.ServiceProvider.GetRequiredService<ArtifactsService>(); await artSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Artifacts schema failed"); }
 }
 
 app.MapControllers();

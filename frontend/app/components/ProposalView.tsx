@@ -76,11 +76,13 @@ const EMPTY: Proposal = {
 export default function ProposalView({
   onViewList,
   onGenerateProposal,
+  onGenerateArtifacts,
   editProposalId,
   onEditDone,
 }: {
   onViewList?: () => void;
   onGenerateProposal?: (ctx: GenerateProposalCtx) => void;
+  onGenerateArtifacts?: (ctx: any) => void;
   editProposalId?: string | null;
   onEditDone?: () => void;
 }) {
@@ -188,6 +190,25 @@ export default function ProposalView({
       return null;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleGenerateArtifacts = async () => {
+    if (!form.jobPostBody.trim()) { setError("Job post is required to generate artifacts."); return; }
+    let id = savedId;
+    if (!id) {
+      id = await handleSave(false);
+    }
+    if (!id) return;
+    if (onGenerateArtifacts) {
+      onGenerateArtifacts({
+        proposalId: id,
+        proposalHeadline: form.jobPostHeadline || form.jobPostBody.slice(0, 60),
+        clientName: form.clientName,
+        clientEmail: form.clientEmail,
+        clientPhone: enrichResult?.phones?.[0] || linkedContact?.phones?.[0] || "",
+        autoGenerate: true,
+      });
     }
   };
 

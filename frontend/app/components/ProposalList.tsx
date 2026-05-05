@@ -59,10 +59,12 @@ export default function ProposalList({
   onNew,
   onEdit,
   onGenerateProposal,
+  onGenerateArtifacts,
 }: {
   onNew: () => void;
   onEdit?: (proposalId: string) => void;
   onGenerateProposal?: (ctx: GenerateProposalCtx) => void;
+  onGenerateArtifacts?: (ctx: any) => void;
 }) {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,7 +267,8 @@ export default function ProposalList({
                   <td style={{ ...td, minWidth: 160 }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {onEdit && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => onEdit(p.id)}>Edit</button>}
-                      {onGenerateProposal && <button className="btn btn-sm" style={{ fontSize: 11, background: "#0f172a", color: "white", border: "none" }} onClick={() => onGenerateProposal({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientCompany: p.clientCompany })}>Generate</button>}
+                      {onGenerateArtifacts && <button className="btn btn-sm" style={{ fontSize: 11, background: "#0f172a", color: "white", border: "none" }} onClick={() => onGenerateArtifacts({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientEmail: p.clientEmail, autoGenerate: false })}>✦ Artifacts</button>}
+                      {onGenerateProposal && <button className="btn btn-sm" style={{ fontSize: 11, background: "#1e293b", color: "white", border: "none" }} onClick={() => onGenerateProposal({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientCompany: p.clientCompany })}>Generate</button>}
                       {p.status !== "sent" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => changeStatus(p, "sent")} disabled={statusChanging}>Sent</button>}
                       {p.status !== "won" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: "var(--green)" }} onClick={() => changeStatus(p, "won")} disabled={statusChanging}>Won</button>}
                       {p.status !== "lost" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: "var(--red)" }} onClick={() => changeStatus(p, "lost")} disabled={statusChanging}>Lost</button>}

@@ -9,10 +9,12 @@ import ProposalList from "./ProposalList";
 import LogsView from "./LogsView";
 import ProposalEditor from "./ProposalEditor";
 import ProposalSettings from "./ProposalSettings";
+import ArtifactsView from "./ArtifactsView";
 
-type Page = "leads" | "prospects" | "portfolio" | "proposals" | "proposal-list" | "proposal-settings" | "proposal-editor" | "settings" | "logs";
+type Page = "leads" | "prospects" | "portfolio" | "proposals" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
+type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; autoGenerate?: boolean; };
 
 type NavItem = { id: Page; label: string; icon: React.ReactNode; };
 type NavCategory = { label: string; items: NavItem[]; };
@@ -60,6 +62,7 @@ export default function Shell() {
   const [isMobile, setIsMobile] = useState(false);
   const [editorCtx, setEditorCtx] = useState<EditorContext | null>(null);
   const [editProposalId, setEditProposalId] = useState<string | null>(null);
+  const [artifactsCtx, setArtifactsCtx] = useState<ArtifactsContext | null>(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 768);
@@ -78,6 +81,11 @@ export default function Shell() {
   const openEdit = (proposalId: string) => {
     setEditProposalId(proposalId);
     navigate("proposals");
+  };
+
+  const openArtifacts = (ctx: ArtifactsContext) => {
+    setArtifactsCtx(ctx);
+    navigate("artifacts");
   };
 
   // If proposal editor is full-screen, render without shell
@@ -143,9 +151,10 @@ export default function Shell() {
         {page === "leads"             && <LeadSearchView />}
         {page === "prospects"         && <SavedLeadsView />}
         {page === "portfolio"         && <PortfolioView />}
-        {page === "proposals"         && <ProposalView onViewList={() => navigate("proposal-list")} onGenerateProposal={openEditor} editProposalId={editProposalId} onEditDone={() => setEditProposalId(null)} />}
-        {page === "proposal-list"     && <ProposalList onNew={() => navigate("proposals")} onEdit={openEdit} onGenerateProposal={openEditor} />}
+        {page === "proposals"         && <ProposalView onViewList={() => navigate("proposal-list")} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} editProposalId={editProposalId} onEditDone={() => setEditProposalId(null)} />}
+        {page === "proposal-list"     && <ProposalList onNew={() => navigate("proposals")} onEdit={openEdit} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} />}
         {page === "proposal-settings" && <ProposalSettings />}
+        {page === "artifacts"         && artifactsCtx && <ArtifactsView {...artifactsCtx} onBack={() => navigate("proposal-list")} />}
         {page === "settings"          && <SettingsView />}
         {page === "logs"              && <LogsView />}
       </div>
