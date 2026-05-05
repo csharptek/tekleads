@@ -334,7 +334,7 @@ No generic phrases like ""I came across your post"". Be specific.";
             new { role = "system", content = systemPrompt },
             new { role = "user",   content = context },
         };
-        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 800 });
+        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 1500 });
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var json = await resp.Content.ReadAsStringAsync();
@@ -343,11 +343,13 @@ No generic phrases like ""I came across your post"". Be specific.";
             throw new Exception($"OpenAI {(int)resp.StatusCode}: {json}");
 
         var doc = JsonDocument.Parse(json);
-        return doc.RootElement
+        var text = doc.RootElement
             .GetProperty("choices")[0]
             .GetProperty("message")
             .GetProperty("content")
             .GetString() ?? "";
+        _log.LogInformation("CallAI result length: {0}, first 200: {1}", text.Length, text.Length > 200 ? text[..200] : text);
+        return text;
     }
 
     private (string subject, string body) ParseEmail(string raw)
