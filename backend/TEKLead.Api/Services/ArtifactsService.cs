@@ -97,33 +97,35 @@ public class ArtifactsService
         if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
             return Fail("Azure OpenAI not configured in Settings.");
 
-        // RAG: get relevant portfolio items
-        var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
-        if (query.Length > 500) query = query[..500];
-        var portfolioItems = await _portfolio.SearchSimilar(query, topK: 3);
+        // RAG: get relevant portfolio items (embedding may fail if not configured)
+        List<PortfolioProject> portfolioItems;
+        try
+        {
+            var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
+            if (query.Length > 500) query = query[..500];
+            portfolioItems = await _portfolio.SearchSimilar(query, topK: 3);
+        }
+        catch
+        {
+            portfolioItems = new List<PortfolioProject>();
+        }
         if (portfolioItems.Count == 0)
         {
             var all = await _portfolio.GetAll();
             portfolioItems = all.Where(p => p.EmbeddingIndexed).Take(3).ToList();
+            if (portfolioItems.Count == 0)
+                portfolioItems = all.Take(3).ToList();
         }
 
         var context = BuildContext(proposal, portfolioItems);
 
-        // Generate all 3 in parallel
+        // Generate sequentially to avoid timeout overload
         string coverLetter, whatsapp, emailSubject, emailBody;
         try
         {
-            var clTask  = CallAI(aoEndpoint, aoKey, aoDeployment, CoverLetterPrompt(), context);
-            var waTask  = CallAI(aoEndpoint, aoKey, aoDeployment, WhatsappPrompt(), context);
-            var emlTask = CallAI(aoEndpoint, aoKey, aoDeployment, EmailPrompt(), context);
-
-            await Task.WhenAll(clTask, waTask, emlTask);
-
-            coverLetter = await clTask;
-            whatsapp    = await waTask;
-            var emailRaw = await emlTask;
-
-            // Parse email subject + body from JSON response
+            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, CoverLetterPrompt(), context);
+            whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, WhatsappPrompt(), context);
+            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, EmailPrompt(), context);
             (emailSubject, emailBody) = ParseEmail(emailRaw);
         }
         catch (Exception ex)
@@ -156,6 +158,80 @@ public class ArtifactsService
             EmailBody = emailBody,
             GeneratedAt = DateTime.UtcNow,
         };
+    }
+
+    public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId)
+    {
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
+        if (err != null) return Fail(err);
+        var context = BuildContext(proposal!, portfolioItems);
+        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, CoverLetterPrompt(), context);
+        await SaveField(proposalId, "artifact_cover_letter", result);
+        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow };
+    }
+
+    public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId)
+    {
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
+        if (err != null) return Fail(err);
+        var context = BuildContext(proposal!, portfolioItems);
+        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, WhatsappPrompt(), context);
+        await SaveField(proposalId, "artifact_whatsapp", result);
+        return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow };
+    }
+
+    public async Task<ArtifactsResult> GenerateEmail(Guid proposalId)
+    {
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
+        if (err != null) return Fail(err);
+        var context = BuildContext(proposal!, portfolioItems);
+        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, EmailPrompt(), context);
+        var (subject, body) = ParseEmail(raw);
+        await SaveField(proposalId, "artifact_email_subject", subject);
+        await SaveField(proposalId, "artifact_email_body", body);
+        return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow };
+    }
+
+    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, string? error)> GetContext(Guid proposalId)
+    {
+        var proposal = await _proposals.GetById(proposalId);
+        if (proposal == null) return (null, null, null, null, new(), "Proposal not found.");
+
+        var settings = await _settings.GetAll();
+        var aoEndpoint   = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
+        var aoKey        = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
+        var aoDeployment = settings.GetValueOrDefault(SettingKeys.AzureOpenAiDeployment, "");
+
+        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
+            return (null, null, null, null, new(), "Azure OpenAI not configured in Settings.");
+
+        List<PortfolioProject> portfolioItems;
+        try
+        {
+            var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
+            if (query.Length > 500) query = query[..500];
+            portfolioItems = await _portfolio.SearchSimilar(query, topK: 3);
+        }
+        catch { portfolioItems = new List<PortfolioProject>(); }
+
+        if (portfolioItems.Count == 0)
+        {
+            var all = await _portfolio.GetAll();
+            portfolioItems = all.Where(p => p.EmbeddingIndexed).Take(3).ToList();
+            if (portfolioItems.Count == 0) portfolioItems = all.Take(3).ToList();
+        }
+
+        return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, null);
+    }
+
+    private async Task SaveField(Guid proposalId, string column, string value)
+    {
+        var cs = _settings.ConnectionString;
+        await using var conn = new NpgsqlConnection(cs);
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(
+            $"UPDATE proposals SET {column}=@v, artifact_generated_at=NOW(), updated_at=NOW() WHERE id=@id",
+            new { v = value, id = proposalId });
     }
 
     // ── Prompts ───────────────────────────────────────────────────────────────
@@ -250,7 +326,7 @@ No generic phrases like ""I came across your post"". Be specific.";
     {
         var client = _http.CreateClient();
         client.DefaultRequestHeaders.Add("api-key", key);
-        client.Timeout = TimeSpan.FromSeconds(120);
+        client.Timeout = TimeSpan.FromSeconds(90);
 
         var url = $"{endpoint.TrimEnd('/')}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01";
         var messages = new[]
@@ -258,7 +334,7 @@ No generic phrases like ""I came across your post"". Be specific.";
             new { role = "system", content = systemPrompt },
             new { role = "user",   content = context },
         };
-        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 1200 });
+        var body = JsonSerializer.Serialize(new { messages, max_tokens = 800 });
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var json = await resp.Content.ReadAsStringAsync();

@@ -23,19 +23,31 @@ public class ArtifactsController : ControllerBase
         return Ok(result);
     }
 
-    // POST generate (or regenerate) artifacts
     [HttpPost("{proposalId}/generate")]
     public async Task<IActionResult> Generate(Guid proposalId)
     {
-        try
-        {
-            var result = await _svc.Generate(proposalId);
-            if (!result.Ok) return BadRequest(new { error = result.Error });
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { error = ex.Message });
-        }
+        try { var r = await _svc.Generate(proposalId); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    [HttpPost("{proposalId}/generate/cover-letter")]
+    public async Task<IActionResult> GenerateCoverLetter(Guid proposalId)
+    {
+        try { var r = await _svc.GenerateCoverLetter(proposalId); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    [HttpPost("{proposalId}/generate/whatsapp")]
+    public async Task<IActionResult> GenerateWhatsapp(Guid proposalId)
+    {
+        try { var r = await _svc.GenerateWhatsapp(proposalId); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    [HttpPost("{proposalId}/generate/email")]
+    public async Task<IActionResult> GenerateEmail(Guid proposalId)
+    {
+        try { var r = await _svc.GenerateEmail(proposalId); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 }

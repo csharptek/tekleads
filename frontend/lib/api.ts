@@ -1,10 +1,10 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+async function call<T>(path: string, init?: RequestInit, timeoutMs = 30000): Promise<T> {
   if (!BASE) throw new Error("NEXT_PUBLIC_API_URL is not set");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${BASE}${path}`, {
@@ -46,6 +46,8 @@ export const api = {
   get:    <T = any>(path: string) => call<T>(bustCache(path)),
   post:   <T = any>(path: string, body: unknown) =>
     call<T>(path, { method: "POST", body: JSON.stringify(body) }),
+  postLong: <T = any>(path: string, body: unknown) =>
+    call<T>(path, { method: "POST", body: JSON.stringify(body) }, 180000),
   put:    <T = any>(path: string, body: unknown) =>
     call<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   delete: <T = any>(path: string) =>
