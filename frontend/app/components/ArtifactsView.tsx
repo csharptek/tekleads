@@ -68,31 +68,43 @@ export default function ArtifactsView({
   useEffect(() => { loadExisting(); }, [proposalId]);
 
   const loadExisting = async () => {
+    let hasExisting = false;
     try {
       const res: any = await api.get(`/api/artifacts/${proposalId}`);
-      setArtifacts({
-        coverLetter: res.coverLetter,
-        whatsappMessage: res.whatsappMessage,
-        emailSubject: res.emailSubject,
-        emailBody: res.emailBody,
-        generatedAt: res.generatedAt,
-      });
+      if (res.coverLetter || res.whatsappMessage || res.emailSubject) {
+        setArtifacts({
+          coverLetter: res.coverLetter,
+          whatsappMessage: res.whatsappMessage,
+          emailSubject: res.emailSubject,
+          emailBody: res.emailBody,
+          generatedAt: res.generatedAt,
+        });
+        hasExisting = true;
+      }
     } catch { /* none yet */ }
     setLoaded(true);
-    if (autoGenerate) generateAll();
+    if (autoGenerate && !hasExisting) {
+      generateAll();
+    }
   };
 
   const generateOne = async (
     type: "coverLetter" | "whatsapp" | "email",
     endpoint: string,
-    field: keyof Artifacts,
-    field2?: keyof Artifacts
+    resKey: string,
+    stateKey: keyof Artifacts,
+    resKey2?: string,
+    stateKey2?: keyof Artifacts
   ) => {
     setGenerating(g => ({ ...g, [type]: true }));
     setErrors(e => ({ ...e, [type]: '' }));
     try {
       const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/generate/${endpoint}`, {});
-      setArtifacts(a => { const u: Artifacts = { ...a, [field]: res[field as string] }; if (field2) u[field2] = res[field2 as string]; return u; });
+      setArtifacts(a => {
+        const u: Artifacts = { ...a, [stateKey]: res[resKey] };
+        if (stateKey2 && resKey2) u[stateKey2] = res[resKey2];
+        return u;
+      });
     } catch (e: any) {
       setErrors(er => ({ ...er, [type]: (e as any).message }));
     } finally {
@@ -101,9 +113,9 @@ export default function ArtifactsView({
   };
 
   const generateAll = async () => {
-    await generateOne("coverLetter", "cover-letter", "coverLetter");
-    await generateOne("whatsapp", "whatsapp", "whatsappMessage");
-    await generateOne("email", "email", "emailSubject", "emailBody");
+    await generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter");
+    await generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage");
+    await generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody");
   };
 
   const sendWhatsapp = () => {
@@ -134,6 +146,7 @@ export default function ArtifactsView({
   };
 
   const anyGenerating = generating.coverLetter || generating.whatsapp || generating.email;
+  const nothingGenerated = loaded && !anyGenerating && !artifacts.coverLetter && !artifacts.whatsappMessage && !artifacts.emailSubject;
 
   return (
     <div className="page" style={{ paddingBottom: 40 }}>
@@ -160,6 +173,14 @@ export default function ArtifactsView({
         </button>
       </div>
 
+      {nothingGenerated && (
+        <div className="card" style={{ textAlign: "center", padding: 32 }}>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.5" style={{ marginBottom: 12 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <div style={{ fontSize: 14, color: "var(--muted)", marginBottom: 16 }}>No artifacts generated yet for this proposal</div>
+          <button className="btn btn-primary" onClick={generateAll}>Generate All Artifacts</button>
+        </div>
+      )}
+
       {/* Cover Letter */}
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
@@ -171,8 +192,8 @@ export default function ArtifactsView({
           <button className="btn btn-ghost btn-sm" onClick={downloadCoverLetter}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter")} disabled={generating.coverLetter}>↺ Redo</button>
-        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter")} disabled={generating.coverLetter}>Generate</button>}
+          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter")} disabled={generating.coverLetter}>↺ Redo</button>
+        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter")} disabled={generating.coverLetter}>Generate</button>}
       >
         {errors.coverLetter && <div className="banner banner-error">{errors.coverLetter}</div>}
         {artifacts.coverLetter
@@ -191,8 +212,8 @@ export default function ArtifactsView({
           <button className="btn btn-sm" onClick={sendWhatsapp} style={{ background: "#25D366", color: "white", border: "none" }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> Send
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage")} disabled={generating.whatsapp}>↺ Redo</button>
-        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage")} disabled={generating.whatsapp}>Generate</button>}
+          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage")} disabled={generating.whatsapp}>↺ Redo</button>
+        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage")} disabled={generating.whatsapp}>Generate</button>}
       >
         {errors.whatsapp && <div className="banner banner-error">{errors.whatsapp}</div>}
         {artifacts.whatsappMessage
@@ -211,8 +232,8 @@ export default function ArtifactsView({
           <button className="btn btn-sm" onClick={openEmail} style={{ background: "#0078d4", color: "white", border: "none" }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> Open in Outlook
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailBody")} disabled={generating.email}>↺ Redo</button>
-        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailBody")} disabled={generating.email}>Generate</button>}
+          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody")} disabled={generating.email}>↺ Redo</button>
+        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody")} disabled={generating.email}>Generate</button>}
       >
         {errors.email && <div className="banner banner-error">{errors.email}</div>}
         {artifacts.emailSubject ? <>
