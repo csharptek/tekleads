@@ -100,9 +100,12 @@ export default function ArtifactsView({
     setErrors(e => ({ ...e, [type]: '' }));
     try {
       const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/generate/${endpoint}`, {});
+      console.log("artifact response:", JSON.stringify(res));
+      console.log("resKey:", resKey, "value:", res[resKey]);
       setArtifacts(a => {
         const u: Artifacts = { ...a, [stateKey]: res[resKey] };
         if (stateKey2 && resKey2) u[stateKey2] = res[resKey2];
+        console.log("updated artifacts:", JSON.stringify(u));
         return u;
       });
     } catch (e: any) {
