@@ -53,12 +53,14 @@ type ArtifactsViewProps = {
   clientName?: string;
   clientEmail?: string;
   clientPhone?: string;
+  allEmails?: string[];
+  allPhones?: string[];
   onBack?: () => void;
   autoGenerate?: boolean;
 };
 
 export default function ArtifactsView({
-  proposalId, proposalHeadline, clientName, clientEmail, clientPhone, onBack, autoGenerate = false,
+  proposalId, proposalHeadline, clientName, clientEmail, clientPhone, allEmails, allPhones, onBack, autoGenerate = false,
 }: ArtifactsViewProps) {
   const [artifacts, setArtifacts] = useState<Artifacts>({});
   const [generating, setGenerating] = useState<GeneratingState>({ coverLetter: false, whatsapp: false, email: false });
@@ -252,6 +254,55 @@ export default function ArtifactsView({
           </div>
         </> : !generating.email && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
+
+      {/* Multi-contact Send Panel */}
+      {((allEmails && allEmails.length > 1) || (allPhones && allPhones.length > 1)) && artifacts.emailSubject && (
+        <div className="card">
+          <div className="card-title">Send to All Contacts</div>
+          <div className="card-sub">Send artifacts one by one to each contact</div>
+          {allEmails && allEmails.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div className="field-label" style={{ marginBottom: 6 }}>Email</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {allEmails.map((email, i) => {
+                  const subject = encodeURIComponent(artifacts.emailSubject || "");
+                  const body = encodeURIComponent(artifacts.emailBody || "");
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                      <span className="chip chip-blue" style={{ fontSize: 12, flex: 1 }}>{email}</span>
+                      <a href={`mailto:${email}?subject=${subject}&body=${body}`}
+                        className="btn btn-sm" style={{ background: "#0078d4", color: "white", border: "none", textDecoration: "none" }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        Open
+                      </a>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {allPhones && allPhones.length > 0 && (
+            <div>
+              <div className="field-label" style={{ marginBottom: 6 }}>WhatsApp</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {allPhones.map((phone, i) => {
+                  const clean = phone.replace(/\D/g, "");
+                  const msg = encodeURIComponent(artifacts.whatsappMessage || "");
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                      <span className="chip chip-green" style={{ fontSize: 12, flex: 1 }}>💬 {phone}</span>
+                      <a href={`https://wa.me/${clean}?text=${msg}`} target="_blank" rel="noreferrer"
+                        className="btn btn-sm" style={{ background: "#25D366", color: "white", border: "none", textDecoration: "none" }}>
+                        Send
+                      </a>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

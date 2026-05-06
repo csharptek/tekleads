@@ -15,7 +15,7 @@ import NewProposalView from "./NewProposalView";
 type Page = "leads" | "prospects" | "portfolio" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
-type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; autoGenerate?: boolean; };
+type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; autoGenerate?: boolean; };
 
 type NavItem = { id: Page; label: string; icon: React.ReactNode; };
 type NavCategory = { label: string; items: NavItem[]; };
