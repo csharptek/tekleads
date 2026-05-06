@@ -3,7 +3,8 @@ using TEKLead.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<SettingsService>();
 builder.Services.AddScoped<LeadService>();
