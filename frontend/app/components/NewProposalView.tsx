@@ -69,6 +69,9 @@ export default function NewProposalView({
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [contacts, setContacts] = useState<EnrichedContact[]>([]);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const SEARCH_PER_PAGE = 25;
   const [phonePending, setPhonePending] = useState<Set<string>>(new Set());
 
   // Section 2 — proposal
@@ -88,11 +91,13 @@ export default function NewProposalView({
   const section2Unlocked = contacts.some(c => c.enriched);
 
   // ── Search ──
-  const doSearch = async () => {
+  const doSearch = async (p = 1) => {
     setSearching(true); setError(""); setSearchResults([]);
     try {
-      const res: any = await api.post("/api/leads/search", { ...searchForm, page: 1, perPage: 10 });
+      const res: any = await api.post("/api/leads/search", { ...searchForm, page: p, perPage: SEARCH_PER_PAGE });
       setSearchResults(res.leads || []);
+      setSearchTotal(res.total || 0);
+      setSearchPage(p);
       setSearched(true);
       if (!(res.leads || []).length) setError("No results found.");
     } catch (e: any) { setError(e.message); }
@@ -101,7 +106,7 @@ export default function NewProposalView({
 
   const resetAll = () => {
     setSearchForm({ name: "", company: "", title: "", industry: "", location: "" });
-    setSearchResults([]); setSearched(false);
+    setSearchResults([]); setSearched(false); setSearchPage(1); setSearchTotal(0);
     setContacts([]); setPhonePending(new Set());
     setForm({ ...EMPTY_PROPOSAL }); setSavedId(null);
     setError(""); setSuccess("");
@@ -339,16 +344,16 @@ export default function NewProposalView({
 
         {/* Search filters */}
         <div className="grid-3" style={{ marginBottom: 12 }}>
-          {([["name","Person Name","e.g. John Smith"],["company","Company","e.g. Acme Corp"],["title","Job Title","e.g. CTO"],["industry","Industry","e.g. Software"],["location","Location","e.g. London"]] as [keyof typeof searchForm, string, string][]).map(([k, lbl, ph]) => (
+          {([["name","Person Name","e.g. John Smith"],["title","Job Title","e.g. CTO"],["company","Company","e.g. Acme Corp"],["industry","Industry","e.g. Software"],["location","Location","e.g. London"]] as [keyof typeof searchForm, string, string][]).map(([k, lbl, ph]) => (
             <div key={k}>
               <div className="field-label">{lbl}</div>
               <input className="input" placeholder={ph} value={searchForm[k]}
                 onChange={e => sf(k, e.target.value)}
-                onKeyDown={e => e.key === "Enter" && doSearch()} />
+                onKeyDown={e => e.key === "Enter" && doSearch(1)} />
             </div>
           ))}
           <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="btn btn-primary" style={{ width: "100%" }} onClick={doSearch} disabled={searching}>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => doSearch(1)} disabled={searching}>
               {searching ? <><span className="spinner" />&nbsp;Searching…</> : "Search Apollo"}
             </button>
           </div>
@@ -356,6 +361,7 @@ export default function NewProposalView({
 
         {/* Results table */}
         {searched && searchResults.length > 0 && (
+          <>
           <div className="table-wrap" style={{ marginTop: 8 }}>
             <table>
               <thead>
@@ -440,6 +446,18 @@ export default function NewProposalView({
               </tbody>
             </table>
           </div>
+          {searchTotal > SEARCH_PER_PAGE && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                {searchTotal.toLocaleString()} total · page {searchPage} of {Math.ceil(searchTotal / SEARCH_PER_PAGE)}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => doSearch(searchPage - 1)} disabled={searchPage <= 1 || searching}>← Prev</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => doSearch(searchPage + 1)} disabled={searchPage >= Math.ceil(searchTotal / SEARCH_PER_PAGE) || searching}>Next →</button>
+              </div>
+            </div>
+          )}
+          </>
         )}
 
         {searched && searchResults.length === 0 && !searching && (

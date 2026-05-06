@@ -236,7 +236,7 @@ public class ArtifactsService
 
     // ── Prompts ───────────────────────────────────────────────────────────────
 
-    private string CoverLetterPrompt() => @"You are writing a cover letter for a freelance software development proposal on behalf of CSharpTek / Ritesh.
+    private string CoverLetterPrompt() => @"You are writing a cover letter for a freelance software development proposal.
 
 Write a compelling, personalised cover letter using the structure below. Do NOT use generic filler — reference the client's actual job requirements and the portfolio projects provided.
 
@@ -247,7 +247,7 @@ STRUCTURE:
 4. Proposed approach / architecture for their specific problem (2-3 paragraphs).
 5. What you would cut from V1 (shows honesty and scoping maturity).
 6. 2-3 questions back to the client (shows strategic thinking).
-7. Close: ""Happy to get on a call this week. Looking forward to it."" then sign as Ritesh.
+7. Close with a warm, confident closing line. Do not sign with any name or company.
 
 Tone: Direct, confident, no fluff. No bullet spam — use prose where possible.
 Return only the cover letter text. No preamble.";
@@ -260,7 +260,7 @@ Rules:
 - Mention their specific project in one sentence
 - One relevant portfolio reference with a link
 - End with a soft CTA: ""Happy to jump on a quick call — would that work?""
-- Sign off as Ritesh
+- Do not include any name or signature at the end
 - No bullet points, no emojis spam (max 1-2)
 
 Return only the WhatsApp message text.";
@@ -278,7 +278,7 @@ Email rules:
 - Para 2: 1-2 relevant portfolio references with outcomes
 - Para 3: proposed approach in 2 sentences
 - CTA: suggest a 20-min call
-- Sign: Ritesh | CSharpTek
+- Do not include any name or company signature
 
 No generic phrases like ""I came across your post"". Be specific.";
 
