@@ -96,16 +96,17 @@ export default function LeadSearchView() {
       const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
       const savedLead = saveRes.leads?.find(l => l.apolloId === lead.apolloId) || lead;
       const realId = savedLead.id || lead.id;
-      const res = await api.post<{ emails: string[]; phones: string[]; fullName?: string; location?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
+      const res = await api.post<{ emails: string[]; phones: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
         `/api/leads/${realId}/reveal-phone`, {});
 
       setResults(prev => prev.map(l => l.id === lead.id
         ? {
             ...l,
-            name:     res.fullName  && res.fullName.trim()  ? res.fullName  : l.name,
-            location: res.location  && res.location.trim()  ? res.location  : l.location,
-            emails:   res.emails.length  ? res.emails  : l.emails,
-            phones:   res.phones.length  ? res.phones  : l.phones,
+            name:       res.fullName  && res.fullName.trim()  ? res.fullName  : l.name,
+            location:   res.location  && res.location.trim()  ? res.location  : l.location,
+            emails:     res.emails.length  ? res.emails  : l.emails,
+            phones:     res.phones.length  ? res.phones  : l.phones,
+            linkedinUrl: res.linkedinUrl?.trim() ? res.linkedinUrl : l.linkedinUrl,
           }
         : l));
 
@@ -239,8 +240,12 @@ export default function LeadSearchView() {
                         <td>
                           <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>{lead.name || "—"}</div>
                           {lead.linkedinUrl && (
-                            <a href={lead.linkedinUrl} target="_blank" rel="noreferrer"
-                              style={{ fontSize: 11, color: "var(--accent)" }}>LinkedIn ↗</a>
+                            <a href={lead.linkedinUrl} target="_blank" rel="noreferrer" title="LinkedIn"
+                              style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none", marginTop: 2 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                              </svg>
+                            </a>
                           )}
                         </td>
                         <td style={{ color: "var(--muted)", fontSize: 12 }}>{lead.title || "—"}</td>

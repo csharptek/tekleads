@@ -110,8 +110,8 @@ public class ApolloService
         return (leads, total);
     }
 
-    // Returns full name, location, emails, phones after enrichment
-    public async Task<(string[] Emails, string[] Phones, string FullName, string Location)> Enrich(
+    // Returns full name, location, emails, phones, linkedinUrl after enrichment
+    public async Task<(string[] Emails, string[] Phones, string FullName, string Location, string LinkedinUrl)> Enrich(
         string apolloPersonId, string webhookUrl)
     {
         var key = await GetKey();
@@ -135,9 +135,10 @@ public class ApolloService
 
         using var doc = JsonDocument.Parse(body);
         var emails   = new List<string>();
-        var phones   = new List<string>();
-        var fullName = "";
-        var location = "";
+        var phones     = new List<string>();
+        var fullName   = "";
+        var location   = "";
+        var linkedinUrl = "";
 
         if (doc.RootElement.TryGetProperty("person", out var person))
         {
@@ -154,6 +155,9 @@ public class ApolloService
                 .Where(s => !string.IsNullOrEmpty(s));
             location = string.Join(", ", locParts);
 
+            // LinkedIn URL
+            linkedinUrl = Str(person, "linkedin_url");
+
             if (person.TryGetProperty("phone_numbers", out var pns) && pns.ValueKind == JsonValueKind.Array)
                 foreach (var pn in pns.EnumerateArray())
                 {
@@ -162,7 +166,7 @@ public class ApolloService
                 }
         }
 
-        return (emails.ToArray(), phones.ToArray(), fullName, location);
+        return (emails.ToArray(), phones.ToArray(), fullName, location, linkedinUrl);
     }
 
     public static string[] ParsePhonesFromWebhook(string json)

@@ -71,13 +71,14 @@ public class LeadsController : ControllerBase
         try
         {
             var webhookUrl = $"https://{HttpContext.Request.Host}/api/leads/phone-webhook/{id}";
-            var (emails, phones, fullName, location) = await _apollo.Enrich(lead.ApolloId, webhookUrl);
+            var (emails, phones, fullName, location, linkedinUrl) = await _apollo.Enrich(lead.ApolloId, webhookUrl);
 
             var updated = false;
             if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
             if (!string.IsNullOrEmpty(location)) { lead.Location = location; updated = true; }
             if (emails.Length > 0 && lead.Emails.Length == 0) { lead.Emails = emails; updated = true; }
             if (phones.Length > 0) { lead.Phones = phones; updated = true; }
+            if (!string.IsNullOrEmpty(linkedinUrl) && string.IsNullOrEmpty(lead.LinkedinUrl)) { lead.LinkedinUrl = linkedinUrl; updated = true; }
             if (updated) await _leads.Upsert(lead);
 
             return Ok(new
@@ -86,6 +87,7 @@ public class LeadsController : ControllerBase
                 phones,
                 fullName,
                 location,
+                linkedinUrl,
                 autoSaved = updated,
                 phoneWebhookPending = phones.Length == 0
             });
