@@ -271,6 +271,7 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 {""subject"": ""your subject line here"", ""body"": ""full email body here with \n for line breaks""}
 
 Email rules:
+- Start with: Hi [first name only from CLIENT INFO Name field],
 - Subject: specific, 8-12 words, references their project
 - Body: 150-200 words
 - Professional tone
