@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { api } from "../../lib/api";
 
 type Lead = {
@@ -63,6 +63,14 @@ export default function NewProposalView({
   onViewList?: () => void;
   onGenerateArtifacts?: (ctx: any) => void;
 }) {
+  const [waTemplate, setWaTemplate] = useState("Hi {name}, I came across your profile and would love to connect!");
+
+  useEffect(() => {
+    api.get<{ values: Record<string, string> }>("/api/settings")
+      .then(d => { if (d.values?.whatsapp_message_template) setWaTemplate(d.values.whatsapp_message_template); })
+      .catch(() => {});
+  }, []);
+
   // Section 1 — search
   const [searchForm, setSearchForm] = useState({ name: "", company: "", title: "", industry: "", location: "" });
   const [searchResults, setSearchResults] = useState<Lead[]>([]);
@@ -426,7 +434,7 @@ export default function NewProposalView({
                                 <label key={pi} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
                                   <input type="checkbox" checked={contact.checkedPhones.includes(phone)}
                                     onChange={() => togglePhone(lead.apolloId || "", phone)} />
-                                  <a href={`https://wa.me/${clean}`} target="_blank" rel="noreferrer"
+                                  <a href={`https://wa.me/${clean}?text=${encodeURIComponent(waTemplate.replace("{name}", contact.lead.name?.split(" ")[0] || contact.lead.name || "").replace("{phone}", phone))}`} target="_blank" rel="noreferrer"
                                     className="chip chip-green" style={{ fontSize: 10, textDecoration: "none" }}>💬 {phone}</a>
                                 </label>
                               );

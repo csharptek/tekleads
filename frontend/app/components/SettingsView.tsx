@@ -16,6 +16,7 @@ const KEYS = {
   GraphSenderEmail: "graph_sender_email",
   WhatsappCountryCode: "whatsapp_cc",
   WhatsappMessageTemplate: "whatsapp_message_template",
+  EmailSignature: "email_signature",
   AzureSearchEndpoint: "azure_search_endpoint",
   AzureSearchKey: "azure_search_key",
   AzureSearchIndex: "azure_search_index",
@@ -141,6 +142,46 @@ function FieldGroup({ group, form, setVal, serverValues, isSet, reveal, setRevea
   );
 }
 
+
+const DEFAULT_SIGNATURE = `--\nThanks & Regards,\n\nManjika Tantia\nStrategic Partnership & Marketing Manager | Csharptek\nP: IND: (+91)-7667124920\nE: manjika.tantia@csharptek.com\nwww.csharptek.com`;
+
+function SignatureEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [tab, setTab] = useState<"edit" | "preview">("edit");
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    navigator.clipboard.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+        <button className={`btn btn-sm ${tab === "edit" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("edit")}>Edit HTML</button>
+        <button className={`btn btn-sm ${tab === "preview" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("preview")}>Preview</button>
+        <button className="btn btn-ghost btn-sm" onClick={copy} style={{ marginLeft: "auto" }}>{copied ? "✓ Copied" : "Copy"}</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => onChange(DEFAULT_SIGNATURE)}>Reset Default</button>
+      </div>
+      {tab === "edit" ? (
+        <textarea
+          className="input"
+          style={{ minHeight: 160, resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+          placeholder="Paste your HTML signature here, or use plain text with line breaks..."
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        />
+      ) : (
+        <div
+          style={{ minHeight: 100, border: "1px solid var(--border)", borderRadius: 6, padding: 16, background: "#fff", fontSize: 13 }}
+          dangerouslySetInnerHTML={{ __html: value.includes("<") ? value : value.replace(/\n/g, "<br/>") }}
+        />
+      )}
+      <div style={{ marginTop: 6, fontSize: 11, color: "var(--dim)" }}>
+        Supports HTML (links, images, colors) or plain text. Auto-appended to all outreach emails.
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsView() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [serverValues, setServerValues] = useState<Record<string, string>>({});
@@ -215,6 +256,18 @@ export default function SettingsView() {
       {/* User config — always visible */}
       <div className="card">
         {USER_GROUPS.map(g => <FieldGroup key={g.title} group={g} {...sharedProps} />)}
+      </div>
+
+      {/* Email Signature */}
+      <div className="card">
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>✍️ Email Signature</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Auto-appended to all outreach emails. Supports HTML or plain text.</div>
+        </div>
+        <SignatureEditor
+          value={form[KEYS.EmailSignature] ?? serverValues[KEYS.EmailSignature] ?? ""}
+          onChange={v => setVal(KEYS.EmailSignature, v)}
+        />
       </div>
 
       {/* Tech config — collapsible */}

@@ -348,6 +348,7 @@ No generic phrases like ""I came across your post"". Be specific.";
             .GetProperty("message")
             .GetProperty("content")
             .GetString() ?? "";
+        text = text.Replace("**", "");
         _log.LogInformation("CallAI result length: {0}, first 200: {1}", text.Length, text.Length > 200 ? text[..200] : text);
         return text;
     }

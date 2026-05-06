@@ -89,6 +89,20 @@ export default function ArtifactsView({
   const [customPrompts, setCustomPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "" });
   const [promptModal, setPromptModal] = useState<PromptModal | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
+  const [emailSignature, setEmailSignature] = useState("");
+
+  useEffect(() => {
+    api.get<{ values: Record<string, string> }>("/api/settings")
+      .then(d => { if (d.values?.email_signature) setEmailSignature(d.values.email_signature); })
+      .catch(() => {});
+  }, []);
+
+  const buildMailtoBody = (body: string) => {
+    const sig = emailSignature.trim();
+    if (!sig) return body;
+    const plainSig = sig.includes("<") ? sig.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ") : sig;
+    return body + "\n\n" + plainSig;
+  };
 
   useEffect(() => {
     loadExisting();
@@ -194,7 +208,7 @@ export default function ArtifactsView({
   const openEmail = () => {
     const to = clientEmail || "";
     const subject = encodeURIComponent(artifacts.emailSubject || "");
-    const body = encodeURIComponent(artifacts.emailBody || "");
+    const body = encodeURIComponent(buildMailtoBody(artifacts.emailBody || ""));
     window.open(`mailto:${to}?subject=${subject}&body=${body}`, "_blank");
   };
 
@@ -343,7 +357,7 @@ export default function ArtifactsView({
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {allEmails.map((email, i) => {
                   const subject = encodeURIComponent(artifacts.emailSubject || "");
-                  const body = encodeURIComponent(artifacts.emailBody || "");
+                  const body = encodeURIComponent(buildMailtoBody(artifacts.emailBody || ""));
                   return (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)" }}>
                       <span className="chip chip-blue" style={{ fontSize: 12, flex: 1 }}>{email}</span>
