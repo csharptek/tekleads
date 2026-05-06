@@ -201,12 +201,20 @@ export default function ProposalView({
     }
     if (!id) return;
     if (onGenerateArtifacts) {
+      const allEmails = enrichResult?.emails?.length
+        ? Array.from(new Set([...(form.clientEmail ? [form.clientEmail] : []), ...enrichResult.emails])).filter(Boolean)
+        : form.clientEmail ? [form.clientEmail] : [];
+      const allPhones = enrichResult?.phones?.length
+        ? enrichResult.phones
+        : linkedContact?.phones?.length ? linkedContact.phones : [];
       onGenerateArtifacts({
         proposalId: id,
         proposalHeadline: form.jobPostHeadline || form.jobPostBody.slice(0, 60),
         clientName: form.clientName,
-        clientEmail: form.clientEmail,
-        clientPhone: enrichResult?.phones?.[0] || linkedContact?.phones?.[0] || "",
+        clientEmail: allEmails[0] || form.clientEmail,
+        clientPhone: allPhones[0] || "",
+        allEmails,
+        allPhones,
         autoGenerate: true,
       });
     }
@@ -296,14 +304,42 @@ export default function ProposalView({
         ...(enrichedCity    && !f.clientCity    ? { clientCity: enrichedCity }       : {}),
         ...(enrichedCountry && !f.clientCountry ? { clientCountry: enrichedCountry } : {}),
       }));
-      setLinkedContact(c => c ? {
-        ...c,
+      const updatedContact = {
+        ...linkedContact,
         id: dbLead.id,
-        name: enrichedName || c.name,
-        emails: res.emails?.length ? res.emails : c.emails,
-        phones: res.phones?.length ? res.phones : c.phones,
-        location: res.location || c.location,
-      } : c);
+        name: enrichedName || linkedContact.name,
+        emails: res.emails?.length ? res.emails : linkedContact.emails,
+        phones: res.phones?.length ? res.phones : linkedContact.phones,
+        location: res.location || linkedContact.location,
+      };
+      setLinkedContact(() => updatedContact);
+
+      // Build contacts array from all enriched emails/phones and save to contactsJson
+      const enrichedEmails: string[] = res.emails?.length ? res.emails : (linkedContact.emails || []);
+      const enrichedPhones: string[] = res.phones?.length ? res.phones : (linkedContact.phones || []);
+      const contactsToSave = enrichedEmails.map((email, i) => ({
+        name: enrichedName || linkedContact.name,
+        email,
+        phone: enrichedPhones[i] || enrichedPhones[0] || "",
+        role: linkedContact.title || "",
+        linkedin: linkedContact.linkedinUrl || "",
+      }));
+      // Add extra phones as additional contacts if more phones than emails
+      if (enrichedPhones.length > enrichedEmails.length) {
+        for (let i = enrichedEmails.length; i < enrichedPhones.length; i++) {
+          contactsToSave.push({ name: enrichedName || linkedContact.name, email: "", phone: enrichedPhones[i], role: linkedContact.title || "", linkedin: "" });
+        }
+      }
+
+      // Persist contacts to DB if proposal already saved
+      if (savedId) {
+        try {
+          await api.put(`/api/proposals/${savedId}`, {
+            contactsJson: JSON.stringify(contactsToSave),
+            apolloContactJson: JSON.stringify(updatedContact),
+          } as any);
+        } catch { /* non-blocking */ }
+      }
     } catch (e: any) { setApolloError(e.message); } finally { setEnriching(false); }
   };
 

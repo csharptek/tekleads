@@ -267,7 +267,31 @@ export default function ProposalList({
                   <td style={{ ...td, minWidth: 160 }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {onEdit && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => onEdit(p.id)}>Edit</button>}
-                      {onGenerateArtifacts && <button className="btn btn-sm" style={{ fontSize: 11, background: "#0f172a", color: "white", border: "none" }} onClick={() => onGenerateArtifacts({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientEmail: p.clientEmail, autoGenerate: false })}>✦ Artifacts</button>}
+                      {onGenerateArtifacts && <button className="btn btn-sm" style={{ fontSize: 11, background: "#0f172a", color: "white", border: "none" }} onClick={() => {
+                          let allEmails: string[] = p.clientEmail ? [p.clientEmail] : [];
+                          let allPhones: string[] = [];
+                          // Pull enriched contacts from contactsJson first
+                          try {
+                            const cx: Contact[] = p.contactsJson ? JSON.parse(p.contactsJson) : [];
+                            if (cx.length > 0) {
+                              const cxEmails = cx.map(c => c.email).filter(Boolean);
+                              const cxPhones = cx.map(c => c.phone).filter(Boolean) as string[];
+                              if (cxEmails.length > 0) allEmails = Array.from(new Set([...allEmails, ...cxEmails]));
+                              if (cxPhones.length > 0) allPhones = Array.from(new Set([...allPhones, ...cxPhones]));
+                            }
+                          } catch {}
+                          // Also pull from apolloContactJson
+                          try {
+                            const ap = p.apolloContactJson ? JSON.parse(p.apolloContactJson) : null;
+                            if (ap) {
+                              const apEmails: string[] = ap.emails || [];
+                              const apPhones: string[] = ap.phones || [];
+                              allEmails = Array.from(new Set([...allEmails, ...apEmails])).filter(Boolean);
+                              allPhones = Array.from(new Set([...allPhones, ...apPhones])).filter(Boolean);
+                            }
+                          } catch {}
+                          onGenerateArtifacts({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientEmail: allEmails[0] || p.clientEmail, clientPhone: allPhones[0] || "", allEmails, allPhones, autoGenerate: false });
+                        }}>✦ Artifacts</button>}
                       {onGenerateProposal && <button className="btn btn-sm" style={{ fontSize: 11, background: "#1e293b", color: "white", border: "none" }} onClick={() => onGenerateProposal({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientCompany: p.clientCompany })}>Generate</button>}
                       {p.status !== "sent" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => changeStatus(p, "sent")} disabled={statusChanging}>Sent</button>}
                       {p.status !== "won" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: "var(--green)" }} onClick={() => changeStatus(p, "won")} disabled={statusChanging}>Won</button>}
