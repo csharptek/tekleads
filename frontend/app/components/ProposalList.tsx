@@ -87,6 +87,7 @@ export default function ProposalList({
   const [statusChanging, setStatusChanging] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [wonOpen, setWonOpen] = useState(false);
+  const [syncingLeads, setSyncingLeads] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -185,6 +186,66 @@ export default function ProposalList({
   const addContact = () => setContacts(c => [...c, { name: "", email: "", phone: "", role: "", linkedin: "" }]);
   const updateContact = (i: number, f: keyof Contact, v: string) => setContacts(c => c.map((x, j) => j === i ? { ...x, [f]: v } : x));
   const removeContact = (i: number) => setContacts(c => c.filter((_, j) => j !== i));
+
+  const handleSyncFromLeads = async () => {
+    if (!drawer?.clientCompany) { setDrawerError("Proposal has no company name to match against."); return; }
+    setSyncingLeads(true); setDrawerError(""); setDrawerSuccess("");
+    try {
+      const companyLower = drawer.clientCompany.toLowerCase().trim();
+      // Fetch all saved leads — paginate through all pages
+      let allLeads: any[] = [];
+      let page = 1;
+      while (true) {
+        const data: any = await api.get(`/api/saved-leads?page=${page}&perPage=100`);
+        const batch: any[] = data.leads || [];
+        allLeads = [...allLeads, ...batch];
+        if (batch.length < 100) break;
+        page++;
+      }
+      // Match by company name (case-insensitive, partial match)
+      const matched = allLeads.filter((l: any) => {
+        const lc = (l.company || "").toLowerCase().trim();
+        return lc === companyLower || lc.includes(companyLower) || companyLower.includes(lc);
+      });
+      if (matched.length === 0) {
+        setDrawerSuccess(`No saved leads found matching "${drawer.clientCompany}".`);
+        return;
+      }
+      // Build new contacts from matched leads, dedupe by email
+      const existingEmails = new Set(contacts.map(c => c.email?.toLowerCase()).filter(Boolean));
+      const toAdd: Contact[] = [];
+      for (const lead of matched) {
+        const emails: string[] = lead.emails || [];
+        const phones: string[] = lead.phones || [];
+        if (emails.length === 0 && phones.length === 0) {
+          // No contact info — add name-only if not already present by name
+          const alreadyByName = contacts.some(c => c.name?.toLowerCase() === (lead.name || "").toLowerCase());
+          if (!alreadyByName) {
+            toAdd.push({ name: lead.name || "", email: "", phone: phones[0] || "", role: lead.title || "", linkedin: lead.linkedinUrl || "" });
+          }
+          continue;
+        }
+        if (emails.length === 0) {
+          // Phone only
+          toAdd.push({ name: lead.name || "", email: "", phone: phones[0] || "", role: lead.title || "", linkedin: lead.linkedinUrl || "" });
+          continue;
+        }
+        for (let i = 0; i < emails.length; i++) {
+          const email = emails[i];
+          if (existingEmails.has(email.toLowerCase())) continue;
+          existingEmails.add(email.toLowerCase());
+          toAdd.push({ name: lead.name || "", email, phone: phones[i] || phones[0] || "", role: lead.title || "", linkedin: lead.linkedinUrl || "" });
+        }
+      }
+      if (toAdd.length === 0) {
+        setDrawerSuccess(`All ${matched.length} matched lead(s) already in contacts.`);
+        return;
+      }
+      setContacts(c => [...c, ...toAdd]);
+      setDrawerSuccess(`Added ${toAdd.length} contact(s) from ${matched.length} saved lead(s) matching "${drawer.clientCompany}". Click Save Changes to persist.`);
+    } catch (e: any) { setDrawerError(e.message); }
+    finally { setSyncingLeads(false); }
+  };
 
   const StatusBadge = ({ status }: { status: string }) => {
     const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.draft;
@@ -423,9 +484,19 @@ export default function ProposalList({
 
               {drawerTab === "contacts" && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, alignItems: "center" }}>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>Contacts</div>
-                    <button className="btn btn-ghost btn-sm" onClick={addContact}>+ Add Contact</button>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {drawer.clientCompany && (
+                        <button className="btn btn-ghost btn-sm" onClick={handleSyncFromLeads} disabled={syncingLeads}
+                          title={`Pull all saved leads matching "${drawer.clientCompany}"`}
+                          style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+                          {syncingLeads ? <span className="spinner spinner-dark" /> : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
+                          Sync from Leads
+                        </button>
+                      )}
+                      <button className="btn btn-ghost btn-sm" onClick={addContact}>+ Add</button>
+                    </div>
                   </div>
                   {contacts.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>No contacts yet.</div>}
                   {contacts.map((c, i) => (
