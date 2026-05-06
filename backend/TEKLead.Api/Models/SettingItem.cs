@@ -43,6 +43,8 @@ public static class SettingKeys
     public const string ProposalGitHub              = "proposal_github";
     public const string ProposalDefaultPrompt       = "proposal_default_prompt";
 
+    public const string EmailSignature              = "email_signature";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -51,7 +53,8 @@ public static class SettingKeys
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,
-        ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt
+        ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt,
+        EmailSignature,
     };
 
     public static readonly HashSet<string> Secrets = new()
