@@ -320,7 +320,7 @@ export default function ProposalList({
               {paged.map((p, i) => (
                 <tr key={p.id} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "white" : "#fafafa", cursor: "pointer" }} onClick={() => openDrawer(p)}>
                   <td style={td}><div style={{ fontWeight: 600 }}>{p.clientCompany || "—"}</div></td>
-                  <td style={td}><div>{p.clientName || "—"}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{p.clientEmail}</div></td>
+                  <td style={{...td, whiteSpace: "nowrap"}}><div style={{ display: "flex", alignItems: "center", gap: 4 }}><span>{p.clientName || "—"}</span>{p.clientLinkedin && <a href={p.clientLinkedin} target="_blank" rel="noreferrer" title="LinkedIn" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none", marginLeft: 4 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{p.clientEmail}</div></td>
                   <td style={td}><div style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60) || "—"}</div></td>
                   <td style={td}>{fmtBudget(p.budgetMin, p.budgetMax)}</td>
                   <td style={td}>{fmt(p.createdAt)}</td>
@@ -464,7 +464,7 @@ export default function ProposalList({
               {drawerTab === "details" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 13 }}>
-                    <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Name</span><div>{drawer.clientName || "—"}</div></div>
+                    <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Name</span><div style={{ display: "flex", alignItems: "center", gap: 4 }}>{drawer.clientName || "—"}{drawer.clientLinkedin && <a href={drawer.clientLinkedin} target="_blank" rel="noreferrer" title="LinkedIn" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none", marginLeft: 4 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}</div></div>
                     <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Email</span><div>{drawer.clientEmail || "—"}</div></div>
                     <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Company</span><div>{drawer.clientCompany || "—"}</div></div>
                     <div><span style={{ color: "var(--muted)", fontSize: 11 }}>Location</span><div>{[drawer.clientCity, drawer.clientCountry].filter(Boolean).join(", ") || "—"}</div></div>
@@ -507,7 +507,13 @@ export default function ProposalList({
                         <div><div className="field-label">Email</div><input className="input" type="email" value={c.email} onChange={e => updateContact(i, "email", e.target.value)} /></div>
                         <div><div className="field-label">Phone</div><input className="input" value={c.phone || ""} onChange={e => updateContact(i, "phone", e.target.value)} /></div>
                         <div><div className="field-label">Role / Title</div><input className="input" value={c.role || ""} onChange={e => updateContact(i, "role", e.target.value)} /></div>
-                        <div style={{ gridColumn: "1 / -1" }}><div className="field-label">LinkedIn</div><input className="input" value={c.linkedin || ""} onChange={e => updateContact(i, "linkedin", e.target.value)} /></div>
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <div className="field-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            LinkedIn
+                            {c.linkedin && <a href={c.linkedin} target="_blank" rel="noreferrer" title="Open LinkedIn" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none" }}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}
+                          </div>
+                          <input className="input" value={c.linkedin || ""} onChange={e => updateContact(i, "linkedin", e.target.value)} placeholder="https://linkedin.com/in/..." />
+                        </div>
                       </div>
                     </div>
                   ))}
