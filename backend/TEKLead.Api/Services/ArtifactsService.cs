@@ -160,32 +160,32 @@ public class ArtifactsService
         };
     }
 
-    public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId)
+    public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId, string? customPrompt = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems);
-        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, CoverLetterPrompt(), context);
+        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, customPrompt ?? CoverLetterPrompt(), context);
         await SaveField(proposalId, "artifact_cover_letter", result);
         return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow };
     }
 
-    public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId)
+    public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems);
-        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, WhatsappPrompt(), context);
+        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, customPrompt ?? WhatsappPrompt(), context);
         await SaveField(proposalId, "artifact_whatsapp", result);
         return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow };
     }
 
-    public async Task<ArtifactsResult> GenerateEmail(Guid proposalId)
+    public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems);
-        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, EmailPrompt(), context);
+        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, customPrompt ?? EmailPrompt(), context);
         var (subject, body) = ParseEmail(raw);
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
@@ -236,7 +236,7 @@ public class ArtifactsService
 
     // ── Prompts ───────────────────────────────────────────────────────────────
 
-    private string CoverLetterPrompt() => @"You are writing a cover letter for a freelance software development proposal.
+    public static string CoverLetterPrompt() => @"You are writing a cover letter for a freelance software development proposal.
 
 Write a compelling, personalised cover letter using the structure below. Do NOT use generic filler — reference the client's actual job requirements and the portfolio projects provided.
 
@@ -252,7 +252,7 @@ STRUCTURE:
 Tone: Direct, confident, no fluff. No bullet spam — use prose where possible.
 Return only the cover letter text. No preamble.";
 
-    private string WhatsappPrompt() => @"Write a short WhatsApp outreach message for a freelance software proposal.
+    public static string WhatsappPrompt() => @"Write a short WhatsApp outreach message for a freelance software proposal.
 
 Rules:
 - Max 5-6 lines
@@ -265,7 +265,7 @@ Rules:
 
 Return only the WhatsApp message text.";
 
-    private string EmailPrompt() => @"Write a cold outreach email for a freelance software proposal.
+    public static string EmailPrompt() => @"Write a cold outreach email for a freelance software proposal.
 
 Return ONLY valid JSON in this exact format (no markdown, no backticks):
 {""subject"": ""your subject line here"", ""body"": ""full email body here with \n for line breaks""}

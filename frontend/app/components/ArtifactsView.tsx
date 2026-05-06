@@ -13,6 +13,14 @@ type Artifacts = {
 type GeneratingState = { coverLetter: boolean; whatsapp: boolean; email: boolean };
 type ErrorState = { coverLetter: string; whatsapp: string; email: string };
 
+type DefaultPrompts = { coverLetter: string; whatsapp: string; email: string };
+
+type PromptModal = {
+  type: "coverLetter" | "whatsapp" | "email";
+  title: string;
+  prompt: string;
+};
+
 function CopyBtn({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -24,8 +32,19 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
+function PromptBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="btn btn-ghost btn-sm" onClick={onClick} title="View / edit prompt">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+      </svg>
+      Prompt
+    </button>
+  );
+}
+
 function CardShell({ icon, title, subtitle, actions, children, loading }: {
-  icon: React.ReactNode; title: string; subtitle?: string;
+  icon: React.ReactNode; title: string; subtitle?: React.ReactNode;
   actions?: React.ReactNode; children?: React.ReactNode; loading?: boolean;
 }) {
   return (
@@ -35,7 +54,7 @@ function CardShell({ icon, title, subtitle, actions, children, loading }: {
           <div className="card-title" style={{ marginBottom: 2 }}>{icon} {title}</div>
           {subtitle && <div style={{ fontSize: 12, color: "var(--muted)" }}>{subtitle}</div>}
         </div>
-        {actions && <div style={{ display: "flex", gap: 8 }}>{actions}</div>}
+        {actions && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>{actions}</div>}
       </div>
       {loading ? (
         <div style={{ padding: "24px 0", textAlign: "center" }}>
@@ -66,8 +85,23 @@ export default function ArtifactsView({
   const [generating, setGenerating] = useState<GeneratingState>({ coverLetter: false, whatsapp: false, email: false });
   const [errors, setErrors] = useState<ErrorState>({ coverLetter: "", whatsapp: "", email: "" });
   const [loaded, setLoaded] = useState(false);
+  const [defaultPrompts, setDefaultPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "" });
+  const [customPrompts, setCustomPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "" });
+  const [promptModal, setPromptModal] = useState<PromptModal | null>(null);
+  const [promptDraft, setPromptDraft] = useState("");
 
-  useEffect(() => { loadExisting(); }, [proposalId]);
+  useEffect(() => {
+    loadExisting();
+    loadDefaultPrompts();
+  }, [proposalId]);
+
+  const loadDefaultPrompts = async () => {
+    try {
+      const res: any = await api.get("/api/artifacts/prompts");
+      setDefaultPrompts(res);
+      setCustomPrompts(res); // init custom = default
+    } catch { /* non-critical */ }
+  };
 
   const loadExisting = async () => {
     let hasExisting = false;
@@ -96,18 +130,18 @@ export default function ArtifactsView({
     resKey: string,
     stateKey: keyof Artifacts,
     resKey2?: string,
-    stateKey2?: keyof Artifacts
+    stateKey2?: keyof Artifacts,
+    customPrompt?: string
   ) => {
     setGenerating(g => ({ ...g, [type]: true }));
     setErrors(e => ({ ...e, [type]: '' }));
+    const body: any = {};
+    if (customPrompt) body.customPrompt = customPrompt;
     try {
-      const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/generate/${endpoint}`, {});
-      console.log("artifact response:", JSON.stringify(res));
-      console.log("resKey:", resKey, "value:", res[resKey]);
+      const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/generate/${endpoint}`, body);
       setArtifacts(a => {
         const u: Artifacts = { ...a, [stateKey]: res[resKey] };
         if (stateKey2 && resKey2) u[stateKey2] = res[resKey2];
-        console.log("updated artifacts:", JSON.stringify(u));
         return u;
       });
     } catch (e: any) {
@@ -121,6 +155,34 @@ export default function ArtifactsView({
     await generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter");
     await generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage");
     await generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody");
+  };
+
+  const openPromptModal = (type: "coverLetter" | "whatsapp" | "email") => {
+    const titles = { coverLetter: "Cover Letter Prompt", whatsapp: "WhatsApp Prompt", email: "Email Prompt" };
+    const current = customPrompts[type] || defaultPrompts[type];
+    setPromptDraft(current);
+    setPromptModal({ type, title: titles[type], prompt: current });
+  };
+
+  const handlePromptRegenerate = () => {
+    if (!promptModal) return;
+    const { type } = promptModal;
+    // Save custom prompt
+    setCustomPrompts(p => ({ ...p, [type]: promptDraft }));
+    setPromptModal(null);
+    if (type === "coverLetter") generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter", undefined, undefined, promptDraft);
+    if (type === "whatsapp")    generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage", undefined, undefined, promptDraft);
+    if (type === "email")       generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody", promptDraft);
+  };
+
+  const handlePromptSaveOnly = () => {
+    if (!promptModal) return;
+    setCustomPrompts(p => ({ ...p, [promptModal.type]: promptDraft }));
+    setPromptModal(null);
+  };
+
+  const resetPrompt = (type: "coverLetter" | "whatsapp" | "email") => {
+    setPromptDraft(defaultPrompts[type]);
   };
 
   const sendWhatsapp = () => {
@@ -152,6 +214,9 @@ export default function ArtifactsView({
 
   const anyGenerating = generating.coverLetter || generating.whatsapp || generating.email;
   const nothingGenerated = loaded && !anyGenerating && !artifacts.coverLetter && !artifacts.whatsappMessage && !artifacts.emailSubject;
+
+  const isCustomized = (type: "coverLetter" | "whatsapp" | "email") =>
+    customPrompts[type] && customPrompts[type] !== defaultPrompts[type];
 
   return (
     <div className="page" style={{ paddingBottom: 40 }}>
@@ -190,15 +255,19 @@ export default function ArtifactsView({
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
         title="Cover Letter"
-        subtitle="Professional cover letter for the proposal"
+        subtitle={<>Professional cover letter for the proposal{isCustomized("coverLetter") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.coverLetter}
-        actions={artifacts.coverLetter ? <>
-          <CopyBtn text={artifacts.coverLetter} />
-          <button className="btn btn-ghost btn-sm" onClick={downloadCoverLetter}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter")} disabled={generating.coverLetter}>↺ Redo</button>
-        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter")} disabled={generating.coverLetter}>Generate</button>}
+        actions={<>
+          <PromptBtn onClick={() => openPromptModal("coverLetter")} />
+          {artifacts.coverLetter && <>
+            <CopyBtn text={artifacts.coverLetter} />
+            <button className="btn btn-ghost btn-sm" onClick={downloadCoverLetter}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter", undefined, undefined, customPrompts.coverLetter !== defaultPrompts.coverLetter ? customPrompts.coverLetter : undefined)} disabled={generating.coverLetter}>↺ Redo</button>
+          </>}
+          {!artifacts.coverLetter && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter")} disabled={generating.coverLetter}>Generate</button>}
+        </>}
       >
         {errors.coverLetter && <div className="banner banner-error">{errors.coverLetter}</div>}
         {artifacts.coverLetter
@@ -210,15 +279,19 @@ export default function ArtifactsView({
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#25D366" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>}
         title="WhatsApp Message"
-        subtitle={clientPhone ? `Will send to ${clientPhone}` : "No phone — opens WhatsApp to enter manually"}
+        subtitle={<>{clientPhone ? `Will send to ${clientPhone}` : "No phone — opens WhatsApp to enter manually"}{isCustomized("whatsapp") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.whatsapp}
-        actions={artifacts.whatsappMessage ? <>
-          <CopyBtn text={artifacts.whatsappMessage} />
-          <button className="btn btn-sm" onClick={sendWhatsapp} style={{ background: "#25D366", color: "white", border: "none" }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> Send
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage")} disabled={generating.whatsapp}>↺ Redo</button>
-        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage")} disabled={generating.whatsapp}>Generate</button>}
+        actions={<>
+          <PromptBtn onClick={() => openPromptModal("whatsapp")} />
+          {artifacts.whatsappMessage && <>
+            <CopyBtn text={artifacts.whatsappMessage} />
+            <button className="btn btn-sm" onClick={sendWhatsapp} style={{ background: "#25D366", color: "white", border: "none" }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> Send
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage", undefined, undefined, customPrompts.whatsapp !== defaultPrompts.whatsapp ? customPrompts.whatsapp : undefined)} disabled={generating.whatsapp}>↺ Redo</button>
+          </>}
+          {!artifacts.whatsappMessage && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage")} disabled={generating.whatsapp}>Generate</button>}
+        </>}
       >
         {errors.whatsapp && <div className="banner banner-error">{errors.whatsapp}</div>}
         {artifacts.whatsappMessage
@@ -230,15 +303,19 @@ export default function ArtifactsView({
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
         title="Email"
-        subtitle={clientEmail ? `Opens Outlook with ${clientEmail} in To field` : "Opens mail client — no email on file"}
+        subtitle={<>{clientEmail ? `Opens Outlook with ${clientEmail} in To field` : "Opens mail client — no email on file"}{isCustomized("email") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.email}
-        actions={artifacts.emailSubject ? <>
-          <CopyBtn text={`Subject: ${artifacts.emailSubject}\n\n${artifacts.emailBody}`} />
-          <button className="btn btn-sm" onClick={openEmail} style={{ background: "#0078d4", color: "white", border: "none" }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> Open in Outlook
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody")} disabled={generating.email}>↺ Redo</button>
-        </> : <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody")} disabled={generating.email}>Generate</button>}
+        actions={<>
+          <PromptBtn onClick={() => openPromptModal("email")} />
+          {artifacts.emailSubject && <>
+            <CopyBtn text={`Subject: ${artifacts.emailSubject}\n\n${artifacts.emailBody}`} />
+            <button className="btn btn-sm" onClick={openEmail} style={{ background: "#0078d4", color: "white", border: "none" }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> Open in Outlook
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody", customPrompts.email !== defaultPrompts.email ? customPrompts.email : undefined)} disabled={generating.email}>↺ Redo</button>
+          </>}
+          {!artifacts.emailSubject && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody")} disabled={generating.email}>Generate</button>}
+        </>}
       >
         {errors.email && <div className="banner banner-error">{errors.email}</div>}
         {artifacts.emailSubject ? <>
@@ -302,6 +379,58 @@ export default function ArtifactsView({
             </div>
           )}
         </div>
+      )}
+
+      {/* Prompt Modal */}
+      {promptModal && (
+        <>
+          <div onClick={() => setPromptModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 300 }} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+            width: "min(700px, 94vw)", background: "white", borderRadius: 12,
+            boxShadow: "0 8px 40px rgba(0,0,0,0.18)", zIndex: 301, display: "flex", flexDirection: "column", maxHeight: "90vh",
+          }}>
+            {/* Modal header */}
+            <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{promptModal.title}</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                  Edit the system prompt sent to AI. The job post + portfolio context is appended automatically.
+                </div>
+              </div>
+              <button className="icon-btn" onClick={() => setPromptModal(null)}>✕</button>
+            </div>
+            {/* Modal body */}
+            <div style={{ padding: "16px 24px", flex: 1, overflowY: "auto" }}>
+              <textarea
+                value={promptDraft}
+                onChange={e => setPromptDraft(e.target.value)}
+                style={{
+                  width: "100%", minHeight: 320, fontFamily: "monospace", fontSize: 13, lineHeight: 1.6,
+                  padding: 14, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)",
+                  color: "var(--text)", resize: "vertical", boxSizing: "border-box",
+                }}
+              />
+              {promptDraft !== defaultPrompts[promptModal.type] && (
+                <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>● Custom prompt active</span>
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => resetPrompt(promptModal.type)}>
+                    Reset to default
+                  </button>
+                </div>
+              )}
+            </div>
+            {/* Modal footer */}
+            <div style={{ padding: "14px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPromptModal(null)}>Cancel</button>
+              <button className="btn btn-ghost btn-sm" onClick={handlePromptSaveOnly}>Save (no regenerate)</button>
+              <button className="btn btn-primary btn-sm" onClick={handlePromptRegenerate}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Save & Regenerate
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
