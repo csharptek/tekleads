@@ -74,12 +74,14 @@ type ArtifactsViewProps = {
   clientPhone?: string;
   allEmails?: string[];
   allPhones?: string[];
+  allEmailNames?: string[];
+  allPhoneNames?: string[];
   onBack?: () => void;
   autoGenerate?: boolean;
 };
 
 export default function ArtifactsView({
-  proposalId, proposalHeadline, clientName, clientEmail, clientPhone, allEmails, allPhones, onBack, autoGenerate = false,
+  proposalId, proposalHeadline, clientName, clientEmail, clientPhone, allEmails, allPhones, allEmailNames, allPhoneNames, onBack, autoGenerate = false,
 }: ArtifactsViewProps) {
   const [artifacts, setArtifacts] = useState<Artifacts>({});
   const [generating, setGenerating] = useState<GeneratingState>({ coverLetter: false, whatsapp: false, email: false });
@@ -199,17 +201,20 @@ export default function ArtifactsView({
     setPromptDraft(defaultPrompts[type]);
   };
 
-  const sendWhatsapp = () => {
-    const phone = clientPhone?.replace(/\D/g, "") || "";
-    const msg = encodeURIComponent(artifacts.whatsappMessage || "");
-    window.open(phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`, "_blank");
+  const sendWhatsapp = (phone?: string, name?: string) => {
+    const targetPhone = (phone || clientPhone)?.replace(/\D/g, "") || "";
+    const firstName = (name || clientName || "").split(" ")[0];
+    const msg = encodeURIComponent((artifacts.whatsappMessage || "").replace(/^Hi\b/, `Hi ${firstName}`));
+    window.open(targetPhone ? `https://wa.me/${targetPhone}?text=${msg}` : `https://wa.me/?text=${msg}`, "_blank");
   };
 
-  const openEmail = () => {
-    const to = clientEmail || "";
+  const openEmail = (email?: string, name?: string) => {
+    const to = email || clientEmail || "";
+    const firstName = (name || clientName || "").split(" ")[0];
+    const body = buildMailtoBody((artifacts.emailBody || "").replace(/^Hi\b/, `Hi ${firstName}`));
     const subject = encodeURIComponent(artifacts.emailSubject || "");
-    const body = encodeURIComponent(buildMailtoBody(artifacts.emailBody || ""));
-    window.open(`mailto:${to}?subject=${subject}&body=${body}`, "_blank");
+    const bodyEnc = encodeURIComponent(body);
+    window.open(`mailto:${to}?subject=${subject}&body=${bodyEnc}`, "_blank");
   };
 
   const downloadCoverLetter = () => {
@@ -299,7 +304,7 @@ export default function ArtifactsView({
           <PromptBtn onClick={() => openPromptModal("whatsapp")} />
           {artifacts.whatsappMessage && <>
             <CopyBtn text={artifacts.whatsappMessage} />
-            <button className="btn btn-sm" onClick={sendWhatsapp} style={{ background: "#25D366", color: "white", border: "none" }}>
+            <button className="btn btn-sm" onClick={() => sendWhatsapp()} style={{ background: "#25D366", color: "white", border: "none" }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> Send
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage", undefined, undefined, customPrompts.whatsapp !== defaultPrompts.whatsapp ? customPrompts.whatsapp : undefined)} disabled={generating.whatsapp}>↺ Redo</button>
@@ -323,7 +328,7 @@ export default function ArtifactsView({
           <PromptBtn onClick={() => openPromptModal("email")} />
           {artifacts.emailSubject && <>
             <CopyBtn text={`Subject: ${artifacts.emailSubject}\n\n${artifacts.emailBody}`} />
-            <button className="btn btn-sm" onClick={openEmail} style={{ background: "#0078d4", color: "white", border: "none" }}>
+            <button className="btn btn-sm" onClick={() => openEmail()} style={{ background: "#0078d4", color: "white", border: "none" }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> Open in Outlook
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody", customPrompts.email !== defaultPrompts.email ? customPrompts.email : undefined)} disabled={generating.email}>↺ Redo</button>
@@ -347,25 +352,27 @@ export default function ArtifactsView({
       </CardShell>
 
       {/* Multi-contact Send Panel */}
-      {((allEmails && allEmails.length > 1) || (allPhones && allPhones.length > 1)) && artifacts.emailSubject && (
+      {((allEmails && allEmails.length > 0) || (allPhones && allPhones.length > 0)) && (
         <div className="card">
-          <div className="card-title">Send to All Contacts</div>
-          <div className="card-sub">Send artifacts one by one to each contact</div>
+          <div className="card-title">Send to Contacts</div>
+          <div className="card-sub">Open email / WhatsApp for each contact</div>
           {allEmails && allEmails.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <div className="field-label" style={{ marginBottom: 6 }}>Email</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {allEmails.map((email, i) => {
-                  const subject = encodeURIComponent(artifacts.emailSubject || "");
-                  const body = encodeURIComponent(buildMailtoBody(artifacts.emailBody || ""));
+                  const name = allEmailNames?.[i] || "";
                   return (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)" }}>
-                      <span className="chip chip-blue" style={{ fontSize: 12, flex: 1 }}>{email}</span>
-                      <a href={`mailto:${email}?subject=${subject}&body=${body}`}
-                        className="btn btn-sm" style={{ background: "#0078d4", color: "white", border: "none", textDecoration: "none" }}>
+                      <div style={{ flex: 1 }}>
+                        {name && <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{name}</div>}
+                        <span className="chip chip-blue" style={{ fontSize: 12 }}>{email}</span>
+                      </div>
+                      <button className="btn btn-sm" style={{ background: "#0078d4", color: "white", border: "none", textDecoration: "none" }}
+                        onClick={() => openEmail(email, name)}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                         Open
-                      </a>
+                      </button>
                     </div>
                   );
                 })}
@@ -377,15 +384,17 @@ export default function ArtifactsView({
               <div className="field-label" style={{ marginBottom: 6 }}>WhatsApp</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {allPhones.map((phone, i) => {
-                  const clean = phone.replace(/\D/g, "");
-                  const msg = encodeURIComponent(artifacts.whatsappMessage || "");
+                  const name = allPhoneNames?.[i] || "";
                   return (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)" }}>
-                      <span className="chip chip-green" style={{ fontSize: 12, flex: 1 }}>💬 {phone}</span>
-                      <a href={`https://wa.me/${clean}?text=${msg}`} target="_blank" rel="noreferrer"
-                        className="btn btn-sm" style={{ background: "#25D366", color: "white", border: "none", textDecoration: "none" }}>
+                      <div style={{ flex: 1 }}>
+                        {name && <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{name}</div>}
+                        <span className="chip chip-green" style={{ fontSize: 12 }}>💬 {phone}</span>
+                      </div>
+                      <button className="btn btn-sm" style={{ background: "#25D366", color: "white", border: "none" }}
+                        onClick={() => sendWhatsapp(phone, name)}>
                         Send
-                      </a>
+                      </button>
                     </div>
                   );
                 })}

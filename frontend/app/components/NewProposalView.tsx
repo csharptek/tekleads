@@ -268,8 +268,14 @@ export default function NewProposalView({
     let id = savedId;
     if (!id) id = await handleSave(false);
     if (!id) return;
-    const allEmails = contacts.flatMap(c => c.checkedEmails);
-    const allPhones = contacts.flatMap(c => c.checkedPhones);
+    const allEmails: string[] = [];
+    const allEmailNames: string[] = [];
+    const allPhones: string[] = [];
+    const allPhoneNames: string[] = [];
+    contacts.forEach(c => {
+      c.checkedEmails.forEach(email => { allEmails.push(email); allEmailNames.push(c.lead.name || ""); });
+      c.checkedPhones.forEach(phone => { allPhones.push(phone); allPhoneNames.push(c.lead.name || ""); });
+    });
     onGenerateArtifacts?.({
       proposalId: id,
       proposalHeadline: form.jobPostHeadline || form.jobPostBody.slice(0, 60),
@@ -278,6 +284,8 @@ export default function NewProposalView({
       clientPhone: primaryContact.checkedPhones[0] || "",
       allEmails,
       allPhones,
+      allEmailNames,
+      allPhoneNames,
       autoGenerate: true,
     });
   };
