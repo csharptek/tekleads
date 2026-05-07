@@ -237,6 +237,23 @@ export default function NewProposalView({
     setSaving(true); setError(""); setSuccess("");
     try {
       const secondary = contacts.filter(c => !c.isPrimary && c.enriched);
+      // Build contactsJson from ALL enriched contacts (primary first, then secondary)
+      const allEnriched = [primaryContact, ...secondary];
+      const contactsForJson = allEnriched.flatMap(c => {
+        const emails = c.checkedEmails.length ? c.checkedEmails : (c.lead.emails?.length ? c.lead.emails : [""]);
+        const phones = c.lead.phones || [];
+        // One entry per unique email, sharing phones[0]
+        if (emails.length === 0) {
+          return [{ name: c.lead.name || "", email: "", phone: phones[0] || "", role: c.lead.title || "", linkedin: c.lead.linkedinUrl || "" }];
+        }
+        return emails.map((email, ei) => ({
+          name: c.lead.name || "",
+          email,
+          phone: phones[ei] || phones[0] || "",
+          role: c.lead.title || "",
+          linkedin: c.lead.linkedinUrl || "",
+        }));
+      });
       const payload: any = {
         ...form,
         budgetMin: form.budgetMin ? parseFloat(form.budgetMin) : null,
@@ -246,7 +263,7 @@ export default function NewProposalView({
         followUpDate: form.followUpDate || null,
         linkedLeadId: primaryContact.lead.id || null,
         apolloContactJson: JSON.stringify(primaryContact.lead),
-        additionalContactsJson: secondary.length ? JSON.stringify(secondary.map(c => c.lead)) : null,
+        contactsJson: JSON.stringify(contactsForJson),
       };
       let res: any;
       if (savedId) {
