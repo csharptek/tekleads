@@ -99,11 +99,26 @@ export default function ArtifactsView({
       .catch(() => {});
   }, []);
 
-  const buildMailtoBody = (body: string) => {
+  const buildPlainSig = () => {
     const sig = emailSignature.trim();
-    if (!sig) return body;
-    const plainSig = sig.includes("<") ? sig.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ") : sig;
-    return body + "\n\n" + plainSig;
+    if (!sig) return "";
+    if (sig.includes("<")) {
+      // HTML: preserve href, strip tags
+      return sig
+        .replace(/<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi, (_m, href, text) => {
+          const t = text.replace(/<[^>]+>/g, "").trim();
+          return t && t !== href ? `${t}: ${href}` : href;
+        })
+        .replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n")
+        .replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
+    }
+    // Plain text / markdown: convert [text](url) to "text: url"
+    return sig.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1: $2").trim();
+  };
+
+  const buildMailtoBody = (body: string) => {
+    const plainSig = buildPlainSig();
+    return plainSig ? body + "\n\n" + plainSig : body;
   };
 
   useEffect(() => {
@@ -204,7 +219,9 @@ export default function ArtifactsView({
   const sendWhatsapp = (phone?: string, name?: string) => {
     const targetPhone = (phone || clientPhone)?.replace(/\D/g, "") || "";
     const firstName = (name || clientName || "").split(" ")[0];
-    const msg = encodeURIComponent((artifacts.whatsappMessage || "").replace(/^Hi\b/, `Hi ${firstName}`));
+    const base = (artifacts.whatsappMessage || "").replace(/^Hi\b/, `Hi ${firstName}`);
+    const plainSig = buildPlainSig();
+    const msg = encodeURIComponent(plainSig ? base + "\n\n" + plainSig : base);
     window.open(targetPhone ? `https://wa.me/${targetPhone}?text=${msg}` : `https://wa.me/?text=${msg}`, "_blank");
   };
 
@@ -352,11 +369,11 @@ export default function ArtifactsView({
       </CardShell>
 
       {/* Multi-contact Send Panel */}
-      {((allEmails && allEmails.length > 0) || (allPhones && allPhones.length > 0)) && (
+      {((allEmails && allEmails.length > 0) || (allPhones && allPhones.length > 0)) && (artifacts.emailSubject || artifacts.whatsappMessage) && (
         <div className="card">
           <div className="card-title">Send to Contacts</div>
           <div className="card-sub">Open email / WhatsApp for each contact</div>
-          {allEmails && allEmails.length > 0 && (
+          {allEmails && allEmails.length > 0 && artifacts.emailSubject && (
             <div style={{ marginBottom: 12 }}>
               <div className="field-label" style={{ marginBottom: 6 }}>Email</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -379,7 +396,7 @@ export default function ArtifactsView({
               </div>
             </div>
           )}
-          {allPhones && allPhones.length > 0 && (
+          {allPhones && allPhones.length > 0 && artifacts.whatsappMessage && (
             <div>
               <div className="field-label" style={{ marginBottom: 6 }}>WhatsApp</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
