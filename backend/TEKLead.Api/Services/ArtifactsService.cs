@@ -337,7 +337,12 @@ No generic phrases like ""I came across your post"". Be specific.";
         sb.AppendLine(p.JobPostBody);
 
         sb.AppendLine("\n## CLIENT INFO");
-        if (!string.IsNullOrWhiteSpace(p.ClientName))    sb.AppendLine($"Name: {p.ClientName}");
+        if (!string.IsNullOrWhiteSpace(p.ClientName))
+        {
+            var firstName = p.ClientName.Split(new[]{' ','-'}, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? p.ClientName;
+            sb.AppendLine($"Name: {p.ClientName}");
+            sb.AppendLine($"First Name (use ONLY this when addressing or greeting the client, never the full name): {firstName}");
+        }
         if (!string.IsNullOrWhiteSpace(p.ClientCompany)) sb.AppendLine($"Company: {p.ClientCompany}");
         if (!string.IsNullOrWhiteSpace(p.ClientEmail))   sb.AppendLine($"Email: {p.ClientEmail}");
 
