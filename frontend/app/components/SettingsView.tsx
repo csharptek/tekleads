@@ -17,6 +17,9 @@ const KEYS = {
   WhatsappCountryCode: "whatsapp_cc",
   WhatsappMessageTemplate: "whatsapp_message_template",
   EmailSignature: "email_signature",
+  ArtifactCoverLetterPrompt: "artifact_cover_letter_prompt",
+  ArtifactWhatsappPrompt: "artifact_whatsapp_prompt",
+  ArtifactEmailPrompt: "artifact_email_prompt",
   AzureSearchEndpoint: "azure_search_endpoint",
   AzureSearchKey: "azure_search_key",
   AzureSearchIndex: "azure_search_index",
@@ -80,6 +83,15 @@ const USER_GROUPS: Group[] = [
     fields: [
       { key: KEYS.WhatsappCountryCode, label: "Default Country Code", placeholder: "+91" },
       { key: KEYS.WhatsappMessageTemplate, label: "Message Template", placeholder: "Hi {name}, I came across your profile and would love to connect!", full: true, textarea: true },
+    ],
+  },
+  {
+    title: "Artifact Prompts",
+    subtitle: "Saved prompts used for all cover letter, WhatsApp, and email generation. Leave blank to use the built-in default.",
+    fields: [
+      { key: KEYS.ArtifactCoverLetterPrompt, label: "Cover Letter Prompt", placeholder: "Leave blank to use built-in default…", full: true, textarea: true },
+      { key: KEYS.ArtifactWhatsappPrompt, label: "WhatsApp Prompt", placeholder: "Leave blank to use built-in default…", full: true, textarea: true },
+      { key: KEYS.ArtifactEmailPrompt, label: "Email Prompt", placeholder: "Leave blank to use built-in default…", full: true, textarea: true },
     ],
   },
 ];

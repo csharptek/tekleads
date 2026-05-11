@@ -119,13 +119,17 @@ public class ArtifactsService
 
         var context = BuildContext(proposal, portfolioItems);
 
+        var clPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
+        var waPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
+        var emPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
+
         // Generate sequentially to avoid timeout overload
         string coverLetter, whatsapp, emailSubject, emailBody;
         try
         {
-            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, CoverLetterPrompt(), context);
-            whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, WhatsappPrompt(), context);
-            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, EmailPrompt(), context);
+            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, string.IsNullOrWhiteSpace(clPrompt) ? CoverLetterPrompt() : clPrompt, context);
+            whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, string.IsNullOrWhiteSpace(waPrompt) ? WhatsappPrompt() : waPrompt, context);
+            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, string.IsNullOrWhiteSpace(emPrompt) ? EmailPrompt() : emPrompt, context);
             (emailSubject, emailBody) = ParseEmail(emailRaw);
         }
         catch (Exception ex)
@@ -162,40 +166,46 @@ public class ArtifactsService
 
     public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId, string? customPrompt = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems);
-        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, customPrompt ?? CoverLetterPrompt(), context);
+        var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
+        var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? CoverLetterPrompt() : savedPrompt);
+        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_cover_letter", result);
         return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow };
     }
 
     public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems);
-        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, customPrompt ?? WhatsappPrompt(), context);
+        var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
+        var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? WhatsappPrompt() : savedPrompt);
+        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_whatsapp", result);
         return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow };
     }
 
     public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, err) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems);
-        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, customPrompt ?? EmailPrompt(), context);
+        var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
+        var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? EmailPrompt() : savedPrompt);
+        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
         return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow };
     }
 
-    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, string? error)> GetContext(Guid proposalId)
+    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error)> GetContext(Guid proposalId)
     {
         var proposal = await _proposals.GetById(proposalId);
-        if (proposal == null) return (null, null, null, null, new(), "Proposal not found.");
+        if (proposal == null) return (null, null, null, null, new(), new(), "Proposal not found.");
 
         var settings = await _settings.GetAll();
         var aoEndpoint   = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
@@ -203,7 +213,7 @@ public class ArtifactsService
         var aoDeployment = settings.GetValueOrDefault(SettingKeys.AzureOpenAiDeployment, "");
 
         if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
-            return (null, null, null, null, new(), "Azure OpenAI not configured in Settings.");
+            return (null, null, null, null, new(), new(), "Azure OpenAI not configured in Settings.");
 
         List<PortfolioProject> portfolioItems;
         try
@@ -221,7 +231,7 @@ public class ArtifactsService
             if (portfolioItems.Count == 0) portfolioItems = all.Take(3).ToList();
         }
 
-        return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, null);
+        return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null);
     }
 
     private async Task SaveField(Guid proposalId, string column, string value)
@@ -236,20 +246,52 @@ public class ArtifactsService
 
     // ── Prompts ───────────────────────────────────────────────────────────────
 
-    public static string CoverLetterPrompt() => @"You are writing a cover letter for a freelance software development proposal.
+    public static string CoverLetterPrompt() => @"You are writing a cover letter on behalf of Bhanu Gupta, CEO of Csharptek, a senior full-stack developer and AI consultant based in Ranchi, India with 15+ years of experience and 40+ projects delivered.
 
-Write a compelling, personalised cover letter using the structure below. Do NOT use generic filler — reference the client's actual job requirements and the portfolio projects provided.
+STRUCTURE — follow this exact order:
 
-STRUCTURE:
-1. Opening: ""I understand what you are building and why it matters."" — then in 1-2 sentences show you actually understand THEIR specific project.
-2. Answer each client screening question directly and specifically (if questions are listed).
-3. Reference 2-3 portfolio projects by name with concrete outcomes and links.
-4. Proposed approach / architecture for their specific problem (2-3 paragraphs).
-5. What you would cut from V1 (shows honesty and scoping maturity).
-6. 2-3 questions back to the client (shows strategic thinking).
-7. Close with a warm, confident closing line. Do not sign with any name or company.
+1. HOOK (1 sentence)
+Mirror the client's exact pain or core requirement. Do NOT start with ""I have reviewed"" or ""I am writing to"". Start with what THEY need, then pivot to why Bhanu is the answer.
+Example pattern: ""[Client pain point] — I have shipped exactly this.""
 
-Tone: Direct, confident, no fluff. No bullet spam — use prose where possible.
+2. AUTHORITY (2-3 lines)
+Who Bhanu is. Mention: CEO of Csharptek, 40+ projects, specialization relevant to this job. Keep it tight.
+
+3. RELEVANT BUILDS (portfolio items)
+List 3-4 most relevant portfolio projects from the context provided.
+Format each as:
+• [Project Name]: One sentence on what was built and why it's relevant. [YouTube/link if available]
+Do NOT use generic descriptions. Each item must connect directly to a requirement in the job post.
+
+4. STRATEGIC APPROACH (3-4 bullets)
+Titled: ""How I Would Approach [Project Name]""
+Each bullet = one specific technical decision or execution step Bhanu would take.
+Be concrete. Name actual technologies, patterns, or tools from the job post.
+This section should make the client think ""he's already thought this through.""
+
+5. QUESTIONS (2-3 questions)
+Ask smart, specific questions that show deep reading of the job post.
+Questions should reveal a knowledge gap the client hasn't thought about yet.
+Format: numbered list.
+
+6. LOGISTICS (short, bullet format)
+• Hours: [availability]
+• Overlap: [timezone overlap]
+• Start: [when available]
+• Rate: [hourly rate from proposal]
+
+7. CLOSING CTA (1-2 lines)
+Specific ask. Reference something concrete from the job post.
+Example: ""Are you free for a 20-minute call this week? I can walk you through the [specific technical approach] I'd use from day one.""
+
+TONE RULES:
+- Write in first person as Bhanu
+- Confident, not boastful
+- No fluff, no filler phrases (""I am excited to..."", ""I believe I would be a great fit..."")
+- Every sentence must earn its place
+- Length: 400-550 words max
+- Do NOT invent portfolio items — only use what is provided in the context
+
 Return only the cover letter text. No preamble.";
 
     public static string WhatsappPrompt() => @"Write a short WhatsApp outreach message for a freelance software proposal.

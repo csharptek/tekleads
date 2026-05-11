@@ -45,6 +45,11 @@ public static class SettingKeys
 
     public const string EmailSignature              = "email_signature";
 
+    // Artifact Prompts
+    public const string ArtifactCoverLetterPrompt   = "artifact_cover_letter_prompt";
+    public const string ArtifactWhatsappPrompt      = "artifact_whatsapp_prompt";
+    public const string ArtifactEmailPrompt         = "artifact_email_prompt";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -55,6 +60,7 @@ public static class SettingKeys
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,
         ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt,
         EmailSignature,
+        ArtifactCoverLetterPrompt, ArtifactWhatsappPrompt, ArtifactEmailPrompt,
     };
 
     public static readonly HashSet<string> Secrets = new()
