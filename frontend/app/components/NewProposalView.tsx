@@ -72,7 +72,7 @@ export default function NewProposalView({
   }, []);
 
   // Section 1 — search
-  const [searchForm, setSearchForm] = useState({ name: "", company: "", title: "", industry: "", location: "" });
+  const [searchForm, setSearchForm] = useState({ name: "", company: "", title: "", industry: "", location: "", linkedinUrl: "" });
   const [searchResults, setSearchResults] = useState<Lead[]>([]);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -102,18 +102,27 @@ export default function NewProposalView({
   const doSearch = async (p = 1) => {
     setSearching(true); setError(""); setSearchResults([]);
     try {
-      const res: any = await api.post("/api/leads/search", { ...searchForm, page: p, perPage: SEARCH_PER_PAGE });
-      setSearchResults(res.leads || []);
-      setSearchTotal(res.total || 0);
-      setSearchPage(p);
-      setSearched(true);
-      if (!(res.leads || []).length) setError("No results found.");
+      if (searchForm.linkedinUrl.trim() && !searchForm.name && !searchForm.title && !searchForm.company && !searchForm.industry && !searchForm.location) {
+        const res: any = await api.post("/api/leads/search-by-linkedin", { linkedinUrl: searchForm.linkedinUrl.trim() });
+        setSearchResults(res.lead ? [res.lead] : []);
+        setSearchTotal(res.lead ? 1 : 0);
+        setSearchPage(1);
+        setSearched(true);
+        if (!res.lead) setError("No match found for that LinkedIn URL.");
+      } else {
+        const res: any = await api.post("/api/leads/search", { ...searchForm, page: p, perPage: SEARCH_PER_PAGE });
+        setSearchResults(res.leads || []);
+        setSearchTotal(res.total || 0);
+        setSearchPage(p);
+        setSearched(true);
+        if (!(res.leads || []).length) setError("No results found.");
+      }
     } catch (e: any) { setError(e.message); }
     finally { setSearching(false); }
   };
 
   const resetAll = () => {
-    setSearchForm({ name: "", company: "", title: "", industry: "", location: "" });
+    setSearchForm({ name: "", company: "", title: "", industry: "", location: "", linkedinUrl: "" });
     setSearchResults([]); setSearched(false); setSearchPage(1); setSearchTotal(0);
     setContacts([]); setPhonePending(new Set());
     setForm({ ...EMPTY_PROPOSAL }); setSavedId(null);
@@ -386,6 +395,12 @@ export default function NewProposalView({
                 onKeyDown={e => e.key === "Enter" && doSearch(1)} />
             </div>
           ))}
+          <div>
+            <div className="field-label">LinkedIn URL <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>(direct lookup · 1 credit)</span></div>
+            <input className="input" placeholder="https://linkedin.com/in/username" value={searchForm.linkedinUrl}
+              onChange={e => sf("linkedinUrl", e.target.value)}
+              onKeyDown={e => e.key === "Enter" && doSearch(1)} />
+          </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => doSearch(1)} disabled={searching}>
               {searching ? <><span className="spinner" />&nbsp;Searching…</> : "Search Apollo"}
