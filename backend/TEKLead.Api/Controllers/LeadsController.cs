@@ -46,6 +46,23 @@ public class LeadsController : ControllerBase
         }
     }
 
+    [HttpPost("search-by-linkedin")]
+    public async Task<IActionResult> SearchByLinkedIn([FromBody] LinkedInSearchRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.LinkedinUrl))
+            return BadRequest(new { error = "linkedinUrl is required." });
+        try
+        {
+            var lead = await _apollo.SearchByLinkedIn(req.LinkedinUrl);
+            return Ok(new { lead });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "LinkedIn search failed");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [HttpPost("save")]
     public async Task<IActionResult> Save([FromBody] List<Lead> leads)
     {
@@ -135,4 +152,9 @@ public class LeadSearchRequest
     public string? Location { get; set; }
     public int Page { get; set; } = 1;
     public int PerPage { get; set; } = 25;
+}
+
+public class LinkedInSearchRequest
+{
+    public string? LinkedinUrl { get; set; }
 }

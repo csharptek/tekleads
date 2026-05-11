@@ -33,7 +33,7 @@ function WaLink({ phone, message, name }: { phone: string; message: string; name
 }
 
 export default function LeadSearchView() {
-  const [form, setForm] = useState({ name: "", title: "", company: "", industry: "", location: "" });
+  const [form, setForm] = useState({ name: "", title: "", company: "", industry: "", location: "", linkedinUrl: "" });
   const [results, setResults] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -58,13 +58,22 @@ export default function LeadSearchView() {
   const doSearch = async (p: number) => {
     setSearching(true); setBanner(null); setSelected(new Set());
     try {
-      const data = await api.post<SearchResult>("/api/leads/search", { ...form, page: p, perPage: PER_PAGE });
-      setResults(data.leads || []);
-      setTotal(data.total || 0);
-      setPage(p);
-      setSearched(true);
-      if ((data.leads || []).length === 0)
-        setBanner({ kind: "info", text: "No results. Try broader filters." });
+      if (form.linkedinUrl.trim() && !form.name && !form.title && !form.company && !form.industry && !form.location) {
+        const res = await api.post<{ lead: Lead }>("/api/leads/search-by-linkedin", { linkedinUrl: form.linkedinUrl.trim() });
+        setResults(res.lead ? [res.lead] : []);
+        setTotal(res.lead ? 1 : 0);
+        setPage(1);
+        setSearched(true);
+        if (!res.lead) setBanner({ kind: "info", text: "No match found for that LinkedIn URL." });
+      } else {
+        const data = await api.post<SearchResult>("/api/leads/search", { ...form, page: p, perPage: PER_PAGE });
+        setResults(data.leads || []);
+        setTotal(data.total || 0);
+        setPage(p);
+        setSearched(true);
+        if ((data.leads || []).length === 0)
+          setBanner({ kind: "info", text: "No results. Try broader filters." });
+      }
     } catch (e: any) {
       setBanner({ kind: "error", text: e.message });
     } finally { setSearching(false); }
@@ -180,7 +189,7 @@ export default function LeadSearchView() {
 
       <div className="card">
         <div className="card-title">Search Filters</div>
-        <div className="card-sub">No credits consumed · Similar matches included</div>
+        <div className="card-sub">No credits consumed · Similar matches included · LinkedIn URL triggers direct lookup</div>
         <div className="grid-3">
           {([
             ["name",     "Person Name",  "e.g. John Wright"],
@@ -196,6 +205,12 @@ export default function LeadSearchView() {
                 onKeyDown={e => e.key === "Enter" && doSearch(1)} />
             </div>
           ))}
+          <div>
+            <div className="field-label">LinkedIn URL <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>(direct lookup · uses 1 credit)</span></div>
+            <input className="input" placeholder="https://linkedin.com/in/username" value={form.linkedinUrl}
+              onChange={e => f("linkedinUrl", e.target.value)}
+              onKeyDown={e => e.key === "Enter" && doSearch(1)} />
+          </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => doSearch(1)} disabled={searching}>
               {searching ? <><span className="spinner" />&nbsp;Searching…</> : "Search Apollo"}

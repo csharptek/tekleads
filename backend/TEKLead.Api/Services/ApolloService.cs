@@ -206,6 +206,40 @@ public class ApolloService
         }
     }
 
+    public async Task<Lead?> SearchByLinkedIn(string linkedinUrl)
+    {
+        var key = await GetKey();
+        var payload = new { linkedin_url = linkedinUrl, reveal_personal_emails = false };
+        var client = MakeClient(key);
+        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
+        var body = await res.Content.ReadAsStringAsync();
+        _log.LogInformation("Apollo LinkedIn match {0}: {1}", res.StatusCode, body[..Math.Min(500, body.Length)]);
+        if (!res.IsSuccessStatusCode) throw new Exception($"Apollo API error {(int)res.StatusCode}: {body}");
+
+        using var doc = JsonDocument.Parse(body);
+        if (!doc.RootElement.TryGetProperty("person", out var p) || p.ValueKind == JsonValueKind.Null)
+            return null;
+
+        var fn = Str(p, "first_name"); var ln = Str(p, "last_name");
+        var org = p.TryGetProperty("organization", out var o) && o.ValueKind != JsonValueKind.Null ? Str(o, "name") : "";
+        var title = Str(p, "title");
+        var locParts = new[] { Str(p, "city"), Str(p, "state"), Str(p, "country") }.Where(s => !string.IsNullOrEmpty(s));
+        var email = Str(p, "email");
+        return new Lead
+        {
+            Id = Guid.NewGuid(),
+            ApolloId = Str(p, "id"),
+            Name = $"{fn} {ln}".Trim(),
+            Title = title,
+            Company = org,
+            Industry = p.TryGetProperty("organization", out var org2) && org2.ValueKind != JsonValueKind.Null && org2.TryGetProperty("industry", out var ind) ? ind.GetString() ?? "" : "",
+            Location = string.Join(", ", locParts),
+            Emails = string.IsNullOrEmpty(email) ? Array.Empty<string>() : new[] { email },
+            Phones = Array.Empty<string>(),
+            LinkedinUrl = Str(p, "linkedin_url"),
+        };
+    }
+
     private static string Str(JsonElement el, string key) =>
         el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
 }
