@@ -218,8 +218,8 @@ export default function ArtifactsView({
 
   const sendWhatsapp = (phone?: string, name?: string) => {
     const targetPhone = (phone || clientPhone)?.replace(/\D/g, "") || "";
-    const firstName = (name || clientName || "").split(" ")[0];
-    const base = (artifacts.whatsappMessage || "").replace(/^Hi\b/, `Hi ${firstName}`);
+    const firstName = (name || clientName || "").split(/[\s-]+/)[0];
+    const base = (artifacts.whatsappMessage || "").replace(/^Hi\s+[^,\n]+,?/i, `Hi ${firstName},`);
     const plainSig = buildPlainSig();
     const msg = encodeURIComponent(plainSig ? base + "\n\n" + plainSig : base);
     window.open(targetPhone ? `https://wa.me/${targetPhone}?text=${msg}` : `https://wa.me/?text=${msg}`, "_blank");
@@ -227,8 +227,8 @@ export default function ArtifactsView({
 
   const openEmail = (email?: string, name?: string) => {
     const to = email || clientEmail || "";
-    const firstName = (name || clientName || "").split(" ")[0];
-    const body = buildMailtoBody((artifacts.emailBody || "").replace(/^Hi\b/, `Hi ${firstName}`));
+    const firstName = (name || clientName || "").split(/[\s-]+/)[0];
+    const body = buildMailtoBody((artifacts.emailBody || "").replace(/^Hi\s+[^,\n]+,?/i, `Hi ${firstName},`));
     const subject = encodeURIComponent(artifacts.emailSubject || "");
     const bodyEnc = encodeURIComponent(body);
     window.open(`mailto:${to}?subject=${subject}&body=${bodyEnc}`, "_blank");
