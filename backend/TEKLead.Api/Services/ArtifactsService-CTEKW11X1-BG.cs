@@ -319,15 +319,9 @@ Email rules:
 - Professional tone
 - Para 1: show you understand their specific problem
 - Para 2: 1-2 relevant portfolio references with outcomes
-- Para 3: proposed approach in 2 sentences, include realistic week estimate and fixed price at $600/week (e.g. 4 weeks = $2,400). Mention AI-assisted development (Claude Code, GitHub Copilot) as the reason for the competitive rate.
+- Para 3: proposed approach in 2 sentences
 - CTA: suggest a 20-min call
 - Do not include any name or company signature
-
-Pricing rules:
-- Rate is always $600/week fixed
-- Estimate weeks honestly based on project complexity, using AI-assisted dev to compress timelines
-- Final price = $600 x estimated weeks
-- Never quote more than $600/week regardless of project size
 
 No generic phrases like ""I came across your post"". Be specific.";
 
