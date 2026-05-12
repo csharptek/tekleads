@@ -93,6 +93,12 @@ export default function ArtifactsView({
   const [promptDraft, setPromptDraft] = useState("");
   const [emailSignature, setEmailSignature] = useState("");
 
+  // Send to All state
+  const [sendInterval, setSendInterval] = useState(5);
+  const [sendAllQueued, setSendAllQueued] = useState(false);
+  const [sendAllJobs, setSendAllJobs] = useState<{ toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string }[]>([]);
+  const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     api.get<{ values: Record<string, string> }>("/api/settings")
       .then(d => { if (d.values?.email_signature) setEmailSignature(d.values.email_signature); })
@@ -234,6 +240,48 @@ export default function ArtifactsView({
     window.open(`mailto:${to}?subject=${subject}&body=${bodyEnc}`, "_blank");
   };
 
+  const pollStatus = () => {
+    api.get<any[]>(`/api/artifacts/${proposalId}/send-bulk/status`)
+      .then(jobs => {
+        setSendAllJobs(jobs);
+        const allDone = jobs.every(j => j.status === "sent" || j.status === "failed" || j.status === "cancelled");
+        if (allDone && pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      })
+      .catch(() => {});
+  };
+
+  const sendToAll = async () => {
+    if (!allEmails || allEmails.length === 0) return;
+    const recipients = allEmails.map((email, i) => ({ email, name: allEmailNames?.[i] || "" }));
+    await api.post(`/api/artifacts/${proposalId}/send-bulk`, { recipients, intervalMinutes: sendInterval });
+    setSendAllQueued(true);
+    pollStatus();
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(pollStatus, 5000);
+  };
+
+  const cancelSendAll = async () => {
+    await api.post(`/api/artifacts/${proposalId}/send-bulk/cancel`, {});
+    pollStatus();
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  React.useEffect(() => {
+    // On mount, load any existing queue for this proposal
+    api.get<any[]>(`/api/artifacts/${proposalId}/send-bulk/status`)
+      .then(jobs => {
+        if (jobs && jobs.length > 0) {
+          setSendAllJobs(jobs);
+          setSendAllQueued(true);
+          const hasPending = jobs.some(j => j.status === "pending");
+          if (hasPending) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            pollRef.current = setInterval(pollStatus, 5000);
+          }
+        }
+      }).catch(() => {});
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [proposalId]);
   const downloadCoverLetter = () => {
     const blob = new Blob([artifacts.coverLetter || ""], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -371,8 +419,67 @@ export default function ArtifactsView({
       {/* Multi-contact Send Panel */}
       {((allEmails && allEmails.length > 0) || (allPhones && allPhones.length > 0)) && (artifacts.emailSubject || artifacts.whatsappMessage) && (
         <div className="card">
-          <div className="card-title">Send to Contacts</div>
-          <div className="card-sub">Open email / WhatsApp for each contact</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <div className="card-title">Send to Contacts</div>
+              <div className="card-sub">Open email / WhatsApp for each contact</div>
+            </div>
+            {allEmails && allEmails.length > 0 && artifacts.emailSubject && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <label style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (min):</label>
+                <select
+                  value={sendInterval}
+                  onChange={e => setSendInterval(Number(e.target.value))}
+                  disabled={sendAllJobs.some(j => j.status === "pending")}
+                  style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}
+                >
+                  {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+                {sendAllJobs.some(j => j.status === "pending") ? (
+                  <button className="btn btn-sm" style={{ background: "#dc3545", color: "white", border: "none" }} onClick={cancelSendAll}>
+                    ✕ Cancel
+                  </button>
+                ) : (
+                  <button className="btn btn-sm" style={{ background: "#0078d4", color: "white", border: "none" }} onClick={sendToAll}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    Send to All
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          {sendAllQueued && sendAllJobs.length > 0 && (
+            <div style={{ marginBottom: 16, padding: "12px 14px", background: "var(--surface)", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                  {sendAllJobs.every(j => j.status === "sent" || j.status === "failed" || j.status === "cancelled")
+                    ? "✓ Queue complete"
+                    : `Queued — backend sending every ${sendInterval} min`}
+                </span>
+                <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: 8 }}>
+                  {sendAllJobs.filter(j => j.status === "sent").length}/{sendAllJobs.length} sent
+                </span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {sendAllJobs.map((job, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                    {job.status === "pending" && <span style={{ color: "var(--muted)" }}>○</span>}
+                    {job.status === "sent" && <span style={{ color: "#22c55e" }}>✓</span>}
+                    {job.status === "failed" && <span style={{ color: "#ef4444" }}>✕</span>}
+                    {job.status === "cancelled" && <span style={{ color: "var(--muted)" }}>–</span>}
+                    <span style={{ color: "var(--text)" }}>{job.toName || job.toEmail}</span>
+                    <span style={{ color: "var(--muted)", fontSize: 11 }}>{job.toEmail}</span>
+                    {job.status === "pending" && (
+                      <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                        due {new Date(job.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
+                    {job.status === "failed" && job.error && <span style={{ color: "#ef4444", fontSize: 11 }}>{job.error}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {allEmails && allEmails.length > 0 && artifacts.emailSubject && (
             <div style={{ marginBottom: 12 }}>
               <div className="field-label" style={{ marginBottom: 6 }}>Email</div>

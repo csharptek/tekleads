@@ -16,6 +16,9 @@ builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<LogService>();
 builder.Services.AddScoped<ProposalExportService>();
 builder.Services.AddScoped<ArtifactsService>();
+builder.Services.AddScoped<GraphEmailService>();
+builder.Services.AddScoped<EmailSendQueueService>();
+builder.Services.AddHostedService<EmailSendWorker>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()
      .WithExposedHeaders("Access-Control-Allow-Private-Network")));
@@ -66,6 +69,7 @@ using (var scope = app.Services.CreateScope())
     try { var logSvc = scope.ServiceProvider.GetRequiredService<LogService>(); await logSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Log schema failed"); }
     try { var genSvc = scope.ServiceProvider.GetRequiredService<ProposalGenerationService>(); await genSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "ProposalGeneration schema failed"); }
     try { var artSvc = scope.ServiceProvider.GetRequiredService<ArtifactsService>(); await artSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Artifacts schema failed"); }
+    try { var queueSvc = scope.ServiceProvider.GetRequiredService<EmailSendQueueService>(); await queueSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "EmailSendQueue schema failed"); }
 }
 
 app.MapControllers();
