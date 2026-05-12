@@ -165,9 +165,9 @@ public class ContactListService
             co.ListId = listId;
             await c.ExecuteAsync(@"
                 INSERT INTO contacts
-                    (list_id, name, title, company, location, email, phone, linkedin_url, enrich_status)
+                    (list_id, name, title, company, location, email, phone, linkedin_url, apollo_id, enrich_status)
                 VALUES
-                    (@ListId, @Name, @Title, @Company, @Location, @Email, @Phone, @LinkedinUrl, 'pending')
+                    (@ListId, @Name, @Title, @Company, @Location, @Email, @Phone, @LinkedinUrl, @ApolloId, 'pending')
             ", co);
         }
         return contacts.Count;
@@ -211,29 +211,41 @@ public class ContactListService
         // Normalize: map header text to our field
         static string FieldFor(string hdr) => hdr switch
         {
-            "first name"    => "firstname",
-            "last name"     => "lastname",
-            "name"          => "name",
-            "full name"     => "name",
-            "title"         => "title",
-            "job title"     => "title",
-            "company"       => "company",
-            "company name"  => "company",
-            "organization"  => "company",
-            "email"         => "email",
-            "contact email" => "email",
-            "phone"         => "phone",
-            "mobile phone"  => "phone",
-            "work phone"    => "phone",
-            "phone number"  => "phone",
-            "linkedin url"  => "linkedin",
-            "linkedin"      => "linkedin",
-            "contact linkedin url" => "linkedin",
-            "city"          => "city",
-            "state"         => "state",
-            "country"       => "country",
-            "location"      => "location",
-            _               => ""
+            "first name"              => "firstname",
+            "last name"               => "lastname",
+            "name"                    => "name",
+            "full name"               => "name",
+            "title"                   => "title",
+            "job title"               => "title",
+            "company"                 => "company",
+            "company name"            => "company",
+            "company name for emails" => "company",
+            "organization"            => "company",
+            "email"                   => "email",
+            "contact email"           => "email",
+            // Apollo phone columns — priority order handled below
+            "work direct phone"       => "phone1",
+            "mobile phone"            => "phone2",
+            "corporate phone"         => "phone3",
+            "home phone"              => "phone4",
+            "other phone"             => "phone5",
+            "phone"                   => "phone1",
+            "mobile"                  => "phone2",
+            "work phone"              => "phone1",
+            "phone number"            => "phone1",
+            // LinkedIn
+            "person linkedin url"     => "linkedin",
+            "linkedin url"            => "linkedin",
+            "linkedin"                => "linkedin",
+            "contact linkedin url"    => "linkedin",
+            // Location
+            "city"                    => "city",
+            "state"                   => "state",
+            "country"                 => "country",
+            "location"                => "location",
+            // Apollo ID
+            "apollo contact id"       => "apolloid",
+            _                         => ""
         };
 
         for (int i = 1; i < rows.Count; i++)
@@ -247,9 +259,24 @@ public class ContactListService
             foreach (var (col, hdr) in colMap)
             {
                 var field = FieldFor(hdr);
-                if (!string.IsNullOrEmpty(field))
-                    data[field] = cells.TryGetValue(col, out var v) ? v : "";
+                if (string.IsNullOrEmpty(field)) continue;
+                var val = cells.TryGetValue(col, out var v) ? v : "";
+                // For phone priority slots: only set if not already set by higher priority
+                if (field.StartsWith("phone"))
+                {
+                    if (!data.ContainsKey(field))
+                        data[field] = val;
+                }
+                else
+                {
+                    data[field] = val;
+                }
             }
+
+            // Pick first non-empty phone in priority order
+            var phone = new[] { "phone1", "phone2", "phone3", "phone4", "phone5" }
+                .Select(k => data.TryGetValue(k, out var p) ? p : "")
+                .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p)) ?? "";
 
             // Skip blank rows
             if (!data.TryGetValue("name", out var name) || string.IsNullOrWhiteSpace(name))
@@ -277,8 +304,9 @@ public class ContactListService
                 Company     = data.TryGetValue("company",  out var co) ? co : "",
                 Location    = loc,
                 Email       = data.TryGetValue("email",    out var em) ? em : "",
-                Phone       = data.TryGetValue("phone",    out var ph) ? ph : "",
+                Phone       = phone,
                 LinkedinUrl = data.TryGetValue("linkedin", out var li) ? li : "",
+                ApolloId    = data.TryGetValue("apolloid", out var ai) ? ai : "",
             });
         }
         return result;
