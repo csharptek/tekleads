@@ -11,8 +11,9 @@ import ProposalEditor from "./ProposalEditor";
 import ProposalSettings from "./ProposalSettings";
 import ArtifactsView from "./ArtifactsView";
 import NewProposalView from "./NewProposalView";
+import ContactListsView from "./ContactListsView";
 
-type Page = "leads" | "prospects" | "portfolio" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs";
+type Page = "leads" | "prospects" | "portfolio" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "contact-lists";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
 type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; };
@@ -26,6 +27,7 @@ const CATEGORIES: NavCategory[] = [
     items: [
       { id: "leads", label: "Lead Search", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> },
       { id: "prospects", label: "Saved Leads", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
+      { id: "contact-lists", label: "Contact Lists", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg> },
     ],
   },
   {
@@ -159,6 +161,7 @@ export default function Shell() {
         {page === "artifacts"         && artifactsCtx && <ArtifactsView {...artifactsCtx} onBack={() => navigate("proposal-list")} />}
         {page === "settings"          && <SettingsView />}
         {page === "logs"              && <LogsView />}
+        {page === "contact-lists"     && <ContactListsView />}
       </div>
     </div>
   );
