@@ -396,6 +396,13 @@ function ContactsTab({ list }: { list: ContactList }) {
     setBulkJobs(prev => prev.map(j => j.status === "pending" ? { ...j, status: "skipped" } : j));
   }
 
+  const thStyle: React.CSSProperties = {
+    padding: "10px 12px", textAlign: "left", fontWeight: 600, color: "var(--muted)",
+    fontSize: 11, textTransform: "uppercase", letterSpacing: ".5px", whiteSpace: "nowrap",
+    cursor: "pointer", userSelect: "none",
+  };
+  const thInner: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4 };
+
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const pagBar = <PaginationBar page={page} pages={pages} total={total} pageSize={pageSize} onPage={setPage} onPageSize={n => { setPageSize(n); setPage(1); }} />;
 
@@ -407,34 +414,105 @@ function ContactsTab({ list }: { list: ContactList }) {
 
   return (
     <>
-      {/* Toolbar */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <input className="input" placeholder="Search name, email, company…" value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ flex: 1, minWidth: 180 }} />
-        <select className="input" value={statusFilter} onChange={e => { setStatus(e.target.value); setPage(1); }} style={{ width: 140 }}>
-          <option value="">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="enriched">Enriched</option>
-          <option value="failed">Failed</option>
-        </select>
-        {selected.size > 0 && (
-          <button className="btn btn-primary btn-sm" onClick={enrich} disabled={enriching}>
-            {enriching ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Enriching…</>
-              : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Enrich {selected.size}</>}
-          </button>
-        )}
-        {enrichMsg && <span style={{ fontSize: 12, color: "var(--muted)" }}>{enrichMsg}</span>}
-      </div>
+      {/* ── Sticky send bar ── */}
+      <div style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--bg, white)",
+        borderBottom: "1px solid var(--border)", marginBottom: 12, paddingBottom: 10 }}>
 
-      {/* Select helpers */}
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <label style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-          <input type="checkbox" checked={contacts.length > 0 && contacts.every(c => selected.has(c.id))} onChange={e => selectPage(e.target.checked)} />
-          Select page
-        </label>
-        <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, padding: "0 4px" }} onClick={selectAll}>Select all {total}</button>
-        {selected.size > 0 && <span style={{ color: "var(--accent)", fontWeight: 600 }}>{selected.size} selected</span>}
-        {selected.size > 0 && <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, padding: "0 4px" }} onClick={() => setSelected(new Set())}>Clear</button>}
+        {/* Row 1: search + filter + enrich */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+          <input className="input" placeholder="Search name, email, company…" value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ flex: 1, minWidth: 180 }} />
+          <select className="input" value={statusFilter} onChange={e => { setStatus(e.target.value); setPage(1); }} style={{ width: 140 }}>
+            <option value="">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="enriched">Enriched</option>
+            <option value="failed">Failed</option>
+          </select>
+          {selected.size > 0 && (
+            <button className="btn btn-primary btn-sm" onClick={enrich} disabled={enriching}>
+              {enriching ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Enriching…</>
+                : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Enrich {selected.size}</>}
+            </button>
+          )}
+          {enrichMsg && <span style={{ fontSize: 12, color: "var(--muted)" }}>{enrichMsg}</span>}
+        </div>
+
+        {/* Row 2: send bar — always visible */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+          padding: "8px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 100 }}>
+            {selected.size > 0
+              ? <span style={{ color: "var(--accent)" }}>{selected.size} selected</span>
+              : <span style={{ color: "var(--muted)" }}>Select to send</span>}
+          </span>
+          <div style={{ width: 1, height: 18, background: "var(--border)", flexShrink: 0 }} />
+          <select value={bulkType} onChange={e => setBulkType(e.target.value as "email" | "whatsapp")}
+            style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}>
+            <option value="email">📧 Email</option>
+            <option value="whatsapp">💬 WhatsApp</option>
+          </select>
+          {templates.filter(t => t.type === bulkType).length > 0 ? (
+            <select value={bulkTemplate} onChange={e => setBulkTemplate(e.target.value)}
+              style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", maxWidth: 200 }}>
+              {templates.filter(t => t.type === bulkType).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          ) : (
+            <span style={{ fontSize: 11, color: "#f59e0b" }}>No {bulkType} template — create in Templates tab</span>
+          )}
+          <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (min):</span>
+          <select value={sendInterval} onChange={e => setSendInterval(Number(e.target.value))} disabled={bulkRunning}
+            style={{ fontSize: 12, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", width: 56 }}>
+            {[1,2,3,4,5,6,7,8,9,10,15,20,30].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          {bulkRunning ? (
+            <button onClick={cancelBulk}
+              style={{ background: "#dc3545", color: "white", border: "none", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+              ✕ Cancel
+            </button>
+          ) : (
+            <button onClick={startBulkSend}
+              disabled={selected.size === 0 || !bulkTemplate || templates.filter(t => t.type === bulkType).length === 0}
+              style={{ background: selected.size === 0 ? "#64748b" : bulkType === "email" ? "#0078d4" : "#25d366",
+                color: "white", border: "none", borderRadius: 6, padding: "5px 14px",
+                cursor: selected.size === 0 ? "default" : "pointer", opacity: selected.size === 0 ? 0.5 : 1,
+                fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              {bulkType === "email" ? "Send to All" : "WhatsApp All"}
+            </button>
+          )}
+          {bulkJobs.filter(j => j.status === "sent").length > 0 && (
+            <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>
+              ✓ {bulkJobs.filter(j => j.status === "sent").length}/{bulkJobs.length} sent
+            </span>
+          )}
+        </div>
+
+        {/* Progress list while bulk running */}
+        {bulkRunning && bulkJobs.length > 0 && (
+          <div style={{ maxHeight: 100, overflowY: "auto", marginTop: 6,
+            padding: "6px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
+            {bulkJobs.map((j, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, padding: "2px 0", color: "var(--muted)" }}>
+                <span style={{ color: j.status === "sent" ? "#22c55e" : "var(--muted)", width: 12 }}>
+                  {j.status === "sent" ? "✓" : j.status === "skipped" ? "–" : "○"}
+                </span>
+                <span style={{ flex: 1 }}>{j.name}</span>
+                <span>{j.recipient}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Row 3: select helpers */}
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <input type="checkbox" checked={contacts.length > 0 && contacts.every(c => selected.has(c.id))} onChange={e => selectPage(e.target.checked)} />
+            Select page
+          </label>
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, padding: "0 4px" }} onClick={selectAll}>Select all {total}</button>
+          {selected.size > 0 && <span style={{ color: "var(--accent)", fontWeight: 600 }}>{selected.size} selected</span>}
+          {selected.size > 0 && <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, padding: "0 4px" }} onClick={() => setSelected(new Set())}>Clear</button>}
+        </div>
       </div>
 
       {/* Pagination top */}
@@ -442,21 +520,42 @@ function ContactsTab({ list }: { list: ContactList }) {
 
       {loading ? <div style={{ textAlign: "center", padding: 40 }}><span className="spinner spinner-dark" /></div> : (
         <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 960 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 860 }}>
             <thead>
               <tr style={{ background: "var(--surface2)", borderBottom: "1px solid var(--border)" }}>
                 <th style={{ padding: "10px 12px", width: 32 }}></th>
-                {COLS.map(col => (
-                  <th key={col.key} onClick={() => toggleSort(col.key)}
-                    style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: 11,
-                      textTransform: "uppercase", letterSpacing: ".5px", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      {col.label} <SortIcon col={col.key} sortKey={sortKey} sortDir={sortDir} />
-                    </span>
-                  </th>
-                ))}
+                {/* Name */}
+                <th onClick={() => toggleSort("name")} style={thStyle}>
+                  <span style={thInner}>Name <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                {/* Company */}
+                <th onClick={() => toggleSort("company")} style={thStyle}>
+                  <span style={thInner}>Company <SortIcon col="company" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                {/* Phone */}
+                <th onClick={() => toggleSort("phone")} style={thStyle}>
+                  <span style={thInner}>Phone <SortIcon col="phone" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                {/* Email */}
+                <th onClick={() => toggleSort("email")} style={thStyle}>
+                  <span style={thInner}>Email <SortIcon col="email" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                {/* Send buttons header */}
+                <th style={{ padding: "10px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase", whiteSpace: "nowrap" }}>Send</th>
+                {/* Title */}
+                <th onClick={() => toggleSort("title")} style={thStyle}>
+                  <span style={thInner}>Title <SortIcon col="title" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                {/* Location */}
+                <th onClick={() => toggleSort("location")} style={thStyle}>
+                  <span style={thInner}>Location <SortIcon col="location" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                {/* Status */}
+                <th onClick={() => toggleSort("enrichStatus")} style={thStyle}>
+                  <span style={thInner}>Status <SortIcon col="enrichStatus" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                {/* LinkedIn */}
                 <th style={{ padding: "10px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase" }}>LinkedIn</th>
-                <th style={{ padding: "10px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -464,31 +563,27 @@ function ContactsTab({ list }: { list: ContactList }) {
                 <tr key={c.id} style={{ borderBottom: "1px solid var(--border)" }}>
                   <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} /></td>
                   <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>{c.name || "—"}</td>
-                  <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap" }}>{c.title || "—"}</td>
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{c.company || "—"}</td>
-                  <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap" }}>{c.location || "—"}</td>
-                  <td style={{ padding: "10px 12px" }}>
-                    {c.email ? <a href={`mailto:${c.email}`} style={{ color: "var(--accent)", textDecoration: "none", fontSize: 12 }}>{c.email}</a> : <span style={{ color: "#334155" }}>—</span>}
-                  </td>
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap", fontSize: 12 }}>{c.phone || "—"}</td>
-                  <td style={{ padding: "10px 12px" }}><StatusBadge status={c.enrichStatus} /></td>
-                  <td style={{ padding: "10px 12px" }}><LinkedInIcon url={c.linkedinUrl} /></td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {c.email ? <a href={"mailto:" + c.email} style={{ color: "var(--accent)", textDecoration: "none", fontSize: 12 }}>{c.email}</a> : <span style={{ color: "#334155" }}>—</span>}
+                  </td>
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ display: "flex", gap: 5 }}>
-                      {c.email && (
-                        <button title="Send Email" onClick={() => setSendModal({ contact: c, type: "email" })}
-                          style={{ background: "#0078d4", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                        </button>
-                      )}
-                      {c.phone && (
-                        <button title="Open WhatsApp" onClick={() => setSendModal({ contact: c, type: "whatsapp" })}
-                          style={{ background: "#25d366", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-                        </button>
-                      )}
+                      <button title="Send Email" onClick={() => setSendModal({ contact: c, type: "email" })}
+                        style={{ background: c.email ? "#0078d4" : "#94a3b8", border: "none", borderRadius: 6, padding: "4px 8px", cursor: c.email ? "pointer" : "default", display: "flex", alignItems: "center", opacity: c.email ? 1 : 0.4 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      </button>
+                      <button title="Open WhatsApp" onClick={() => setSendModal({ contact: c, type: "whatsapp" })}
+                        style={{ background: c.phone ? "#25d366" : "#94a3b8", border: "none", borderRadius: 6, padding: "4px 8px", cursor: c.phone ? "pointer" : "default", display: "flex", alignItems: "center", opacity: c.phone ? 1 : 0.4 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                      </button>
                     </div>
                   </td>
+                  <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap", fontSize: 12 }}>{c.title || "—"}</td>
+                  <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap", fontSize: 12 }}>{c.location || "—"}</td>
+                  <td style={{ padding: "10px 12px" }}><StatusBadge status={c.enrichStatus} /></td>
+                  <td style={{ padding: "10px 12px" }}><LinkedInIcon url={c.linkedinUrl} /></td>
                 </tr>
               ))}
               {!contacts.length && <tr><td colSpan={10} style={{ textAlign: "center", padding: 32, color: "var(--muted)" }}>No contacts found.</td></tr>}
@@ -499,61 +594,6 @@ function ContactsTab({ list }: { list: ContactList }) {
 
       {/* Pagination bottom */}
       <div style={{ marginTop: 12 }}>{pagBar}</div>
-
-      {/* Bulk send panel */}
-      {selected.size > 0 && (
-        <div className="card" style={{ marginTop: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
-            <div>
-              <div className="card-title">Send to Selected ({selected.size})</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Opens email / WhatsApp one by one with interval delay</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <select value={bulkType} onChange={e => setBulkType(e.target.value as "email" | "whatsapp")}
-                style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}>
-                <option value="email">Email</option>
-                <option value="whatsapp">WhatsApp</option>
-              </select>
-              {templates.filter(t => t.type === bulkType).length > 0 ? (
-                <select value={bulkTemplate} onChange={e => setBulkTemplate(e.target.value)}
-                  style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}>
-                  {templates.filter(t => t.type === bulkType).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              ) : (
-                <span style={{ fontSize: 12, color: "#ef4444" }}>No {bulkType} template — create one first</span>
-              )}
-              <label style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (min):</label>
-              <select value={sendInterval} onChange={e => setSendInterval(Number(e.target.value))} disabled={bulkRunning}
-                style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}>
-                {[1,2,3,4,5,6,7,8,9,10,15,20,30].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-              {bulkRunning ? (
-                <button onClick={cancelBulk} style={{ background: "#dc3545", color: "white", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>✕ Cancel</button>
-              ) : (
-                <button onClick={startBulkSend} disabled={!bulkTemplate || !templates.filter(t => t.type === bulkType).length}
-                  style={{ background: bulkType === "email" ? "#0078d4" : "#25d366", color: "white", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                  {bulkType === "email" ? "Send to All" : "WhatsApp All"}
-                </button>
-              )}
-            </div>
-          </div>
-          {bulkJobs.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 180, overflowY: "auto", marginTop: 8 }}>
-              {bulkJobs.map((j, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
-                  <span style={{ width: 14, color: j.status === "sent" ? "#22c55e" : j.status === "skipped" ? "var(--muted)" : "var(--muted)" }}>
-                    {j.status === "sent" ? "✓" : j.status === "skipped" ? "–" : "○"}
-                  </span>
-                  <span style={{ flex: 1, color: "var(--text)" }}>{j.name}</span>
-                  <span style={{ color: "var(--muted)" }}>{j.recipient}</span>
-                  <StatusBadge status={j.status} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {sendModal && (
         <SendOutreachModal contact={sendModal.contact} type={sendModal.type}
