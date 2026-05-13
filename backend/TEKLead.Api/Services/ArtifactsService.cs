@@ -246,51 +246,45 @@ public class ArtifactsService
 
     // ── Prompts ───────────────────────────────────────────────────────────────
 
-    public static string CoverLetterPrompt() => @"You are writing a cover letter on behalf of Bhanu Gupta, CEO of Csharptek, a senior full-stack developer and AI consultant based in Ranchi, India with 15+ years of experience and 40+ projects delivered.
+    public static string CoverLetterPrompt() => @"You are writing a cover letter on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
 
 STRUCTURE — follow this exact order:
 
-1. HOOK (1 sentence)
-Mirror the client's exact pain or core requirement. Do NOT start with ""I have reviewed"" or ""I am writing to"". Start with what THEY need, then pivot to why Bhanu is the answer.
-Example pattern: ""[Client pain point] — I have shipped exactly this.""
+1. OPENING (2 lines max)
+- Line 1: Express genuine interest in the project. Do NOT start with ""I have reviewed"" or ""I am writing to"". Keep it natural and direct.
+- Line 2: CTA — propose a short call (e.g. ""Happy to jump on a 20-minute call this week to align on the technical direction."")
+Do NOT mention rate, hours, or availability here.
 
-2. AUTHORITY (2-3 lines)
-Who Bhanu is. Mention: CEO of Csharptek, 40+ projects, specialization relevant to this job. Keep it tight.
+2. APPROACH (3 bullet points)
+Titled: ""How I'd approach this:""
+Each bullet = one specific, concrete technical decision Bhanu would take.
+Name actual technologies, patterns, or architecture decisions relevant to the job post.
+This should make the client think ""he's already thought this through.""
 
-3. RELEVANT BUILDS (portfolio items)
-List 3-4 most relevant portfolio projects from the context provided.
+3. PORTFOLIO (3 items)
+Titled: ""Relevant work from my portfolio:""
+List exactly 3 most relevant projects from the context provided.
 Format each as:
-• [Project Name]: One sentence on what was built and why it's relevant. [YouTube/link if available]
-Do NOT use generic descriptions. Each item must connect directly to a requirement in the job post.
+[number]. [Project Name] — One sentence on what was built and why it's relevant. Live: [link if available]
+Do NOT use generic descriptions. Each must connect directly to a requirement in the job post.
+Do NOT invent portfolio items — only use what is provided in the context.
 
-4. STRATEGIC APPROACH (3-4 bullets)
-Titled: ""How I Would Approach [Project Name]""
-Each bullet = one specific technical decision or execution step Bhanu would take.
-Be concrete. Name actual technologies, patterns, or tools from the job post.
-This section should make the client think ""he's already thought this through.""
-
-5. QUESTIONS (2-3 questions)
+4. QUESTIONS (2-3 questions)
+Titled: ""A few questions before I dive in:""
 Ask smart, specific questions that show deep reading of the job post.
-Questions should reveal a knowledge gap the client hasn't thought about yet.
 Format: numbered list.
 
-6. LOGISTICS (short, bullet format)
-• Hours: [availability]
-• Overlap: [timezone overlap]
-• Start: [when available]
-• Rate: [hourly rate from proposal]
-
-7. CLOSING CTA (1-2 lines)
-Specific ask. Reference something concrete from the job post.
-Example: ""Are you free for a 20-minute call this week? I can walk you through the [specific technical approach] I'd use from day one.""
+5. SIGN-OFF
+One line: ""I'm Bhanu Gupta — 15+ years in full-stack development, 40+ projects delivered, with a strong focus on [relevant domain from job post]. Available at [rate from proposal]/hour, 30–40 hrs/week, with [timezone overlap] hours daily overlap with [client timezone]."" 
+Then: ""Bhanu Gupta""
 
 TONE RULES:
 - Write in first person as Bhanu
+- Do NOT mention ""Csharptek"" or any company name anywhere
 - Confident, not boastful
-- No fluff, no filler phrases (""I am excited to..."", ""I believe I would be a great fit..."")
+- No fluff, no filler (""I am excited to..."", ""I believe I would be a great fit..."")
 - Every sentence must earn its place
-- Length: 400-550 words max
-- Do NOT invent portfolio items — only use what is provided in the context
+- Length: 300-400 words max
 
 Return only the cover letter text. No preamble.";
 
