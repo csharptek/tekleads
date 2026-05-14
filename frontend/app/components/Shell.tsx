@@ -12,8 +12,9 @@ import ProposalSettings from "./ProposalSettings";
 import ArtifactsView from "./ArtifactsView";
 import NewProposalView from "./NewProposalView";
 import ContactListsView from "./ContactListsView";
+import ProductsView from "./ProductsView";
 
-type Page = "leads" | "prospects" | "portfolio" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "contact-lists";
+type Page = "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "contact-lists";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
 type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; };
@@ -39,6 +40,7 @@ const CATEGORIES: NavCategory[] = [
     label: "Portfolio",
     items: [
       { id: "portfolio", label: "My Portfolio", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg> },
+      { id: "products", label: "Products", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg> },
     ],
   },
   {
@@ -159,6 +161,7 @@ export default function Shell() {
         {page === "leads"             && <LeadSearchView />}
         {page === "prospects"         && <SavedLeadsView />}
         {page === "portfolio"         && <PortfolioView />}
+        {page === "products"          && <ProductsView />}
         {page === "proposals"         && <ProposalView onViewList={() => navigate("proposal-list")} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} editProposalId={editProposalId} onEditDone={() => setEditProposalId(null)} />}
         {page === "new-proposal"      && <NewProposalView onViewList={() => navigate("proposal-list")} onGenerateArtifacts={openArtifacts} />}
         {page === "proposal-list"     && <ProposalList onNew={() => navigate("proposals")} onEdit={openEdit} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} />}
