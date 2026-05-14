@@ -321,7 +321,7 @@ Pricing rules:
 - ALWAYS use price and timeline from the PROPOSAL PRICING & TIMELINE section in the context
 - If FinalPrice is set, use it as the exact fixed price
 - If only a budget range is provided, quote within that range
-- If no pricing info exists in context, do NOT mention a specific price — say "happy to share a detailed estimate on a call"
+- If no pricing info exists in context, do NOT mention a specific price — say ""happy to share a detailed estimate on a call""
 - Never invent or hardcode a price
 
 No generic phrases like ""I came across your post"". Be specific.";
