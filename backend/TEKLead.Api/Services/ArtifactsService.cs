@@ -313,15 +313,16 @@ Email rules:
 - Professional tone
 - Para 1: show you understand their specific problem
 - Para 2: 1-2 relevant portfolio references with outcomes
-- Para 3: proposed approach in 2 sentences, include realistic week estimate and fixed price at $600/week (e.g. 4 weeks = $2,400). Mention AI-assisted development (Claude Code, GitHub Copilot) as the reason for the competitive rate.
+- Para 3: proposed approach in 2 sentences. Use the timeline and pricing from the PROPOSAL PRICING & TIMELINE section in the context. If FinalPrice is set, quote that exact amount. If only a budget range is set, quote within that range. Mention AI-assisted development (Claude Code, GitHub Copilot) as the reason for the competitive rate.
 - CTA: suggest a 20-min call
 - Do not include any name or company signature
 
 Pricing rules:
-- Rate is always $600/week fixed
-- Estimate weeks honestly based on project complexity, using AI-assisted dev to compress timelines
-- Final price = $600 x estimated weeks
-- Never quote more than $600/week regardless of project size
+- ALWAYS use price and timeline from the PROPOSAL PRICING & TIMELINE section in the context
+- If FinalPrice is set, use it as the exact fixed price
+- If only a budget range is provided, quote within that range
+- If no pricing info exists in context, do NOT mention a specific price — say "happy to share a detailed estimate on a call"
+- Never invent or hardcode a price
 
 No generic phrases like ""I came across your post"". Be specific.";
 
@@ -345,6 +346,14 @@ No generic phrases like ""I came across your post"". Be specific.";
         }
         if (!string.IsNullOrWhiteSpace(p.ClientCompany)) sb.AppendLine($"Company: {p.ClientCompany}");
         if (!string.IsNullOrWhiteSpace(p.ClientEmail))   sb.AppendLine($"Email: {p.ClientEmail}");
+
+        sb.AppendLine("\n## PROPOSAL PRICING & TIMELINE");
+        if (p.FinalPrice.HasValue)
+            sb.AppendLine($"Final Price (agreed): ${p.FinalPrice.Value:0.##}");
+        else if (p.BudgetMin.HasValue || p.BudgetMax.HasValue)
+            sb.AppendLine($"Budget Range: ${p.BudgetMin ?? 0:0.##} – ${p.BudgetMax ?? 0:0.##}");
+        if (!string.IsNullOrWhiteSpace(p.TimelineValue) && !string.IsNullOrWhiteSpace(p.TimelineUnit))
+            sb.AppendLine($"Timeline: {p.TimelineValue} {p.TimelineUnit}");
 
         if (p.ClientQuestions?.Length > 0)
         {
