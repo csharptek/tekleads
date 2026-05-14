@@ -134,9 +134,29 @@ export default function ArtifactsView({
 
   const loadDefaultPrompts = async () => {
     try {
-      const res: any = await api.get("/api/artifacts/prompts");
-      setDefaultPrompts(res);
-      setCustomPrompts(res); // init custom = default
+      const [defaults, saved] = await Promise.all([
+        api.get<any>("/api/artifacts/prompts"),
+        api.get<{ values: Record<string, string> }>("/api/settings"),
+      ]);
+      setDefaultPrompts(defaults);
+      // Use saved DB prompts if set, otherwise fall back to code defaults
+      const s = saved.values || {};
+      setCustomPrompts({
+        coverLetter: s["artifact_cover_letter_prompt"] || defaults.coverLetter,
+        whatsapp:    s["artifact_whatsapp_prompt"]     || defaults.whatsapp,
+        email:       s["artifact_email_prompt"]        || defaults.email,
+      });
+    } catch { /* non-critical */ }
+  };
+
+  const savePromptToDb = async (type: "coverLetter" | "whatsapp" | "email", value: string) => {
+    const keyMap = {
+      coverLetter: "artifact_cover_letter_prompt",
+      whatsapp:    "artifact_whatsapp_prompt",
+      email:       "artifact_email_prompt",
+    };
+    try {
+      await api.post("/api/settings", { values: { [keyMap[type]]: value } });
     } catch { /* non-critical */ }
   };
 
@@ -204,8 +224,8 @@ export default function ArtifactsView({
   const handlePromptRegenerate = () => {
     if (!promptModal) return;
     const { type } = promptModal;
-    // Save custom prompt
     setCustomPrompts(p => ({ ...p, [type]: promptDraft }));
+    savePromptToDb(type, promptDraft);
     setPromptModal(null);
     if (type === "coverLetter") generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter", undefined, undefined, promptDraft);
     if (type === "whatsapp")    generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage", undefined, undefined, promptDraft);
@@ -215,11 +235,13 @@ export default function ArtifactsView({
   const handlePromptSaveOnly = () => {
     if (!promptModal) return;
     setCustomPrompts(p => ({ ...p, [promptModal.type]: promptDraft }));
+    savePromptToDb(promptModal.type, promptDraft);
     setPromptModal(null);
   };
 
   const resetPrompt = (type: "coverLetter" | "whatsapp" | "email") => {
     setPromptDraft(defaultPrompts[type]);
+    savePromptToDb(type, ""); // empty = backend falls back to code default
   };
 
   const sendWhatsapp = (phone?: string, name?: string) => {
