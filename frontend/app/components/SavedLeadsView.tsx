@@ -16,7 +16,7 @@ interface Lead {
   savedAt: string;
 }
 
-const PER_PAGE = 50;
+const PER_PAGE = 20;
 const SORT_OPTIONS = [
   { value: "saved_at", label: "Date Saved" },
   { value: "name", label: "Name" },
@@ -299,7 +299,12 @@ export default function SavedLeadsView() {
       )}
 
       {/* Table */}
-      {leads.length > 0 ? (
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "40px 20px" }}>
+          <span className="spinner spinner-dark" />
+          <div style={{ marginTop: 12, fontSize: 13, color: "var(--muted)" }}>Loading leads...</div>
+        </div>
+      ) : leads.length > 0 ? (
         <>
           <div className="table-wrap">
             <table>
