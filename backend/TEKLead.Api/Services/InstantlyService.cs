@@ -48,9 +48,9 @@ public class InstantlyService
                 using var doc = System.Text.Json.JsonDocument.Parse(bodyText);
                 var root = doc.RootElement;
                 
-                if (root.TryGetProperty("data", out var dataElement) && dataElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+                if (root.TryGetProperty("items", out var itemsElement) && itemsElement.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
-                    foreach (var item in dataElement.EnumerateArray())
+                    foreach (var item in itemsElement.EnumerateArray())
                     {
                         var id = item.TryGetProperty("id", out var idElem) ? idElem.GetString() ?? "" : "";
                         var name = item.TryGetProperty("name", out var nameElem) ? nameElem.GetString() ?? "" : "";
