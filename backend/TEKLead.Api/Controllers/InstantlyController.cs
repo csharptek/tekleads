@@ -32,7 +32,7 @@ public class InstantlyController : ControllerBase
         if (req.Contacts == null || req.Contacts.Count == 0)
             return BadRequest(new { error = "contacts required" });
 
-        var (ok, pushed, failed, errors) = await _service.PushContacts(req.CampaignId, req.Contacts);
+        var (ok, pushed, failed, errors) = await _service.PushContacts(req.CampaignId, req.Contacts.Select(c => (c.Email, c.Name)).ToList());
         
         return Ok(new { ok, pushed, failed, errors });
     }
@@ -41,5 +41,11 @@ public class InstantlyController : ControllerBase
 public class PushRequest
 {
     public string CampaignId { get; set; } = "";
-    public List<(string email, string name)> Contacts { get; set; } = new();
+    public List<PushContact> Contacts { get; set; } = new();
+}
+
+public class PushContact
+{
+    public string Email { get; set; } = "";
+    public string Name  { get; set; } = "";
 }
