@@ -92,12 +92,12 @@ public class InstantlyService
 
             var payload = new
             {
+                campaign_id = campaignId,
                 leads = contacts.Select(c => new
                 {
                     email = c.email,
                     first_name = ExtractFirstName(c.name),
-                    last_name = ExtractLastName(c.name),
-                    campaign_id = campaignId
+                    last_name = ExtractLastName(c.name)
                 }).ToList()
             };
 
