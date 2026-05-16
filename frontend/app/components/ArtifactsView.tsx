@@ -101,6 +101,7 @@ export default function ArtifactsView({
 
   // Push to Instantly state
   const [instantlyCampaigns, setInstantlyCampaigns] = useState<{ id: string; name: string }[]>([]);
+  const [instantlyError, setInstantlyError] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [pushingToInstantly, setPushingToInstantly] = useState(false);
   const [instantlyResult, setInstantlyResult] = useState<{ ok: boolean; pushed: number; failed: number; errors: string[] } | null>(null);
@@ -112,8 +113,8 @@ export default function ArtifactsView({
     
     // Load Instantly campaigns
     api.get<{ id: string; name: string }[]>("/api/instantly/campaigns")
-      .then(campaigns => setInstantlyCampaigns(campaigns))
-      .catch(() => setInstantlyCampaigns([]));
+      .then(campaigns => { setInstantlyCampaigns(campaigns); setInstantlyError(""); })
+      .catch(err => { setInstantlyError(err.message); setInstantlyCampaigns([]); });
   }, []);
 
   const buildPlainSig = () => {
@@ -492,10 +493,39 @@ export default function ArtifactsView({
                     ✕ Cancel
                   </button>
                 ) : (
-                  <button className="btn btn-sm" style={{ background: "#0078d4", color: "white", border: "none" }} onClick={sendToAll}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    Send to All
-                  </button>
+                  <>
+                    <button className="btn btn-sm" style={{ background: "#0078d4", color: "white", border: "none" }} onClick={sendToAll}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                      Send to All
+                    </button>
+                    {instantlyCampaigns.length > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <select
+                          value={selectedCampaignId}
+                          onChange={e => setSelectedCampaignId(e.target.value)}
+                          disabled={pushingToInstantly}
+                          style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}
+                        >
+                          <option value="">Campaign...</option>
+                          {instantlyCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        <button 
+                          className="btn btn-sm" 
+                          style={{ background: "#22c55e", color: "white", border: "none" }} 
+                          onClick={pushToInstantly}
+                          disabled={!selectedCampaignId || pushingToInstantly}
+                        >
+                          {pushingToInstantly ? "..." : "→ Instantly"}
+                        </button>
+                      </div>
+                    )}
+                    {instantlyCampaigns.length === 0 && (
+                      <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>No campaigns found - Create in Instantly first</span>
+                    )}
+                    {instantlyError && (
+                      <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>Instantly error: {instantlyError}</span>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -530,6 +560,23 @@ export default function ArtifactsView({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {instantlyResult && (
+            <div style={{
+              marginBottom: 12,
+              padding: "12px 14px",
+              background: instantlyResult.ok ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
+              borderRadius: 8,
+              border: `1px solid ${instantlyResult.ok ? "#22c55e" : "#ef4444"}`,
+              fontSize: 12,
+              color: instantlyResult.ok ? "#16a34a" : "#991b1b"
+            }}>
+              {instantlyResult.ok ? (
+                <>✓ {instantlyResult.pushed} pushed to Instantly{instantlyResult.errors.length > 0 && ` • ${instantlyResult.errors.join(", ")}`}</>
+              ) : (
+                <>✕ Failed: {instantlyResult.errors.join(", ")}</>
+              )}
             </div>
           )}
           {allEmails && allEmails.length > 0 && artifacts.emailSubject && (
@@ -575,57 +622,6 @@ export default function ArtifactsView({
                   );
                 })}
               </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Push to Instantly Panel */}
-      {allEmails && allEmails.length > 0 && instantlyCampaigns.length > 0 && (
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-            <div>
-              <div className="card-title">Push to Instantly</div>
-              <div className="card-sub">Send {allEmails.length} email(s) to Instantly campaign</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <select
-                value={selectedCampaignId}
-                onChange={e => setSelectedCampaignId(e.target.value)}
-                disabled={pushingToInstantly}
-                style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}
-              >
-                <option value="">Select campaign...</option>
-                {instantlyCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <button 
-                className="btn btn-sm" 
-                style={{ background: "#22c55e", color: "white", border: "none" }} 
-                onClick={pushToInstantly}
-                disabled={!selectedCampaignId || pushingToInstantly}
-              >
-                {pushingToInstantly ? (
-                  <><span className="spinner spinner-light" style={{ width: 10, height: 10 }} /> Pushing...</>
-                ) : (
-                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Push All</>
-                )}
-              </button>
-            </div>
-          </div>
-          {instantlyResult && (
-            <div style={{
-              padding: "12px 14px", 
-              background: instantlyResult.ok ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
-              borderRadius: 8,
-              border: `1px solid ${instantlyResult.ok ? "#22c55e" : "#ef4444"}`,
-              fontSize: 13,
-              color: instantlyResult.ok ? "#16a34a" : "#991b1b"
-            }}>
-              {instantlyResult.ok ? (
-                <>✓ {instantlyResult.pushed} pushed{instantlyResult.errors.length > 0 && ` • ${instantlyResult.errors.join(", ")}`}</>
-              ) : (
-                <>✕ Failed: {instantlyResult.errors.join(", ")}</>
-              )}
             </div>
           )}
         </div>

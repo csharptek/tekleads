@@ -50,6 +50,7 @@ export default function SavedLeadsView() {
   // Selection and Instantly state
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [instantlyCampaigns, setInstantlyCampaigns] = useState<{ id: string; name: string }[]>([]);
+  const [instantlyError, setInstantlyError] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [pushingToInstantly, setPushingToInstantly] = useState(false);
   const [instantlyResult, setInstantlyResult] = useState<{ ok: boolean; pushed: number; failed: number; errors: string[] } | null>(null);
@@ -85,8 +86,8 @@ export default function SavedLeadsView() {
       .then(d => { if (d.values?.whatsapp_message_template) setWaTemplate(d.values.whatsapp_message_template); })
       .catch(() => {});
     api.get<{ id: string; name: string }[]>("/api/instantly/campaigns")
-      .then(campaigns => setInstantlyCampaigns(campaigns))
-      .catch(() => setInstantlyCampaigns([]));
+      .then(campaigns => { setInstantlyCampaigns(campaigns); setInstantlyError(""); })
+      .catch(err => { setInstantlyError(err.message); setInstantlyCampaigns([]); });
     load(1);
   }, []);
 
@@ -270,6 +271,12 @@ export default function SavedLeadsView() {
                   <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Push</>
                 )}
               </button>
+              {instantlyCampaigns.length === 0 && (
+                <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 600 }}>No campaigns found - Create in Instantly first</span>
+              )}
+              {instantlyError && (
+                <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 600 }}>Instantly error: {instantlyError}</span>
+              )}
             </div>
           </div>
           {instantlyResult && (
