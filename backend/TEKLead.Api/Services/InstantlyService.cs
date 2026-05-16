@@ -112,7 +112,7 @@ public class InstantlyService
             if (!res.IsSuccessStatusCode)
             {
                 _log.LogWarning("PushContacts failed: {status} {body}", res.StatusCode, bodyText);
-                return (false, 0, 0, new() { $"API error: {res.StatusCode}" });
+                return (false, 0, 0, new() { $"API error: {res.StatusCode} — {bodyText}" });
             }
 
             int pushed = 0;
