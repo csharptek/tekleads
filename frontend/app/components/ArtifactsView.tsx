@@ -99,10 +99,21 @@ export default function ArtifactsView({
   const [sendAllJobs, setSendAllJobs] = useState<{ toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string }[]>([]);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Push to Instantly state
+  const [instantlyCampaigns, setInstantlyCampaigns] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [pushingToInstantly, setPushingToInstantly] = useState(false);
+  const [instantlyResult, setInstantlyResult] = useState<{ ok: boolean; pushed: number; failed: number; errors: string[] } | null>(null);
+
   useEffect(() => {
     api.get<{ values: Record<string, string> }>("/api/settings")
       .then(d => { if (d.values?.email_signature) setEmailSignature(d.values.email_signature); })
       .catch(() => {});
+    
+    // Load Instantly campaigns
+    api.get<{ id: string; name: string }[]>("/api/instantly/campaigns")
+      .then(campaigns => setInstantlyCampaigns(campaigns))
+      .catch(() => setInstantlyCampaigns([]));
   }, []);
 
   const buildPlainSig = () => {
@@ -286,6 +297,25 @@ export default function ArtifactsView({
     await api.post(`/api/artifacts/${proposalId}/send-bulk/cancel`, {});
     pollStatus();
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  const pushToInstantly = async () => {
+    if (!selectedCampaignId || !allEmails || allEmails.length === 0) return;
+    setPushingToInstantly(true);
+    try {
+      const contacts = allEmails.map((email, i) => ({ email, name: allEmailNames?.[i] || "" }));
+      const result = await api.post<{ ok: boolean; pushed: number; failed: number; errors: string[] }>(
+        "/api/instantly/push",
+        { campaignId: selectedCampaignId, contacts }
+      );
+      setInstantlyResult(result);
+      setTimeout(() => setInstantlyResult(null), 4000);
+    } catch (err: any) {
+      setInstantlyResult({ ok: false, pushed: 0, failed: 0, errors: [err.message] });
+      setTimeout(() => setInstantlyResult(null), 4000);
+    } finally {
+      setPushingToInstantly(false);
+    }
   };
 
   React.useEffect(() => {
@@ -545,6 +575,57 @@ export default function ArtifactsView({
                   );
                 })}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Push to Instantly Panel */}
+      {allEmails && allEmails.length > 0 && instantlyCampaigns.length > 0 && (
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <div className="card-title">Push to Instantly</div>
+              <div className="card-sub">Send {allEmails.length} email(s) to Instantly campaign</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <select
+                value={selectedCampaignId}
+                onChange={e => setSelectedCampaignId(e.target.value)}
+                disabled={pushingToInstantly}
+                style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}
+              >
+                <option value="">Select campaign...</option>
+                {instantlyCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button 
+                className="btn btn-sm" 
+                style={{ background: "#22c55e", color: "white", border: "none" }} 
+                onClick={pushToInstantly}
+                disabled={!selectedCampaignId || pushingToInstantly}
+              >
+                {pushingToInstantly ? (
+                  <><span className="spinner spinner-light" style={{ width: 10, height: 10 }} /> Pushing...</>
+                ) : (
+                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Push All</>
+                )}
+              </button>
+            </div>
+          </div>
+          {instantlyResult && (
+            <div style={{
+              padding: "12px 14px", 
+              background: instantlyResult.ok ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
+              borderRadius: 8,
+              border: `1px solid ${instantlyResult.ok ? "#22c55e" : "#ef4444"}`,
+              fontSize: 13,
+              color: instantlyResult.ok ? "#16a34a" : "#991b1b"
+            }}>
+              {instantlyResult.ok ? (
+                <>✓ {instantlyResult.pushed} pushed{instantlyResult.errors.length > 0 && ` • ${instantlyResult.errors.join(", ")}`}</>
+              ) : (
+                <>✕ Failed: {instantlyResult.errors.join(", ")}</>
+              )}
             </div>
           )}
         </div>

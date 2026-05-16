@@ -23,6 +23,7 @@ const KEYS = {
   AzureSearchEndpoint: "azure_search_endpoint",
   AzureSearchKey: "azure_search_key",
   AzureSearchIndex: "azure_search_index",
+  InstantlyApiKey: "instantly_api_key",
 };
 
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
@@ -77,6 +78,13 @@ const TECH_GROUPS: Group[] = [
 
 // User-facing config — always visible
 const USER_GROUPS: Group[] = [
+  {
+    title: "Instantly Outreach",
+    subtitle: "Send leads to Instantly campaigns for automated cold email sequences.",
+    fields: [
+      { key: KEYS.InstantlyApiKey, label: "API Key (V2)", placeholder: "Enter to set / replace", secret: true, full: true },
+    ],
+  },
   {
     title: "WhatsApp Outreach",
     subtitle: "Outreach via wa.me deep links. Use {name} and {phone} as variables in the message.",

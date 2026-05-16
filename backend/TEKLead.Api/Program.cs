@@ -20,6 +20,7 @@ builder.Services.AddScoped<ArtifactsService>();
 builder.Services.AddScoped<GraphEmailService>();
 builder.Services.AddScoped<EmailSendQueueService>();
 builder.Services.AddScoped<ContactListService>();
+builder.Services.AddScoped<InstantlyService>();
 builder.Services.AddScoped<ProductService>();
 builder.Services.AddScoped<ProductAIService>();
 builder.Services.AddScoped<ProductsDbInitializer>();

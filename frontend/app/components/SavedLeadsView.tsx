@@ -47,6 +47,13 @@ export default function SavedLeadsView() {
   const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
+  // Selection and Instantly state
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
+  const [instantlyCampaigns, setInstantlyCampaigns] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [pushingToInstantly, setPushingToInstantly] = useState(false);
+  const [instantlyResult, setInstantlyResult] = useState<{ ok: boolean; pushed: number; failed: number; errors: string[] } | null>(null);
+
   const [filters, setFilters] = useState({
     name: "", company: "", title: "", industry: "",
     country: "", state: "", hasPhone: "", hasEmail: "",
@@ -77,6 +84,9 @@ export default function SavedLeadsView() {
     api.get<{ values: Record<string, string> }>("/api/settings")
       .then(d => { if (d.values?.whatsapp_message_template) setWaTemplate(d.values.whatsapp_message_template); })
       .catch(() => {});
+    api.get<{ id: string; name: string }[]>("/api/instantly/campaigns")
+      .then(campaigns => setInstantlyCampaigns(campaigns))
+      .catch(() => setInstantlyCampaigns([]));
     load(1);
   }, []);
 
@@ -86,6 +96,48 @@ export default function SavedLeadsView() {
       setLeads(p => p.filter(l => l.id !== id));
       setTotal(p => p - 1);
     } catch (e: any) { setBanner({ kind: "error", text: e.message }); }
+  };
+
+  const toggleLeadSelection = (id: string) => {
+    const updated = new Set(selectedLeadIds);
+    if (updated.has(id)) updated.delete(id);
+    else updated.add(id);
+    setSelectedLeadIds(updated);
+  };
+
+  const selectAllOnPage = () => {
+    if (selectedLeadIds.size === leads.length) {
+      setSelectedLeadIds(new Set());
+    } else {
+      setSelectedLeadIds(new Set(leads.map(l => l.id)));
+    }
+  };
+
+  const pushToInstantly = async () => {
+    if (!selectedCampaignId || selectedLeadIds.size === 0) return;
+    setPushingToInstantly(true);
+    try {
+      const selectedLeads = leads.filter(l => selectedLeadIds.has(l.id));
+      const contacts = selectedLeads.flatMap(l => 
+        l.emails.map(email => ({ email, name: l.name }))
+      );
+      if (contacts.length === 0) {
+        setInstantlyResult({ ok: false, pushed: 0, failed: 0, errors: ["No emails found in selected leads"] });
+        setTimeout(() => setInstantlyResult(null), 4000);
+        return;
+      }
+      const result = await api.post<{ ok: boolean; pushed: number; failed: number; errors: string[] }>(
+        "/api/instantly/push",
+        { campaignId: selectedCampaignId, contacts }
+      );
+      setInstantlyResult(result);
+      setTimeout(() => setInstantlyResult(null), 4000);
+    } catch (err: any) {
+      setInstantlyResult({ ok: false, pushed: 0, failed: 0, errors: [err.message] });
+      setTimeout(() => setInstantlyResult(null), 4000);
+    } finally {
+      setPushingToInstantly(false);
+    }
   };
 
   const clearFilters = () => {
@@ -188,6 +240,57 @@ export default function SavedLeadsView() {
         </div>
       )}
 
+      {/* Push to Instantly Panel */}
+      {selectedLeadIds.size > 0 && instantlyCampaigns.length > 0 && (
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <div className="card-title">Push to Instantly</div>
+              <div className="card-sub">{selectedLeadIds.size} lead(s) selected • {leads.filter(l => selectedLeadIds.has(l.id)).reduce((sum, l) => sum + l.emails.length, 0)} email(s)</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <select
+                value={selectedCampaignId}
+                onChange={e => setSelectedCampaignId(e.target.value)}
+                disabled={pushingToInstantly}
+                style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}
+              >
+                <option value="">Select campaign...</option>
+                {instantlyCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button 
+                className="btn btn-sm" 
+                style={{ background: "#22c55e", color: "white", border: "none" }} 
+                onClick={pushToInstantly}
+                disabled={!selectedCampaignId || pushingToInstantly}
+              >
+                {pushingToInstantly ? (
+                  <><span className="spinner spinner-light" style={{ width: 10, height: 10 }} /> Pushing...</>
+                ) : (
+                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Push</>
+                )}
+              </button>
+            </div>
+          </div>
+          {instantlyResult && (
+            <div style={{
+              padding: "12px 14px", 
+              background: instantlyResult.ok ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
+              borderRadius: 8,
+              border: `1px solid ${instantlyResult.ok ? "#22c55e" : "#ef4444"}`,
+              fontSize: 13,
+              color: instantlyResult.ok ? "#16a34a" : "#991b1b"
+            }}>
+              {instantlyResult.ok ? (
+                <>✓ {instantlyResult.pushed} pushed{instantlyResult.errors.length > 0 && ` • ${instantlyResult.errors.join(", ")}`}</>
+              ) : (
+                <>✕ Failed: {instantlyResult.errors.join(", ")}</>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Table */}
       {leads.length > 0 ? (
         <>
@@ -195,6 +298,13 @@ export default function SavedLeadsView() {
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 24 }}>
+                    <input type="checkbox" 
+                      checked={selectedLeadIds.size > 0 && selectedLeadIds.size === leads.length}
+                      onChange={selectAllOnPage}
+                      style={{ cursor: "pointer" }}
+                    />
+                  </th>
                   <th>Name</th><th>Title</th><th>Company</th><th>Industry</th>
                   <th>Location</th><th>Email</th><th>Phone</th><th>Saved</th><th style={{ width: 40 }}></th>
                 </tr>
@@ -202,6 +312,13 @@ export default function SavedLeadsView() {
               <tbody>
                 {leads.map(lead => (
                   <tr key={lead.id}>
+                    <td style={{ width: 24 }}>
+                      <input type="checkbox" 
+                        checked={selectedLeadIds.has(lead.id)}
+                        onChange={() => toggleLeadSelection(lead.id)}
+                        style={{ cursor: "pointer" }}
+                      />
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{lead.name || "—"}</div>
                       {lead.linkedinUrl && (<a href={lead.linkedinUrl} target="_blank" rel="noreferrer" title="LinkedIn"

@@ -45,6 +45,9 @@ public static class SettingKeys
 
     public const string EmailSignature              = "email_signature";
 
+    // Instantly
+    public const string InstantlyApiKey             = "instantly_api_key";
+
     // Artifact Prompts
     public const string ArtifactCoverLetterPrompt   = "artifact_cover_letter_prompt";
     public const string ArtifactWhatsappPrompt      = "artifact_whatsapp_prompt";
@@ -59,12 +62,12 @@ public static class SettingKeys
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,
         ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt,
-        EmailSignature,
+        EmailSignature, InstantlyApiKey,
         ArtifactCoverLetterPrompt, ArtifactWhatsappPrompt, ArtifactEmailPrompt,
     };
 
     public static readonly HashSet<string> Secrets = new()
     {
-        AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey
+        AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey
     };
 }
