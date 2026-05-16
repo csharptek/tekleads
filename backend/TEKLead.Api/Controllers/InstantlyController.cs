@@ -14,6 +14,9 @@ public class InstantlyController : ControllerBase
         _service = service;
     }
 
+    [HttpGet("version")]
+    public IActionResult Version() => Ok(new { version = "v2-leads-add-fix-20250516" });
+
     [HttpGet("campaigns")]
     public async Task<IActionResult> GetCampaigns()
     {
