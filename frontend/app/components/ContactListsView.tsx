@@ -304,6 +304,12 @@ function ContactsTab({ list }: { list: ContactList }) {
   const [bulkJobs, setBulkJobs]         = useState<{ name: string; recipient: string; status: "pending" | "sent" | "skipped" }[]>([]);
   const [bulkRunning, setBulkRunning]   = useState(false);
   const bulkRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showInstantly, setShowInstantly] = useState(false);
+  const [inCampaigns, setInCampaigns]     = useState<{ id: string; name: string }[]>([]);
+  const [inCampaignId, setInCampaignId]   = useState("");
+  const [inLoading, setInLoading]         = useState(false);
+  const [inPushing, setInPushing]         = useState(false);
+  const [inMsg, setInMsg]                 = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -394,6 +400,29 @@ function ContactsTab({ list }: { list: ContactList }) {
     if (bulkRef.current) clearTimeout(bulkRef.current);
     setBulkRunning(false);
     setBulkJobs(prev => prev.map(j => j.status === "pending" ? { ...j, status: "skipped" } : j));
+  }
+
+  async function openInstantly() {
+    setShowInstantly(true); setInMsg(""); setInCampaignId("");
+    setInLoading(true);
+    try {
+      const data = await api.get<{ id: string; name: string }[]>("/api/instantly/campaigns");
+      setInCampaigns(data || []);
+      if (data?.length) setInCampaignId(data[0].id);
+    } catch (e: any) { setInMsg(e.message); }
+    finally { setInLoading(false); }
+  }
+
+  async function pushToInstantly() {
+    if (!inCampaignId || !selected.size) return;
+    setInPushing(true); setInMsg("");
+    try {
+      const targets = contacts.filter(c => selected.has(c.id) && c.email);
+      const payload = { campaignId: inCampaignId, contacts: targets.map(c => ({ email: c.email, name: c.name })) };
+      const res: any = await api.post("/api/instantly/push", payload);
+      setInMsg(`✓ Pushed ${res.pushed} · Failed ${res.failed}`);
+    } catch (e: any) { setInMsg(e.message); }
+    finally { setInPushing(false); }
   }
 
   const thStyle: React.CSSProperties = {
@@ -503,6 +532,19 @@ function ContactsTab({ list }: { list: ContactList }) {
             ✓ {bulkJobs.filter(j => j.status === "sent").length}/{bulkJobs.length} sent
           </span>
         )}
+        <div style={{ width: 1, height: 18, background: "var(--border)", flexShrink: 0 }} />
+        <button
+          onClick={openInstantly}
+          disabled={selected.size === 0}
+          style={{ background: selected.size === 0 ? "#64748b" : "#7c3aed", color: "white", border: "none",
+            borderRadius: 6, padding: "5px 14px", cursor: selected.size === 0 ? "default" : "pointer",
+            opacity: selected.size === 0 ? 0.5 : 1, fontSize: 12, fontWeight: 600,
+            display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
+          Push to Instantly
+        </button>
       </div>
 
       {/* Progress while bulk running */}
@@ -614,6 +656,59 @@ function ContactsTab({ list }: { list: ContactList }) {
         <SendOutreachModal contact={sendModal.contact} type={sendModal.type}
           listId={list.id} templates={templates.filter(t => t.type === sendModal.type)}
           onClose={() => setSendModal(null)} />
+      )}
+
+      {showInstantly && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ width: 460, maxWidth: "95vw" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Push to Instantly
+              </h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowInstantly(false)}>✕</button>
+            </div>
+
+            <div style={{ padding: "10px 14px", background: "var(--surface2)", borderRadius: 8, fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+              <strong style={{ color: "var(--text)" }}>{selected.size} contacts</strong> selected ·{" "}
+              {contacts.filter(c => selected.has(c.id) && c.email).length} have email
+            </div>
+
+            {inLoading ? (
+              <div style={{ textAlign: "center", padding: 24 }}><span className="spinner spinner-dark" /></div>
+            ) : (
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 6 }}>SELECT CAMPAIGN</label>
+                  {inCampaigns.length === 0 ? (
+                    <p style={{ fontSize: 13, color: "#ef4444" }}>No campaigns found. Check your Instantly API key in Settings.</p>
+                  ) : (
+                    <select className="input" value={inCampaignId} onChange={e => setInCampaignId(e.target.value)} style={{ width: "100%" }}>
+                      {inCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  )}
+                </div>
+                {inMsg && (
+                  <p style={{ fontSize: 13, color: inMsg.startsWith("✓") ? "#22c55e" : "#ef4444", marginBottom: 12 }}>{inMsg}</p>
+                )}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="btn btn-ghost" onClick={() => setShowInstantly(false)}>Cancel</button>
+                  <button
+                    onClick={pushToInstantly}
+                    disabled={inPushing || !inCampaignId || inCampaigns.length === 0}
+                    style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 6,
+                      padding: "7px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600,
+                      display: "flex", alignItems: "center", gap: 6,
+                      opacity: inPushing || !inCampaignId ? 0.6 : 1 }}>
+                    {inPushing
+                      ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Pushing…</>
+                      : <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Push {contacts.filter(c => selected.has(c.id) && c.email).length} contacts</>}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </>
   );
