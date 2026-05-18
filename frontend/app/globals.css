@@ -33,7 +33,7 @@ body {
 }
 
 /* ── Shell ───────────────────────────────────────────────── */
-.shell { display: flex; height: 100vh; overflow: hidden; position: relative; }
+.shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; position: relative; }
 
 /* ── Sidebar ─────────────────────────────────────────────── */
 .sidebar {
@@ -305,3 +305,20 @@ tbody tr:hover { background: #f8fafc; }
 
 /* ── Diag ────────────────────────────────────────────────── */
 .diag-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* ── iOS Safari fixes ────────────────────────────────────── */
+html { -webkit-text-size-adjust: 100%; }
+body { -webkit-overflow-scrolling: touch; }
+.page-content, .content-area, .main-content {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+}
+/* Safe area for notch/home indicator */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .shell { padding-bottom: env(safe-area-inset-bottom); }
+  .topbar { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+}
+/* Fix tap highlight on iOS */
+a, button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+/* Prevent double-tap zoom on buttons */
+button, a { touch-action: manipulation; }
