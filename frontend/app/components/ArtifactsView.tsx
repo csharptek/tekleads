@@ -660,7 +660,15 @@ export default function ArtifactsView({
                       </div>
                       <button className="btn btn-sm" style={{ background: "#25D366", color: "white", border: "none" }}
                         onClick={() => sendWhatsapp(phone, name)}>
-                        Send
+                        Send (wa.me)
+                      </button>
+                      <button className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} disabled={cloudSending}
+                        onClick={() => sendWhatsappCloud("template", phone, name)} title="Send approved template via Meta Cloud API">
+                        Template (API)
+                      </button>
+                      <button className="btn btn-ghost btn-sm" disabled={cloudSending}
+                        onClick={() => sendWhatsappCloud("text", phone, name)} title="Send free-form text (24hr reply window only)">
+                        Text (API)
                       </button>
                     </div>
                   );
