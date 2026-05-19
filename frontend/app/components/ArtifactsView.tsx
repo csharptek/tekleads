@@ -265,6 +265,39 @@ export default function ArtifactsView({
     window.open(targetPhone ? `https://wa.me/${targetPhone}?text=${msg}` : `https://wa.me/?text=${msg}`, "_blank");
   };
 
+  const [cloudSending, setCloudSending] = useState(false);
+  const [cloudResult, setCloudResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const sendWhatsappCloud = async (mode: "template" | "text", phone?: string, name?: string) => {
+    const targetPhone = (phone || clientPhone)?.replace(/\D/g, "") || "";
+    if (!targetPhone) { setCloudResult({ ok: false, msg: "No recipient phone." }); return; }
+    setCloudSending(true);
+    setCloudResult(null);
+    try {
+      const firstName = (name || clientName || "").split(/[\s-]+/)[0];
+      const base = (artifacts.whatsappMessage || "").replace(/^Hi\s+[^,\n]+,?/i, `Hi ${firstName},`);
+      const plainSig = buildPlainSig();
+      const body = plainSig ? base + "\n\n" + plainSig : base;
+
+      if (mode === "template") {
+        const res = await api.post<any>("/api/whatsapp/send-template", {
+          to: targetPhone, proposalId,
+          bodyVariables: firstName ? [firstName] : undefined,
+        });
+        if (res?.ok) setCloudResult({ ok: true, msg: `Sent (wamid: ${res.wamid || "n/a"})` });
+        else setCloudResult({ ok: false, msg: res?.error || "Send failed" });
+      } else {
+        const res = await api.post<any>("/api/whatsapp/send-text", { to: targetPhone, body, proposalId });
+        if (res?.ok) setCloudResult({ ok: true, msg: `Sent (wamid: ${res.wamid || "n/a"})` });
+        else setCloudResult({ ok: false, msg: res?.error || "Send failed (free-form only works within 24hr reply window)" });
+      }
+    } catch (e: any) {
+      setCloudResult({ ok: false, msg: e?.message || "Send error" });
+    } finally {
+      setCloudSending(false);
+    }
+  };
+
   const openEmail = (email?: string, name?: string) => {
     const to = email || clientEmail || "";
     const firstName = (name || clientName || "").split(/[\s-]+/)[0];
@@ -423,7 +456,13 @@ export default function ArtifactsView({
           {artifacts.whatsappMessage && <>
             <CopyBtn text={artifacts.whatsappMessage} />
             <button className="btn btn-sm" onClick={() => sendWhatsapp()} style={{ background: "#25D366", color: "white", border: "none" }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> Send
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> Send (wa.me)
+            </button>
+            <button className="btn btn-sm" onClick={() => sendWhatsappCloud("template")} disabled={cloudSending} style={{ background: "#128C7E", color: "white", border: "none" }} title="Send approved template via Meta Cloud API (works for cold outreach)">
+              {cloudSending ? "Sending…" : "Send Template (API)"}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => sendWhatsappCloud("text")} disabled={cloudSending} title="Send free-form text via Cloud API (only works within 24hr reply window)">
+              Send Text (API)
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage", undefined, undefined, customPrompts.whatsapp !== defaultPrompts.whatsapp ? customPrompts.whatsapp : undefined)} disabled={generating.whatsapp}>↺ Redo</button>
           </>}
@@ -431,6 +470,11 @@ export default function ArtifactsView({
         </>}
       >
         {errors.whatsapp && <div className="banner banner-error">{errors.whatsapp}</div>}
+        {cloudResult && (
+          <div className={`banner ${cloudResult.ok ? "banner-success" : "banner-error"}`} style={{ marginBottom: 8 }}>
+            {cloudResult.ok ? "✓ " : "✗ "}{cloudResult.msg}
+          </div>
+        )}
         {artifacts.whatsappMessage
           ? <pre style={preStyle}>{artifacts.whatsappMessage}</pre>
           : !generating.whatsapp && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}

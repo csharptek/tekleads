@@ -22,6 +22,15 @@ public static class SettingKeys
     public const string WhatsappCountryCode        = "whatsapp_cc";
     public const string WhatsappMessageTemplate    = "whatsapp_message_template";
 
+    // WhatsApp Business Cloud API (Meta)
+    public const string WhatsappCloudPhoneNumberId = "whatsapp_cloud_phone_number_id";
+    public const string WhatsappCloudWabaId        = "whatsapp_cloud_waba_id";
+    public const string WhatsappCloudAccessToken   = "whatsapp_cloud_access_token";
+    public const string WhatsappCloudVerifyToken   = "whatsapp_cloud_verify_token";
+    public const string WhatsappCloudTemplateName  = "whatsapp_cloud_template_name";
+    public const string WhatsappCloudTemplateLang  = "whatsapp_cloud_template_lang";
+    public const string WhatsappCloudApiVersion    = "whatsapp_cloud_api_version";
+
     public const string AzureSearchEndpoint        = "azure_search_endpoint";
     public const string AzureSearchKey             = "azure_search_key";
     public const string AzureSearchIndex           = "azure_search_index";
@@ -58,6 +67,8 @@ public static class SettingKeys
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
         GraphTenantId, GraphClientId, GraphClientSecret, GraphSenderEmail,
         WhatsappCountryCode, WhatsappMessageTemplate,
+        WhatsappCloudPhoneNumberId, WhatsappCloudWabaId, WhatsappCloudAccessToken, WhatsappCloudVerifyToken,
+        WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion,
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,
@@ -68,6 +79,7 @@ public static class SettingKeys
 
     public static readonly HashSet<string> Secrets = new()
     {
-        AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey
+        AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey,
+        WhatsappCloudAccessToken, WhatsappCloudVerifyToken
     };
 }

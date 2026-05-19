@@ -21,6 +21,7 @@ builder.Services.AddScoped<GraphEmailService>();
 builder.Services.AddScoped<EmailSendQueueService>();
 builder.Services.AddScoped<ContactListService>();
 builder.Services.AddScoped<InstantlyService>();
+builder.Services.AddScoped<WhatsAppCloudService>();
 builder.Services.AddScoped<ProductService>();
 builder.Services.AddScoped<ProductAIService>();
 builder.Services.AddScoped<ProductsDbInitializer>();
@@ -77,6 +78,7 @@ using (var scope = app.Services.CreateScope())
     try { var artSvc = scope.ServiceProvider.GetRequiredService<ArtifactsService>(); await artSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Artifacts schema failed"); }
     try { var queueSvc = scope.ServiceProvider.GetRequiredService<EmailSendQueueService>(); await queueSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "EmailSendQueue schema failed"); }
     try { var clSvc = scope.ServiceProvider.GetRequiredService<ContactListService>(); await clSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "ContactList schema failed"); }
+    try { var waSvc = scope.ServiceProvider.GetRequiredService<WhatsAppCloudService>(); await waSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "WhatsApp schema failed"); }
     try { var prodDb = scope.ServiceProvider.GetRequiredService<ProductsDbInitializer>(); await prodDb.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Products schema failed"); }
 }
 
