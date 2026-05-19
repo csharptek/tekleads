@@ -197,6 +197,53 @@ export default function NewProposalView({
     }
   };
 
+  // ── Enrich Email Only ──
+  const handleEnrichEmail = async (lead: Lead, resultIdx: number) => {
+    const existing = contacts.findIndex(c => c.lead.apolloId === lead.apolloId);
+    if (existing === -1) {
+      setContacts(prev => [...prev, {
+        lead, enriching: true, enriched: false,
+        checkedEmails: [], checkedPhones: [], isPrimary: false,
+      }]);
+    } else {
+      setContacts(prev => prev.map((c, i) => i === existing ? { ...c, enriching: true } : c));
+    }
+    setError("");
+    try {
+      const saveRes: any = await api.post("/api/leads/save", [lead]);
+      const savedLead = saveRes.leads?.find((l: any) => l.apolloId === lead.apolloId) || lead;
+      const realId = savedLead.id || lead.id;
+      const res: any = await api.post(`/api/leads/${realId}/reveal-email`, {});
+
+      const updatedLead: Lead = {
+        ...lead,
+        id: realId,
+        name: res.fullName?.trim() ? res.fullName : lead.name,
+        location: res.location?.trim() ? res.location : lead.location,
+        emails: res.emails?.length ? res.emails : lead.emails,
+        linkedinUrl: res.linkedinUrl?.trim() ? res.linkedinUrl : lead.linkedinUrl,
+      };
+
+      setContacts(prev => {
+        const idx = prev.findIndex(c => c.lead.apolloId === lead.apolloId);
+        if (idx === -1) return prev;
+        return prev.map((c, i) => i === idx ? {
+          ...c,
+          lead: updatedLead,
+          enriching: false,
+          enriched: true,
+          checkedEmails: updatedLead.emails || [],
+          checkedPhones: [],
+        } : c);
+      });
+
+      setSearchResults(prev => prev.map((l, i) => i === resultIdx ? updatedLead : l));
+    } catch (e: any) {
+      setError(e.message);
+      setContacts(prev => prev.map(c => c.lead.apolloId === lead.apolloId ? { ...c, enriching: false } : c));
+    }
+  };
+
   const setPrimary = (apolloId: string) => {
     setContacts(prev => prev.map(c => ({ ...c, isPrimary: c.lead.apolloId === apolloId })));
     const contact = contacts.find(c => c.lead.apolloId === apolloId);
@@ -490,9 +537,14 @@ export default function NewProposalView({
                         ) : <span style={{ color: "var(--dim)" }}>—</span>}
                       </td>
                       <td>
-                        <button className="btn btn-ghost btn-sm" onClick={() => handleEnrich(lead, i)} disabled={enriching || enriched}>
-                          {enriching ? <span className="spinner spinner-dark" /> : enriched ? "✓ Enriched" : "Enrich"}
-                        </button>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => handleEnrichEmail(lead, i)} disabled={enriching || enriched} title="Email only">
+                            {enriching ? <span className="spinner spinner-dark" /> : enriched ? "✓" : "Email"}
+                          </button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => handleEnrich(lead, i)} disabled={enriching || enriched} title="Email + phone">
+                            {enriching ? <span className="spinner spinner-dark" /> : enriched ? "✓ Enriched" : "Enrich"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

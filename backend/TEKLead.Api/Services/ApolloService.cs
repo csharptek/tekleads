@@ -169,6 +169,52 @@ public class ApolloService
         return (emails.ToArray(), phones.ToArray(), fullName, location, linkedinUrl);
     }
 
+    // Email-only enrichment: no phone reveal, no webhook, returns synchronously.
+    public async Task<(string[] Emails, string FullName, string Location, string LinkedinUrl)> EnrichEmailOnly(string apolloPersonId)
+    {
+        var key = await GetKey();
+
+        var payload = new
+        {
+            id = apolloPersonId,
+            reveal_personal_emails = false,
+            reveal_phone_number = false
+        };
+
+        var client = MakeClient(key);
+        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
+        var body = await res.Content.ReadAsStringAsync();
+
+        _log.LogInformation("Apollo enrich-email {0}: {1}", res.StatusCode, body[..Math.Min(1000, body.Length)]);
+
+        if (!res.IsSuccessStatusCode)
+            throw new Exception($"Apollo enrich-email error {(int)res.StatusCode}: {body}");
+
+        using var doc = JsonDocument.Parse(body);
+        var emails = new List<string>();
+        var fullName = "";
+        var location = "";
+        var linkedinUrl = "";
+
+        if (doc.RootElement.TryGetProperty("person", out var person))
+        {
+            var email = Str(person, "email");
+            if (!string.IsNullOrEmpty(email)) emails.Add(email);
+
+            var fn = Str(person, "first_name");
+            var ln = Str(person, "last_name");
+            fullName = $"{fn} {ln}".Trim();
+
+            var locParts = new[] { Str(person, "city"), Str(person, "state"), Str(person, "country") }
+                .Where(s => !string.IsNullOrEmpty(s));
+            location = string.Join(", ", locParts);
+
+            linkedinUrl = Str(person, "linkedin_url");
+        }
+
+        return (emails.ToArray(), fullName, location, linkedinUrl);
+    }
+
     public static string[] ParsePhonesFromWebhook(string json)
     {
         if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();

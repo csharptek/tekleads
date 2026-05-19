@@ -41,10 +41,12 @@ export default function LeadSearchView() {
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [revealingId, setRevealingId] = useState<string | null>(null);
+  const [revealingEmailId, setRevealingEmailId] = useState<string | null>(null);
   const [phonePending, setPhonePending] = useState<Set<string>>(new Set());
   const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
   const [searched, setSearched] = useState(false);
   const [enrichConfirm, setEnrichConfirm] = useState<Lead | null>(null);
+  const [emailConfirm, setEmailConfirm] = useState<Lead | null>(null);
   const [waTemplate, setWaTemplate] = useState("Hi {name}, I'd love to connect!");
 
   useEffect(() => {
@@ -147,11 +149,57 @@ export default function LeadSearchView() {
     } finally { setRevealingId(null); }
   };
 
+  const doEnrichEmail = async (lead: Lead) => {
+    setEmailConfirm(null);
+    if (!lead.apolloId) { setBanner({ kind: "info", text: "No Apollo ID — cannot enrich." }); return; }
+    setRevealingEmailId(lead.id); setBanner(null);
+    try {
+      const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
+      const savedLead = saveRes.leads?.find(l => l.apolloId === lead.apolloId) || lead;
+      const realId = savedLead.id || lead.id;
+      const res = await api.post<{ emails: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean }>(
+        `/api/leads/${realId}/reveal-email`, {});
+
+      setResults(prev => prev.map(l => l.id === lead.id
+        ? {
+            ...l,
+            name:       res.fullName  && res.fullName.trim()  ? res.fullName  : l.name,
+            location:   res.location  && res.location.trim()  ? res.location  : l.location,
+            emails:     res.emails.length  ? res.emails  : l.emails,
+            linkedinUrl: res.linkedinUrl?.trim() ? res.linkedinUrl : l.linkedinUrl,
+          }
+        : l));
+
+      if (res.emails.length > 0) {
+        setBanner({ kind: "success", text: `Email: ${res.emails[0]} — saved.` });
+      } else {
+        setBanner({ kind: "info", text: "No email found." });
+      }
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setRevealingEmailId(null); }
+  };
+
   const totalPages = Math.ceil(total / PER_PAGE);
   const allSelected = results.length > 0 && selected.size === results.length;
 
   return (
     <div className="page">
+      {emailConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ maxWidth: 480, margin: 0, width: "100%" }}>
+            <div className="card-title">⚠ Email enrich uses Apollo credits</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
+              Enriching email for <strong>{emailConfirm.name}</strong> consumes credits. Phone will not be revealed.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost" onClick={() => setEmailConfirm(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => doEnrichEmail(emailConfirm)}>Yes, Get Email</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {enrichConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div className="card" style={{ maxWidth: 480, margin: 0, width: "100%" }}>
@@ -279,10 +327,16 @@ export default function LeadSearchView() {
                               : <span style={{ color: "var(--dim)" }}>—</span>}
                         </td>
                         <td>
-                          <button className="btn btn-ghost btn-sm" onClick={() => setEnrichConfirm(lead)}
-                            disabled={revealingId === lead.id} title="Uses Apollo credits">
-                            {revealingId === lead.id ? <span className="spinner spinner-dark" /> : "Enrich"}
-                          </button>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setEmailConfirm(lead)}
+                              disabled={revealingEmailId === lead.id || revealingId === lead.id} title="Email only — uses Apollo credits">
+                              {revealingEmailId === lead.id ? <span className="spinner spinner-dark" /> : "Email"}
+                            </button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setEnrichConfirm(lead)}
+                              disabled={revealingId === lead.id || revealingEmailId === lead.id} title="Email + phone — uses Apollo credits">
+                              {revealingId === lead.id ? <span className="spinner spinner-dark" /> : "Enrich"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

@@ -116,6 +116,41 @@ public class LeadsController : ControllerBase
         }
     }
 
+    [HttpPost("{id}/reveal-email")]
+    public async Task<IActionResult> RevealEmail(Guid id)
+    {
+        var lead = await _leads.GetById(id);
+        if (lead == null) return NotFound(new { error = "Lead not found. Save the lead first." });
+        if (string.IsNullOrEmpty(lead.ApolloId))
+            return BadRequest(new { error = "Lead has no Apollo ID." });
+
+        try
+        {
+            var (emails, fullName, location, linkedinUrl) = await _apollo.EnrichEmailOnly(lead.ApolloId);
+
+            var updated = false;
+            if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
+            if (!string.IsNullOrEmpty(location)) { lead.Location = location; updated = true; }
+            if (emails.Length > 0 && lead.Emails.Length == 0) { lead.Emails = emails; updated = true; }
+            if (!string.IsNullOrEmpty(linkedinUrl) && string.IsNullOrEmpty(lead.LinkedinUrl)) { lead.LinkedinUrl = linkedinUrl; updated = true; }
+            if (updated) await _leads.Upsert(lead);
+
+            return Ok(new
+            {
+                emails,
+                fullName,
+                location,
+                linkedinUrl,
+                autoSaved = updated
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Enrich-email failed for {0}", id);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [HttpPost("phone-webhook/{leadId}")]
     public async Task<IActionResult> PhoneWebhook(Guid leadId)
     {
