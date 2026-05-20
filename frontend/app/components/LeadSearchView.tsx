@@ -42,11 +42,13 @@ export default function LeadSearchView() {
   const [saving, setSaving] = useState(false);
   const [revealingId, setRevealingId] = useState<string | null>(null);
   const [revealingEmailId, setRevealingEmailId] = useState<string | null>(null);
+  const [revealingPhoneId, setRevealingPhoneId] = useState<string | null>(null);
   const [phonePending, setPhonePending] = useState<Set<string>>(new Set());
   const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
   const [searched, setSearched] = useState(false);
   const [enrichConfirm, setEnrichConfirm] = useState<Lead | null>(null);
   const [emailConfirm, setEmailConfirm] = useState<Lead | null>(null);
+  const [phoneConfirm, setPhoneConfirm] = useState<Lead | null>(null);
   const [waTemplate, setWaTemplate] = useState("Hi {name}, I'd love to connect!");
 
   useEffect(() => {
@@ -56,6 +58,18 @@ export default function LeadSearchView() {
   }, []);
 
   const f = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  const unionStr = (a: string[] = [], b: string[] = []) => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const s of [...a, ...b]) {
+      const t = (s || "").trim();
+      if (!t) continue;
+      const k = t.toLowerCase();
+      if (!seen.has(k)) { seen.add(k); out.push(t); }
+    }
+    return out;
+  };
 
   const doSearch = async (p: number) => {
     setSearching(true); setBanner(null); setSelected(new Set());
@@ -113,11 +127,11 @@ export default function LeadSearchView() {
       setResults(prev => prev.map(l => l.id === lead.id
         ? {
             ...l,
-            name:       res.fullName  && res.fullName.trim()  ? res.fullName  : l.name,
-            location:   res.location  && res.location.trim()  ? res.location  : l.location,
-            emails:     res.emails.length  ? res.emails  : l.emails,
-            phones:     res.phones.length  ? res.phones  : l.phones,
-            linkedinUrl: res.linkedinUrl?.trim() ? res.linkedinUrl : l.linkedinUrl,
+            name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
+            location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
+            emails:     unionStr(l.emails, res.emails),
+            phones:     unionStr(l.phones, res.phones),
+            linkedinUrl: l.linkedinUrl?.trim() ? l.linkedinUrl : res.linkedinUrl,
           }
         : l));
 
@@ -133,7 +147,7 @@ export default function LeadSearchView() {
             if (updated.phones && updated.phones.length > 0) {
               clearInterval(timer);
               setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
-              setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: updated.phones } : l));
+              setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, updated.phones) } : l));
               setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
             }
           } catch { }
@@ -163,10 +177,10 @@ export default function LeadSearchView() {
       setResults(prev => prev.map(l => l.id === lead.id
         ? {
             ...l,
-            name:       res.fullName  && res.fullName.trim()  ? res.fullName  : l.name,
-            location:   res.location  && res.location.trim()  ? res.location  : l.location,
-            emails:     res.emails.length  ? res.emails  : l.emails,
-            linkedinUrl: res.linkedinUrl?.trim() ? res.linkedinUrl : l.linkedinUrl,
+            name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
+            location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
+            emails:     unionStr(l.emails, res.emails),
+            linkedinUrl: l.linkedinUrl?.trim() ? l.linkedinUrl : res.linkedinUrl,
           }
         : l));
 
@@ -178,6 +192,55 @@ export default function LeadSearchView() {
     } catch (e: any) {
       setBanner({ kind: "error", text: e.message });
     } finally { setRevealingEmailId(null); }
+  };
+
+  const doEnrichPhone = async (lead: Lead) => {
+    setPhoneConfirm(null);
+    if (!lead.apolloId) { setBanner({ kind: "info", text: "No Apollo ID — cannot enrich." }); return; }
+    setRevealingPhoneId(lead.id); setBanner(null);
+    try {
+      const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
+      const savedLead = saveRes.leads?.find(l => l.apolloId === lead.apolloId) || lead;
+      const realId = savedLead.id || lead.id;
+      const res = await api.post<{ phones: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
+        `/api/leads/${realId}/reveal-phone-only`, {});
+
+      setResults(prev => prev.map(l => l.id === lead.id
+        ? {
+            ...l,
+            name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
+            location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
+            phones:     unionStr(l.phones, res.phones),
+            linkedinUrl: l.linkedinUrl?.trim() ? l.linkedinUrl : res.linkedinUrl,
+          }
+        : l));
+
+      if (res.phoneWebhookPending) {
+        setPhonePending(p => new Set([...p, realId]));
+        setBanner({ kind: "info", text: `Phone request sent — polling…` });
+        const leadId = realId;
+        let attempts = 0;
+        const timer = setInterval(async () => {
+          attempts++;
+          try {
+            const updated = await api.get<Lead>(`/api/leads/${leadId}`);
+            if (updated.phones && updated.phones.length > 0) {
+              clearInterval(timer);
+              setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+              setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, updated.phones) } : l));
+              setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
+            }
+          } catch { }
+          if (attempts >= 24) { clearInterval(timer); setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; }); }
+        }, 5000);
+      } else if (res.phones.length > 0) {
+        setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")} — saved.` });
+      } else {
+        setBanner({ kind: "info", text: "No phone found." });
+      }
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setRevealingPhoneId(null); }
   };
 
   const totalPages = Math.ceil(total / PER_PAGE);
@@ -195,6 +258,21 @@ export default function LeadSearchView() {
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost" onClick={() => setEmailConfirm(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={() => doEnrichEmail(emailConfirm)}>Yes, Get Email</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {phoneConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ maxWidth: 480, margin: 0, width: "100%" }}>
+            <div className="card-title">⚠ Phone enrich uses Apollo credits</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
+              Enriching phone for <strong>{phoneConfirm.name}</strong> consumes credits. Phone reveal is async — email will not be revealed.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost" onClick={() => setPhoneConfirm(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => doEnrichPhone(phoneConfirm)}>Yes, Get Phone</button>
             </div>
           </div>
         </div>
@@ -329,11 +407,15 @@ export default function LeadSearchView() {
                         <td>
                           <div style={{ display: "flex", gap: 4 }}>
                             <button className="btn btn-ghost btn-sm" onClick={() => setEmailConfirm(lead)}
-                              disabled={revealingEmailId === lead.id || revealingId === lead.id} title="Email only — uses Apollo credits">
+                              disabled={revealingEmailId === lead.id || revealingId === lead.id || revealingPhoneId === lead.id} title="Email only — uses Apollo credits">
                               {revealingEmailId === lead.id ? <span className="spinner spinner-dark" /> : "Email"}
                             </button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setPhoneConfirm(lead)}
+                              disabled={revealingPhoneId === lead.id || revealingId === lead.id || revealingEmailId === lead.id} title="Phone only — uses Apollo credits">
+                              {revealingPhoneId === lead.id ? <span className="spinner spinner-dark" /> : "Phone"}
+                            </button>
                             <button className="btn btn-ghost btn-sm" onClick={() => setEnrichConfirm(lead)}
-                              disabled={revealingId === lead.id || revealingEmailId === lead.id} title="Email + phone — uses Apollo credits">
+                              disabled={revealingId === lead.id || revealingEmailId === lead.id || revealingPhoneId === lead.id} title="Email + phone — uses Apollo credits">
                               {revealingId === lead.id ? <span className="spinner spinner-dark" /> : "Enrich"}
                             </button>
                           </div>

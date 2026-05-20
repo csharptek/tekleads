@@ -215,6 +215,58 @@ public class ApolloService
         return (emails.ToArray(), fullName, location, linkedinUrl);
     }
 
+    // Phone-only enrichment: triggers async phone reveal via webhook, no email reveal.
+    public async Task<(string[] Phones, string FullName, string Location, string LinkedinUrl)> EnrichPhoneOnly(
+        string apolloPersonId, string webhookUrl)
+    {
+        var key = await GetKey();
+
+        var payload = new
+        {
+            id = apolloPersonId,
+            reveal_personal_emails = false,
+            reveal_phone_number = true,
+            webhook_url = webhookUrl
+        };
+
+        var client = MakeClient(key);
+        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
+        var body = await res.Content.ReadAsStringAsync();
+
+        _log.LogInformation("Apollo enrich-phone {0}: {1}", res.StatusCode, body[..Math.Min(1000, body.Length)]);
+
+        if (!res.IsSuccessStatusCode)
+            throw new Exception($"Apollo enrich-phone error {(int)res.StatusCode}: {body}");
+
+        using var doc = JsonDocument.Parse(body);
+        var phones = new List<string>();
+        var fullName = "";
+        var location = "";
+        var linkedinUrl = "";
+
+        if (doc.RootElement.TryGetProperty("person", out var person))
+        {
+            var fn = Str(person, "first_name");
+            var ln = Str(person, "last_name");
+            fullName = $"{fn} {ln}".Trim();
+
+            var locParts = new[] { Str(person, "city"), Str(person, "state"), Str(person, "country") }
+                .Where(s => !string.IsNullOrEmpty(s));
+            location = string.Join(", ", locParts);
+
+            linkedinUrl = Str(person, "linkedin_url");
+
+            if (person.TryGetProperty("phone_numbers", out var pns) && pns.ValueKind == JsonValueKind.Array)
+                foreach (var pn in pns.EnumerateArray())
+                {
+                    var num = Str(pn, "sanitized_number") is { Length: > 0 } s ? s : Str(pn, "raw_number");
+                    if (!string.IsNullOrEmpty(num)) phones.Add(num);
+                }
+        }
+
+        return (phones.ToArray(), fullName, location, linkedinUrl);
+    }
+
     public static string[] ParsePhonesFromWebhook(string json)
     {
         if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
