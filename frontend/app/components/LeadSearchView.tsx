@@ -124,9 +124,10 @@ export default function LeadSearchView() {
       const res = await api.post<{ emails: string[]; phones: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
         `/api/leads/${realId}/reveal-phone`, {});
 
-      setResults(prev => prev.map(l => l.id === lead.id
+      setResults(prev => prev.map(l => l.id === lead.id || l.id === realId
         ? {
             ...l,
+            id: realId,
             name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
             location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
             emails:     unionStr(l.emails, res.emails),
@@ -174,9 +175,10 @@ export default function LeadSearchView() {
       const res = await api.post<{ emails: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean }>(
         `/api/leads/${realId}/reveal-email`, {});
 
-      setResults(prev => prev.map(l => l.id === lead.id
+      setResults(prev => prev.map(l => l.id === lead.id || l.id === realId
         ? {
             ...l,
+            id: realId,
             name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
             location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
             emails:     unionStr(l.emails, res.emails),
@@ -205,9 +207,10 @@ export default function LeadSearchView() {
       const res = await api.post<{ phones: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
         `/api/leads/${realId}/reveal-phone-only`, {});
 
-      setResults(prev => prev.map(l => l.id === lead.id
+      setResults(prev => prev.map(l => l.id === lead.id || l.id === realId
         ? {
             ...l,
+            id: realId,
             name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
             location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
             phones:     unionStr(l.phones, res.phones),
