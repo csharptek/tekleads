@@ -284,7 +284,7 @@ export default function ArtifactsView({
           to: targetPhone,
           proposalId,
           templateName: "csharptek_intro",
-          languageCode: "en_US",
+          languageCode: "en",
           bodyVariables: [
             firstName || "there",
             proposalHeadline || "your project"
