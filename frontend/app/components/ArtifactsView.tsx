@@ -281,9 +281,14 @@ export default function ArtifactsView({
 
       if (mode === "template") {
         const res = await api.post<any>("/api/whatsapp/send-template", {
-          to: targetPhone, proposalId,
-          // bodyVariables omitted — default hello_world template has no params.
-          // Pass variables only when using a template that defines {{1}}, {{2}}, etc.
+          to: targetPhone,
+          proposalId,
+          templateName: "csharptek_intro",
+          languageCode: "en_US",
+          bodyVariables: [
+            firstName || "there",
+            proposalHeadline || "your project"
+          ],
         });
         if (res?.ok) setCloudResult({ ok: true, msg: `Sent (wamid: ${res.wamid || "n/a"})` });
         else setCloudResult({ ok: false, msg: res?.error || "Send failed" });
