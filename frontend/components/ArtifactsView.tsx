@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { api } from "../../lib/api";
+import { api } from "../lib/api";
 
 type Artifacts = {
   coverLetter?: string;
