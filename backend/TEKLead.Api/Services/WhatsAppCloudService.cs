@@ -109,19 +109,31 @@ public class WhatsAppCloudService
         var tpl = string.IsNullOrWhiteSpace(templateName) ? cfg.tplName : templateName!;
         var lang = string.IsNullOrWhiteSpace(langCode) ? cfg.tplLang : langCode!;
 
-        // Build payload
-        var templateObj = new Dictionary<string, object>
-        {
-            ["name"] = tpl,
-            ["language"] = new { code = lang }
-        };
+        object templateObj;
 
         if (bodyVariables != null && bodyVariables.Count > 0)
         {
-            var parameters = bodyVariables.Select(v => new { type = "text", text = v ?? "" }).ToArray();
-            templateObj["components"] = new[]
+            var parameters = bodyVariables
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => new { type = "text", text = v.Trim() })
+                .ToArray();
+
+            templateObj = new
             {
-                new { type = "body", parameters }
+                name = tpl,
+                language = new { code = lang },
+                components = new[]
+                {
+                    new { type = "body", parameters }
+                }
+            };
+        }
+        else
+        {
+            templateObj = new
+            {
+                name = tpl,
+                language = new { code = lang }
             };
         }
 
