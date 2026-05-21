@@ -43,53 +43,85 @@ public class EmailSendWorker : BackgroundService
 
         _log.LogInformation("EmailSendWorker: {count} due jobs.", jobs.Count);
 
-        // Cache artifacts per proposal to avoid repeated DB hits
         var artifactsCache = new Dictionary<Guid, ArtifactsResult>();
-        var signatureCache = new Dictionary<string, string>();
+        string? sig = null;
 
         foreach (var job in jobs)
         {
             try
             {
-                // Load artifacts
-                if (!artifactsCache.TryGetValue(job.ProposalId, out var artifacts))
+                string subject;
+                string bodyText;
+
+                if (job.FollowUpStage == 0)
                 {
-                    artifacts = await artifactsSvc.GetExisting(job.ProposalId);
-                    artifactsCache[job.ProposalId] = artifacts;
+                    // Initial — use artifact
+                    if (!artifactsCache.TryGetValue(job.ProposalId, out var artifacts))
+                    {
+                        artifacts = await artifactsSvc.GetExisting(job.ProposalId);
+                        artifactsCache[job.ProposalId] = artifacts;
+                    }
+
+                    if (!artifacts.Ok || string.IsNullOrWhiteSpace(artifacts.EmailSubject))
+                    {
+                        await queue.MarkFailed(job.Id, "Email artifact not generated for this proposal.");
+                        continue;
+                    }
+
+                    subject = artifacts.EmailSubject ?? "";
+                    bodyText = artifacts.EmailBody ?? "";
+                }
+                else
+                {
+                    // Follow-up — use stored subject/body
+                    if (string.IsNullOrWhiteSpace(job.Subject) || string.IsNullOrWhiteSpace(job.Body))
+                    {
+                        await queue.MarkFailed(job.Id, $"Follow-up {job.FollowUpStage} subject/body missing.");
+                        continue;
+                    }
+                    subject = job.Subject!;
+                    bodyText = job.Body!;
                 }
 
-                if (!artifacts.Ok || string.IsNullOrWhiteSpace(artifacts.EmailSubject))
-                {
-                    await queue.MarkFailed(job.Id, "Email artifact not generated for this proposal.");
-                    continue;
-                }
-
-                // Build personalised body
+                // Interpolate variables — supports {{name}}, {{first_name}}, {{email}}
                 var firstName = (job.ToName ?? "").Split(new[] { ' ', '-' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? job.ToName ?? "";
-                var bodyText = artifacts.EmailBody ?? "";
-                var match = System.Text.RegularExpressions.Regex.Match(bodyText, @"^Hi\s+[^,\n]+,?", System.Text.RegularExpressions.RegexOptions.Multiline);
-                if (match.Success && !string.IsNullOrWhiteSpace(firstName))
-                    bodyText = bodyText[..match.Index] + $"Hi {firstName}," + bodyText[(match.Index + match.Length)..];
 
-                // Load signature once
-                if (!signatureCache.ContainsKey("sig"))
+                subject = subject
+                    .Replace("{{name}}", job.ToName ?? "", StringComparison.OrdinalIgnoreCase)
+                    .Replace("{{first_name}}", firstName, StringComparison.OrdinalIgnoreCase)
+                    .Replace("{{email}}", job.ToEmail ?? "", StringComparison.OrdinalIgnoreCase);
+
+                bodyText = bodyText
+                    .Replace("{{name}}", job.ToName ?? "", StringComparison.OrdinalIgnoreCase)
+                    .Replace("{{first_name}}", firstName, StringComparison.OrdinalIgnoreCase)
+                    .Replace("{{email}}", job.ToEmail ?? "", StringComparison.OrdinalIgnoreCase);
+
+                // Existing "Hi <name>," replacement (initial email pattern)
+                if (job.FollowUpStage == 0)
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(bodyText, @"^Hi\s+[^,\n]+,?", System.Text.RegularExpressions.RegexOptions.Multiline);
+                    if (match.Success && !string.IsNullOrWhiteSpace(firstName))
+                        bodyText = bodyText[..match.Index] + $"Hi {firstName}," + bodyText[(match.Index + match.Length)..];
+                }
+
+                // Load signature once per cycle
+                if (sig == null)
                 {
                     var settings = await settingsSvc.GetAll();
-                    signatureCache["sig"] = settings.GetValueOrDefault("email_signature", "");
+                    sig = settings.GetValueOrDefault("email_signature", "");
                 }
-                var sig = signatureCache["sig"];
 
-                var (ok, error) = await graphEmail.SendEmail(job.ToEmail, job.ToName, artifacts.EmailSubject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig);
+                var (ok, error) = await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig);
 
                 if (ok)
                 {
                     await queue.MarkSent(job.Id);
-                    _log.LogInformation("EmailSendWorker: sent to {email}", job.ToEmail);
+                    _log.LogInformation("EmailSendWorker: sent stage={stage} to {email}", job.FollowUpStage, job.ToEmail);
                 }
                 else
                 {
                     await queue.MarkFailed(job.Id, error);
-                    _log.LogWarning("EmailSendWorker: failed {email} — {error}", job.ToEmail, error);
+                    _log.LogWarning("EmailSendWorker: failed stage={stage} {email} — {error}", job.FollowUpStage, job.ToEmail, error);
                 }
             }
             catch (Exception ex)

@@ -96,8 +96,16 @@ export default function ArtifactsView({
   // Send to All state
   const [sendInterval, setSendInterval] = useState(5);
   const [sendAllQueued, setSendAllQueued] = useState(false);
-  const [sendAllJobs, setSendAllJobs] = useState<{ toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string }[]>([]);
+  const [sendAllJobs, setSendAllJobs] = useState<{ id: string; toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string; followUpStage?: number }[]>([]);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Follow-up state
+  const [fu1Subject, setFu1Subject] = useState("");
+  const [fu1Body, setFu1Body] = useState("");
+  const [fu1Delay, setFu1Delay] = useState(24);
+  const [fu2Subject, setFu2Subject] = useState("");
+  const [fu2Body, setFu2Body] = useState("");
+  const [fu2Delay, setFu2Delay] = useState(48);
 
   // Push to Instantly state
   const [instantlyCampaigns, setInstantlyCampaigns] = useState<{ id: string; name: string }[]>([]);
@@ -326,7 +334,20 @@ export default function ArtifactsView({
   const sendToAll = async () => {
     if (!allEmails || allEmails.length === 0) return;
     const recipients = allEmails.map((email, i) => ({ email, name: allEmailNames?.[i] || "" }));
-    await api.post(`/api/artifacts/${proposalId}/send-bulk`, { recipients, intervalMinutes: sendInterval });
+
+    const followUp1 = (fu1Subject.trim() && fu1Body.trim())
+      ? { subject: fu1Subject, body: fu1Body, delayHours: fu1Delay > 0 ? fu1Delay : 24 }
+      : null;
+    const followUp2 = (fu2Subject.trim() && fu2Body.trim())
+      ? { subject: fu2Subject, body: fu2Body, delayHours: fu2Delay > 0 ? fu2Delay : 48 }
+      : null;
+
+    await api.post(`/api/artifacts/${proposalId}/send-bulk`, {
+      recipients,
+      intervalMinutes: sendInterval,
+      followUp1,
+      followUp2,
+    });
     setSendAllQueued(true);
     pollStatus();
     if (pollRef.current) clearInterval(pollRef.current);
@@ -337,6 +358,13 @@ export default function ArtifactsView({
     await api.post(`/api/artifacts/${proposalId}/send-bulk/cancel`, {});
     pollStatus();
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  const sendJobNow = async (jobId: string) => {
+    await api.post(`/api/artifacts/send-job/${jobId}/send-now`, {});
+    pollStatus();
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(pollStatus, 5000);
   };
 
   const pushToInstantly = async () => {
@@ -519,6 +547,90 @@ export default function ArtifactsView({
         </> : !generating.email && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
 
+      {/* Follow-up Email 1 */}
+      {artifacts.emailSubject && allEmails && allEmails.length > 0 && (
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+            <div>
+              <div className="card-title">Follow-up Email 1</div>
+              <div className="card-sub">Sent automatically after initial. Supports {"{{name}}"}, {"{{first_name}}"}, {"{{email}}"}.</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <label style={{ fontSize: 12, color: "var(--muted)" }}>Delay (hrs):</label>
+              <input
+                type="number" min={1} value={fu1Delay}
+                onChange={e => setFu1Delay(Number(e.target.value))}
+                disabled={sendAllJobs.some(j => j.status === "pending")}
+                style={{ width: 70, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
+              />
+            </div>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <div className="field-label">Subject</div>
+            <input
+              type="text" value={fu1Subject}
+              onChange={e => setFu1Subject(e.target.value)}
+              placeholder="Following up on my previous email"
+              disabled={sendAllJobs.some(j => j.status === "pending")}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
+            />
+          </div>
+          <div>
+            <div className="field-label">Body</div>
+            <textarea
+              value={fu1Body}
+              onChange={e => setFu1Body(e.target.value)}
+              placeholder={"Hi {{first_name}},\n\nJust checking in on my last email..."}
+              rows={6}
+              disabled={sendAllJobs.some(j => j.status === "pending")}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", resize: "vertical" }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Follow-up Email 2 */}
+      {artifacts.emailSubject && allEmails && allEmails.length > 0 && (
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+            <div>
+              <div className="card-title">Follow-up Email 2</div>
+              <div className="card-sub">Sent automatically after initial. Supports {"{{name}}"}, {"{{first_name}}"}, {"{{email}}"}.</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <label style={{ fontSize: 12, color: "var(--muted)" }}>Delay (hrs):</label>
+              <input
+                type="number" min={1} value={fu2Delay}
+                onChange={e => setFu2Delay(Number(e.target.value))}
+                disabled={sendAllJobs.some(j => j.status === "pending")}
+                style={{ width: 70, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
+              />
+            </div>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <div className="field-label">Subject</div>
+            <input
+              type="text" value={fu2Subject}
+              onChange={e => setFu2Subject(e.target.value)}
+              placeholder="One more thought..."
+              disabled={sendAllJobs.some(j => j.status === "pending")}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
+            />
+          </div>
+          <div>
+            <div className="field-label">Body</div>
+            <textarea
+              value={fu2Body}
+              onChange={e => setFu2Body(e.target.value)}
+              placeholder={"Hi {{first_name}},\n\nLast nudge — would love to connect..."}
+              rows={6}
+              disabled={sendAllJobs.some(j => j.status === "pending")}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", resize: "vertical" }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Multi-contact Send Panel */}
       {((allEmails && allEmails.length > 0) || (allPhones && allPhones.length > 0)) && (artifacts.emailSubject || artifacts.whatsappMessage) && (
         <div className="card">
@@ -586,29 +698,54 @@ export default function ArtifactsView({
                 <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
                   {sendAllJobs.every(j => j.status === "sent" || j.status === "failed" || j.status === "cancelled")
                     ? "✓ Queue complete"
-                    : `Queued — backend sending every ${sendInterval} min`}
+                    : `Queued — backend sending (initial + follow-ups)`}
                 </span>
                 <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: 8 }}>
                   {sendAllJobs.filter(j => j.status === "sent").length}/{sendAllJobs.length} sent
+                  {(() => {
+                    const initial = sendAllJobs.filter(j => (j.followUpStage ?? 0) === 0);
+                    const fu1 = sendAllJobs.filter(j => j.followUpStage === 1);
+                    const fu2 = sendAllJobs.filter(j => j.followUpStage === 2);
+                    const parts: string[] = [];
+                    if (initial.length) parts.push(`Initial ${initial.filter(j => j.status === "sent").length}/${initial.length}`);
+                    if (fu1.length) parts.push(`FU1 ${fu1.filter(j => j.status === "sent").length}/${fu1.length}`);
+                    if (fu2.length) parts.push(`FU2 ${fu2.filter(j => j.status === "sent").length}/${fu2.length}`);
+                    return parts.length ? ` · ${parts.join(" · ")}` : "";
+                  })()}
                 </span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {sendAllJobs.map((job, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                {sendAllJobs.map((job, i) => {
+                  const stage = job.followUpStage ?? 0;
+                  const stageLabel = stage === 0 ? "Initial" : stage === 1 ? "FU1" : "FU2";
+                  const stageColor = stage === 0 ? "#0078d4" : stage === 1 ? "#a855f7" : "#ec4899";
+                  return (
+                  <div key={job.id || i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
                     {job.status === "pending" && <span style={{ color: "var(--muted)" }}>○</span>}
                     {job.status === "sent" && <span style={{ color: "#22c55e" }}>✓</span>}
                     {job.status === "failed" && <span style={{ color: "#ef4444" }}>✕</span>}
                     {job.status === "cancelled" && <span style={{ color: "var(--muted)" }}>–</span>}
+                    <span style={{ background: stageColor, color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 42, textAlign: "center" }}>{stageLabel}</span>
                     <span style={{ color: "var(--text)" }}>{job.toName || job.toEmail}</span>
                     <span style={{ color: "var(--muted)", fontSize: 11 }}>{job.toEmail}</span>
                     {job.status === "pending" && (
                       <span style={{ color: "var(--muted)", fontSize: 11 }}>
-                        due {new Date(job.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        due {new Date(job.scheduledAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </span>
+                    )}
+                    {job.status === "pending" && (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: "#0078d4", color: "white", border: "none", padding: "2px 8px", fontSize: 11, marginLeft: "auto" }}
+                        onClick={() => sendJobNow(job.id)}
+                      >
+                        Send Now
+                      </button>
                     )}
                     {job.status === "failed" && job.error && <span style={{ color: "#ef4444", fontSize: 11 }}>{job.error}</span>}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

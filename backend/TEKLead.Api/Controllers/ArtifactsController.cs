@@ -72,8 +72,35 @@ public class ArtifactsController : ControllerBase
         if (req.IntervalMinutes < 1) req.IntervalMinutes = 1;
 
         var list = req.Recipients.Select(r => (r.Email, r.Name ?? "")).ToList();
-        await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes);
-        return Ok(new { queued = list.Count, intervalMinutes = req.IntervalMinutes });
+
+        FollowUpSpec? fu1 = null, fu2 = null;
+        if (req.FollowUp1 != null && !string.IsNullOrWhiteSpace(req.FollowUp1.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp1.Body))
+        {
+            fu1 = new FollowUpSpec
+            {
+                Subject = req.FollowUp1.Subject!,
+                Body = req.FollowUp1.Body!,
+                DelayHours = req.FollowUp1.DelayHours > 0 ? req.FollowUp1.DelayHours : 24,
+            };
+        }
+        if (req.FollowUp2 != null && !string.IsNullOrWhiteSpace(req.FollowUp2.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp2.Body))
+        {
+            fu2 = new FollowUpSpec
+            {
+                Subject = req.FollowUp2.Subject!,
+                Body = req.FollowUp2.Body!,
+                DelayHours = req.FollowUp2.DelayHours > 0 ? req.FollowUp2.DelayHours : 48,
+            };
+        }
+
+        await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes, fu1, fu2);
+        return Ok(new
+        {
+            queued = list.Count,
+            intervalMinutes = req.IntervalMinutes,
+            followUp1 = fu1 != null,
+            followUp2 = fu2 != null,
+        });
     }
 
     [HttpGet("{proposalId}/send-bulk/status")]
@@ -82,13 +109,14 @@ public class ArtifactsController : ControllerBase
         var jobs = await _queue.GetByProposal(proposalId);
         return Ok(jobs.Select(j => new
         {
-            id          = j.Id,
-            toEmail     = j.ToEmail,
-            toName      = j.ToName,
-            scheduledAt = j.ScheduledAt,
-            sentAt      = j.SentAt,
-            status      = j.Status,
-            error       = j.Error,
+            id            = j.Id,
+            toEmail       = j.ToEmail,
+            toName        = j.ToName,
+            scheduledAt   = j.ScheduledAt,
+            sentAt        = j.SentAt,
+            status        = j.Status,
+            error         = j.Error,
+            followUpStage = j.FollowUpStage,
         }));
     }
 
@@ -98,9 +126,33 @@ public class ArtifactsController : ControllerBase
         await _queue.CancelPending(proposalId);
         return Ok(new { cancelled = true });
     }
+
+    // ── Send Now for a specific job ──────────────────────────────────────────
+
+    [HttpPost("send-job/{jobId}/send-now")]
+    public async Task<IActionResult> SendJobNow(Guid jobId)
+    {
+        var ok = await _queue.SendNow(jobId);
+        if (!ok) return BadRequest(new { error = "Job not found or not pending." });
+        return Ok(new { sendNow = true });
+    }
 }
 
 public class CustomPromptRequest  { public string? CustomPrompt { get; set; } }
 public class SendEmailRequest     { public string ToEmail { get; set; } = ""; public string? ToName { get; set; } public string? Signature { get; set; } }
 public class BulkSendRecipient    { public string Email { get; set; } = ""; public string? Name { get; set; } }
-public class BulkSendRequest      { public List<BulkSendRecipient> Recipients { get; set; } = new(); public int IntervalMinutes { get; set; } = 5; }
+
+public class FollowUpRequest
+{
+    public string? Subject { get; set; }
+    public string? Body { get; set; }
+    public int DelayHours { get; set; }
+}
+
+public class BulkSendRequest
+{
+    public List<BulkSendRecipient> Recipients { get; set; } = new();
+    public int IntervalMinutes { get; set; } = 5;
+    public FollowUpRequest? FollowUp1 { get; set; }
+    public FollowUpRequest? FollowUp2 { get; set; }
+}
