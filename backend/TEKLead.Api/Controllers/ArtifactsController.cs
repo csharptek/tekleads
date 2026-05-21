@@ -24,6 +24,8 @@ public class ArtifactsController : ControllerBase
         coverLetter = ArtifactsService.CoverLetterPrompt(),
         whatsapp    = ArtifactsService.WhatsappPrompt(),
         email       = ArtifactsService.EmailPrompt(),
+        followUp1   = ArtifactsService.FollowUp1Prompt(),
+        followUp2   = ArtifactsService.FollowUp2Prompt(),
     });
 
     [HttpGet("{proposalId}")]
@@ -59,6 +61,20 @@ public class ArtifactsController : ControllerBase
     public async Task<IActionResult> GenerateEmail(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {
         try { var r = await _svc.GenerateEmail(proposalId, req?.CustomPrompt); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    [HttpPost("{proposalId}/generate/followup1")]
+    public async Task<IActionResult> GenerateFollowUp1(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
+    {
+        try { var r = await _svc.GenerateFollowUp1(proposalId, req?.CustomPrompt); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    [HttpPost("{proposalId}/generate/followup2")]
+    public async Task<IActionResult> GenerateFollowUp2(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
+    {
+        try { var r = await _svc.GenerateFollowUp2(proposalId, req?.CustomPrompt); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 

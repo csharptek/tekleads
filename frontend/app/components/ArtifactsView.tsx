@@ -7,16 +7,20 @@ type Artifacts = {
   whatsappMessage?: string;
   emailSubject?: string;
   emailBody?: string;
+  followUp1Subject?: string;
+  followUp1Body?: string;
+  followUp2Subject?: string;
+  followUp2Body?: string;
   generatedAt?: string;
 };
 
-type GeneratingState = { coverLetter: boolean; whatsapp: boolean; email: boolean };
-type ErrorState = { coverLetter: string; whatsapp: string; email: string };
+type GeneratingState = { coverLetter: boolean; whatsapp: boolean; email: boolean; followUp1: boolean; followUp2: boolean };
+type ErrorState = { coverLetter: string; whatsapp: string; email: string; followUp1: string; followUp2: string };
 
-type DefaultPrompts = { coverLetter: string; whatsapp: string; email: string };
+type DefaultPrompts = { coverLetter: string; whatsapp: string; email: string; followUp1: string; followUp2: string };
 
 type PromptModal = {
-  type: "coverLetter" | "whatsapp" | "email";
+  type: "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2";
   title: string;
   prompt: string;
 };
@@ -84,11 +88,11 @@ export default function ArtifactsView({
   proposalId, proposalHeadline, clientName, clientEmail, clientPhone, allEmails, allPhones, allEmailNames, allPhoneNames, onBack, autoGenerate = false,
 }: ArtifactsViewProps) {
   const [artifacts, setArtifacts] = useState<Artifacts>({});
-  const [generating, setGenerating] = useState<GeneratingState>({ coverLetter: false, whatsapp: false, email: false });
-  const [errors, setErrors] = useState<ErrorState>({ coverLetter: "", whatsapp: "", email: "" });
+  const [generating, setGenerating] = useState<GeneratingState>({ coverLetter: false, whatsapp: false, email: false, followUp1: false, followUp2: false });
+  const [errors, setErrors] = useState<ErrorState>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
   const [loaded, setLoaded] = useState(false);
-  const [defaultPrompts, setDefaultPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "" });
-  const [customPrompts, setCustomPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "" });
+  const [defaultPrompts, setDefaultPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
+  const [customPrompts, setCustomPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
   const [promptModal, setPromptModal] = useState<PromptModal | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
   const [emailSignature, setEmailSignature] = useState("");
@@ -99,12 +103,8 @@ export default function ArtifactsView({
   const [sendAllJobs, setSendAllJobs] = useState<{ id: string; toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string; followUpStage?: number }[]>([]);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Follow-up state
-  const [fu1Subject, setFu1Subject] = useState("");
-  const [fu1Body, setFu1Body] = useState("");
+  // Follow-up delays (subject/body now in artifacts state, AI-generated)
   const [fu1Delay, setFu1Delay] = useState(24);
-  const [fu2Subject, setFu2Subject] = useState("");
-  const [fu2Body, setFu2Body] = useState("");
   const [fu2Delay, setFu2Delay] = useState(48);
 
   // Push to Instantly state
@@ -165,15 +165,19 @@ export default function ArtifactsView({
         coverLetter: s["artifact_cover_letter_prompt"] || defaults.coverLetter,
         whatsapp:    s["artifact_whatsapp_prompt"]     || defaults.whatsapp,
         email:       s["artifact_email_prompt"]        || defaults.email,
+        followUp1:   s["artifact_followup1_prompt"]    || defaults.followUp1,
+        followUp2:   s["artifact_followup2_prompt"]    || defaults.followUp2,
       });
     } catch { /* non-critical */ }
   };
 
-  const savePromptToDb = async (type: "coverLetter" | "whatsapp" | "email", value: string) => {
+  const savePromptToDb = async (type: "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2", value: string) => {
     const keyMap = {
       coverLetter: "artifact_cover_letter_prompt",
       whatsapp:    "artifact_whatsapp_prompt",
       email:       "artifact_email_prompt",
+      followUp1:   "artifact_followup1_prompt",
+      followUp2:   "artifact_followup2_prompt",
     };
     try {
       await api.post("/api/settings", { values: { [keyMap[type]]: value } });
@@ -190,6 +194,10 @@ export default function ArtifactsView({
           whatsappMessage: res.whatsappMessage,
           emailSubject: res.emailSubject,
           emailBody: res.emailBody,
+          followUp1Subject: res.followUp1Subject,
+          followUp1Body: res.followUp1Body,
+          followUp2Subject: res.followUp2Subject,
+          followUp2Body: res.followUp2Body,
           generatedAt: res.generatedAt,
         });
         hasExisting = true;
@@ -202,7 +210,7 @@ export default function ArtifactsView({
   };
 
   const generateOne = async (
-    type: "coverLetter" | "whatsapp" | "email",
+    type: "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2",
     endpoint: string,
     resKey: string,
     stateKey: keyof Artifacts,
@@ -234,8 +242,8 @@ export default function ArtifactsView({
     await generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody");
   };
 
-  const openPromptModal = (type: "coverLetter" | "whatsapp" | "email") => {
-    const titles = { coverLetter: "Cover Letter Prompt", whatsapp: "WhatsApp Prompt", email: "Email Prompt" };
+  const openPromptModal = (type: "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2") => {
+    const titles = { coverLetter: "Cover Letter Prompt", whatsapp: "WhatsApp Prompt", email: "Email Prompt", followUp1: "Follow-up Email 1 Prompt", followUp2: "Follow-up Email 2 Prompt" };
     const current = customPrompts[type] || defaultPrompts[type];
     setPromptDraft(current);
     setPromptModal({ type, title: titles[type], prompt: current });
@@ -250,6 +258,8 @@ export default function ArtifactsView({
     if (type === "coverLetter") generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter", undefined, undefined, promptDraft);
     if (type === "whatsapp")    generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage", undefined, undefined, promptDraft);
     if (type === "email")       generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody", promptDraft);
+    if (type === "followUp1")   generateOne("followUp1", "followup1", "followUp1Subject", "followUp1Subject", "followUp1Body", "followUp1Body", promptDraft);
+    if (type === "followUp2")   generateOne("followUp2", "followup2", "followUp2Subject", "followUp2Subject", "followUp2Body", "followUp2Body", promptDraft);
   };
 
   const handlePromptSaveOnly = () => {
@@ -259,7 +269,7 @@ export default function ArtifactsView({
     setPromptModal(null);
   };
 
-  const resetPrompt = (type: "coverLetter" | "whatsapp" | "email") => {
+  const resetPrompt = (type: "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2") => {
     setPromptDraft(defaultPrompts[type]);
     savePromptToDb(type, ""); // empty = backend falls back to code default
   };
@@ -335,11 +345,11 @@ export default function ArtifactsView({
     if (!allEmails || allEmails.length === 0) return;
     const recipients = allEmails.map((email, i) => ({ email, name: allEmailNames?.[i] || "" }));
 
-    const followUp1 = (fu1Subject.trim() && fu1Body.trim())
-      ? { subject: fu1Subject, body: fu1Body, delayHours: fu1Delay > 0 ? fu1Delay : 24 }
+    const followUp1 = (artifacts.followUp1Subject?.trim() && artifacts.followUp1Body?.trim())
+      ? { subject: artifacts.followUp1Subject, body: artifacts.followUp1Body, delayHours: fu1Delay > 0 ? fu1Delay : 24 }
       : null;
-    const followUp2 = (fu2Subject.trim() && fu2Body.trim())
-      ? { subject: fu2Subject, body: fu2Body, delayHours: fu2Delay > 0 ? fu2Delay : 48 }
+    const followUp2 = (artifacts.followUp2Subject?.trim() && artifacts.followUp2Body?.trim())
+      ? { subject: artifacts.followUp2Subject, body: artifacts.followUp2Body, delayHours: fu2Delay > 0 ? fu2Delay : 48 }
       : null;
 
     await api.post(`/api/artifacts/${proposalId}/send-bulk`, {
@@ -419,7 +429,7 @@ export default function ArtifactsView({
   const anyGenerating = generating.coverLetter || generating.whatsapp || generating.email;
   const nothingGenerated = loaded && !anyGenerating && !artifacts.coverLetter && !artifacts.whatsappMessage && !artifacts.emailSubject;
 
-  const isCustomized = (type: "coverLetter" | "whatsapp" | "email") =>
+  const isCustomized = (type: "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2") =>
     customPrompts[type] && customPrompts[type] !== defaultPrompts[type];
 
   return (
@@ -549,86 +559,84 @@ export default function ArtifactsView({
 
       {/* Follow-up Email 1 */}
       {artifacts.emailSubject && allEmails && allEmails.length > 0 && (
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-            <div>
-              <div className="card-title">Follow-up Email 1</div>
-              <div className="card-sub">Sent automatically after initial. Supports {"{{name}}"}, {"{{first_name}}"}, {"{{email}}"}.</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <label style={{ fontSize: 12, color: "var(--muted)" }}>Delay (hrs):</label>
+        <CardShell
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/><circle cx="18" cy="18" r="3" fill="var(--accent)"/></svg>}
+          title="Follow-up Email 1"
+          subtitle={<>AI-generated nudge sent after initial. Supports {"{{name}}"}, {"{{first_name}}"}, {"{{email}}"}.{isCustomized("followUp1") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
+          loading={generating.followUp1}
+          actions={<>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginRight: 4 }}>
+              <label style={{ fontSize: 11, color: "var(--muted)" }}>Delay (hrs):</label>
               <input
                 type="number" min={1} value={fu1Delay}
                 onChange={e => setFu1Delay(Number(e.target.value))}
                 disabled={sendAllJobs.some(j => j.status === "pending")}
-                style={{ width: 70, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
+                style={{ width: 60, fontSize: 12, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
               />
             </div>
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <div className="field-label">Subject</div>
-            <input
-              type="text" value={fu1Subject}
-              onChange={e => setFu1Subject(e.target.value)}
-              placeholder="Following up on my previous email"
-              disabled={sendAllJobs.some(j => j.status === "pending")}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
-            />
-          </div>
-          <div>
-            <div className="field-label">Body</div>
-            <textarea
-              value={fu1Body}
-              onChange={e => setFu1Body(e.target.value)}
-              placeholder={"Hi {{first_name}},\n\nJust checking in on my last email..."}
-              rows={6}
-              disabled={sendAllJobs.some(j => j.status === "pending")}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", resize: "vertical" }}
-            />
-          </div>
-        </div>
+            <PromptBtn onClick={() => openPromptModal("followUp1")} />
+            {artifacts.followUp1Subject && <>
+              <CopyBtn text={`Subject: ${artifacts.followUp1Subject}\n\n${artifacts.followUp1Body}`} />
+              <button className="btn btn-ghost btn-sm" onClick={() => generateOne("followUp1", "followup1", "followUp1Subject", "followUp1Subject", "followUp1Body", "followUp1Body", customPrompts.followUp1 !== defaultPrompts.followUp1 ? customPrompts.followUp1 : undefined)} disabled={generating.followUp1}>↺ Redo</button>
+            </>}
+            {!artifacts.followUp1Subject && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("followUp1", "followup1", "followUp1Subject", "followUp1Subject", "followUp1Body", "followUp1Body")} disabled={generating.followUp1}>Generate</button>}
+          </>}
+        >
+          {errors.followUp1 && <div className="banner banner-error">{errors.followUp1}</div>}
+          {artifacts.followUp1Subject ? <>
+            <div style={{ marginBottom: 8 }}>
+              <div className="field-label">Subject</div>
+              <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
+                {artifacts.followUp1Subject}
+              </div>
+            </div>
+            <div>
+              <div className="field-label">Body</div>
+              <pre style={preStyle}>{artifacts.followUp1Body}</pre>
+            </div>
+          </> : !generating.followUp1 && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
+        </CardShell>
       )}
 
       {/* Follow-up Email 2 */}
       {artifacts.emailSubject && allEmails && allEmails.length > 0 && (
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-            <div>
-              <div className="card-title">Follow-up Email 2</div>
-              <div className="card-sub">Sent automatically after initial. Supports {"{{name}}"}, {"{{first_name}}"}, {"{{email}}"}.</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <label style={{ fontSize: 12, color: "var(--muted)" }}>Delay (hrs):</label>
+        <CardShell
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/><circle cx="18" cy="18" r="3" fill="var(--accent)"/><circle cx="14" cy="18" r="3" fill="var(--accent)"/></svg>}
+          title="Follow-up Email 2"
+          subtitle={<>AI-generated final nudge. Supports {"{{name}}"}, {"{{first_name}}"}, {"{{email}}"}.{isCustomized("followUp2") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
+          loading={generating.followUp2}
+          actions={<>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginRight: 4 }}>
+              <label style={{ fontSize: 11, color: "var(--muted)" }}>Delay (hrs):</label>
               <input
                 type="number" min={1} value={fu2Delay}
                 onChange={e => setFu2Delay(Number(e.target.value))}
                 disabled={sendAllJobs.some(j => j.status === "pending")}
-                style={{ width: 70, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
+                style={{ width: 60, fontSize: 12, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
               />
             </div>
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <div className="field-label">Subject</div>
-            <input
-              type="text" value={fu2Subject}
-              onChange={e => setFu2Subject(e.target.value)}
-              placeholder="One more thought..."
-              disabled={sendAllJobs.some(j => j.status === "pending")}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
-            />
-          </div>
-          <div>
-            <div className="field-label">Body</div>
-            <textarea
-              value={fu2Body}
-              onChange={e => setFu2Body(e.target.value)}
-              placeholder={"Hi {{first_name}},\n\nLast nudge — would love to connect..."}
-              rows={6}
-              disabled={sendAllJobs.some(j => j.status === "pending")}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", resize: "vertical" }}
-            />
-          </div>
-        </div>
+            <PromptBtn onClick={() => openPromptModal("followUp2")} />
+            {artifacts.followUp2Subject && <>
+              <CopyBtn text={`Subject: ${artifacts.followUp2Subject}\n\n${artifacts.followUp2Body}`} />
+              <button className="btn btn-ghost btn-sm" onClick={() => generateOne("followUp2", "followup2", "followUp2Subject", "followUp2Subject", "followUp2Body", "followUp2Body", customPrompts.followUp2 !== defaultPrompts.followUp2 ? customPrompts.followUp2 : undefined)} disabled={generating.followUp2}>↺ Redo</button>
+            </>}
+            {!artifacts.followUp2Subject && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("followUp2", "followup2", "followUp2Subject", "followUp2Subject", "followUp2Body", "followUp2Body")} disabled={generating.followUp2}>Generate</button>}
+          </>}
+        >
+          {errors.followUp2 && <div className="banner banner-error">{errors.followUp2}</div>}
+          {artifacts.followUp2Subject ? <>
+            <div style={{ marginBottom: 8 }}>
+              <div className="field-label">Subject</div>
+              <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
+                {artifacts.followUp2Subject}
+              </div>
+            </div>
+            <div>
+              <div className="field-label">Body</div>
+              <pre style={preStyle}>{artifacts.followUp2Body}</pre>
+            </div>
+          </> : !generating.followUp2 && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
+        </CardShell>
       )}
 
       {/* Multi-contact Send Panel */}

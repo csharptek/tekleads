@@ -61,6 +61,8 @@ public static class SettingKeys
     public const string ArtifactCoverLetterPrompt   = "artifact_cover_letter_prompt";
     public const string ArtifactWhatsappPrompt      = "artifact_whatsapp_prompt";
     public const string ArtifactEmailPrompt         = "artifact_email_prompt";
+    public const string ArtifactFollowUp1Prompt     = "artifact_followup1_prompt";
+    public const string ArtifactFollowUp2Prompt     = "artifact_followup2_prompt";
 
     public static readonly string[] AllKnown =
     {
@@ -75,6 +77,7 @@ public static class SettingKeys
         ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt,
         EmailSignature, InstantlyApiKey,
         ArtifactCoverLetterPrompt, ArtifactWhatsappPrompt, ArtifactEmailPrompt,
+        ArtifactFollowUp1Prompt, ArtifactFollowUp2Prompt,
     };
 
     public static readonly HashSet<string> Secrets = new()

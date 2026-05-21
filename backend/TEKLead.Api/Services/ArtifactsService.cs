@@ -14,6 +14,10 @@ public class ArtifactsResult
     public string WhatsappMessage { get; set; } = "";
     public string EmailSubject { get; set; } = "";
     public string EmailBody { get; set; } = "";
+    public string FollowUp1Subject { get; set; } = "";
+    public string FollowUp1Body { get; set; } = "";
+    public string FollowUp2Subject { get; set; } = "";
+    public string FollowUp2Body { get; set; } = "";
     public DateTime GeneratedAt { get; set; }
 }
 
@@ -53,6 +57,10 @@ public class ArtifactsService
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_email_subject TEXT",
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_email_body TEXT",
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_generated_at TIMESTAMPTZ",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_followup1_subject TEXT",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_followup1_body TEXT",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_followup2_subject TEXT",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_followup2_body TEXT",
         };
         foreach (var m in migrations)
         {
@@ -66,7 +74,9 @@ public class ArtifactsService
         await using var c = new NpgsqlConnection(cs);
         await c.OpenAsync();
         var row = await c.QuerySingleOrDefaultAsync<dynamic>(
-            "SELECT artifact_cover_letter, artifact_whatsapp, artifact_email_subject, artifact_email_body, artifact_generated_at FROM proposals WHERE id=@id",
+            @"SELECT artifact_cover_letter, artifact_whatsapp, artifact_email_subject, artifact_email_body, artifact_generated_at,
+                     artifact_followup1_subject, artifact_followup1_body, artifact_followup2_subject, artifact_followup2_body
+              FROM proposals WHERE id=@id",
             new { id = proposalId });
 
         if (row == null || string.IsNullOrEmpty((string?)row.artifact_cover_letter))
@@ -79,6 +89,10 @@ public class ArtifactsService
             WhatsappMessage = row.artifact_whatsapp ?? "",
             EmailSubject = row.artifact_email_subject ?? "",
             EmailBody = row.artifact_email_body ?? "",
+            FollowUp1Subject = row.artifact_followup1_subject ?? "",
+            FollowUp1Body = row.artifact_followup1_body ?? "",
+            FollowUp2Subject = row.artifact_followup2_subject ?? "",
+            FollowUp2Body = row.artifact_followup2_body ?? "",
             GeneratedAt = row.artifact_generated_at ?? DateTime.UtcNow,
         };
     }
@@ -200,6 +214,53 @@ public class ArtifactsService
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
         return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow };
+    }
+
+    public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null)
+    {
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
+        if (err != null) return Fail(err);
+
+        // Load initial email so FU1 can reference it
+        var existing = await GetExisting(proposalId);
+        var context = BuildContext(proposal!, portfolioItems);
+        if (existing.Ok && !string.IsNullOrWhiteSpace(existing.EmailSubject))
+        {
+            context += $"\n\n## INITIAL EMAIL ALREADY SENT\nSubject: {existing.EmailSubject}\nBody:\n{existing.EmailBody}\n";
+        }
+
+        var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactFollowUp1Prompt, "");
+        var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? FollowUp1Prompt() : savedPrompt);
+        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
+        var (subject, body) = ParseEmail(raw);
+        await SaveField(proposalId, "artifact_followup1_subject", subject);
+        await SaveField(proposalId, "artifact_followup1_body", body);
+        return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow };
+    }
+
+    public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null)
+    {
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
+        if (err != null) return Fail(err);
+
+        var existing = await GetExisting(proposalId);
+        var context = BuildContext(proposal!, portfolioItems);
+        if (existing.Ok && !string.IsNullOrWhiteSpace(existing.EmailSubject))
+        {
+            context += $"\n\n## INITIAL EMAIL ALREADY SENT\nSubject: {existing.EmailSubject}\nBody:\n{existing.EmailBody}\n";
+        }
+        if (existing.Ok && !string.IsNullOrWhiteSpace(existing.FollowUp1Subject))
+        {
+            context += $"\n\n## FOLLOW-UP 1 ALREADY SENT\nSubject: {existing.FollowUp1Subject}\nBody:\n{existing.FollowUp1Body}\n";
+        }
+
+        var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactFollowUp2Prompt, "");
+        var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? FollowUp2Prompt() : savedPrompt);
+        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
+        var (subject, body) = ParseEmail(raw);
+        await SaveField(proposalId, "artifact_followup2_subject", subject);
+        await SaveField(proposalId, "artifact_followup2_body", body);
+        return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow };
     }
 
     private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error)> GetContext(Guid proposalId)
@@ -325,6 +386,43 @@ Pricing rules:
 - Never invent or hardcode a price
 
 No generic phrases like ""I came across your post"". Be specific.";
+
+    public static string FollowUp1Prompt() => @"Write a SHORT follow-up email (Follow-up #1) for a freelance software proposal. The initial cold email has already been sent — this is a gentle nudge sent 24 hours later.
+
+Return ONLY valid JSON in this exact format (no markdown, no backticks):
+{""subject"": ""your subject line here"", ""body"": ""full email body here with \n for line breaks""}
+
+Email rules:
+- Start with: Hi [first name only from CLIENT INFO Name field],
+- Subject: short, 5-8 words. Reference the initial email subject — e.g. ""Re: <topic>"" or ""Quick follow-up on <topic>"".
+- Body: MAX 2 short paragraphs, 60-100 words total
+- Paragraph 1: Acknowledge the initial email briefly, then add ONE piece of new value — either a fresh insight, a relevant portfolio link, or a clarifying question about their project. Reference the INITIAL EMAIL ALREADY SENT in context so this feels like a continuation, not a copy.
+- Paragraph 2: A clear, low-friction CTA — propose a 20-min call, or ask one direct question that's easy to reply to with one line.
+- Tone: friendly, confident, not pushy. No apologies (""sorry to bother you"").
+- Do not repeat pricing or timeline from the first email
+- Do not include a name signature in the body — the system appends a signature automatically
+
+Variables you can use in the body: {{name}}, {{first_name}}, {{email}} — only if natural.
+
+Return only the JSON. No preamble.";
+
+    public static string FollowUp2Prompt() => @"Write a final follow-up email (Follow-up #2) for a freelance software proposal. The initial email and Follow-up #1 have already been sent. This is the last nudge, sent 48 hours after the initial.
+
+Return ONLY valid JSON in this exact format (no markdown, no backticks):
+{""subject"": ""your subject line here"", ""body"": ""full email body here with \n for line breaks""}
+
+Email rules:
+- Start with: Hi [first name only from CLIENT INFO Name field],
+- Subject: short, 4-7 words. Use a ""breakup email"" style — e.g. ""Closing the loop"", ""Last note from me"", ""Should I close this out?""
+- Body: MAX 2 short paragraphs, 50-80 words total
+- Paragraph 1: Acknowledge this is the final follow-up. Briefly restate the core value you'd bring — one concrete outcome or a single relevant portfolio reference. Do not rehash the entire pitch.
+- Paragraph 2: A polite, definitive CTA — either ""Let me know if timing isn't right and I'll close this out"" or a soft yes/no question. Make it genuinely easy for them to walk away or say yes.
+- Tone: warm, respectful, zero desperation. No guilt, no urgency tactics.
+- Do not include a name signature in the body — the system appends a signature automatically
+
+Variables you can use in the body: {{name}}, {{first_name}}, {{email}} — only if natural.
+
+Return only the JSON. No preamble.";
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
