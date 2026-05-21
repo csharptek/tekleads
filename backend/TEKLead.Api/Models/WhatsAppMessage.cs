@@ -19,3 +19,13 @@ public class WhatsAppMessage
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
+
+public class WhatsAppInboxThread
+{
+    public string Phone { get; set; } = "";
+    public string? LastMessage { get; set; }
+    public string? LastTemplate { get; set; }
+    public DateTime LastAt { get; set; }
+    public int MessageCount { get; set; }
+    public int UnreadCount { get; set; }
+}

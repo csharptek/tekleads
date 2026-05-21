@@ -432,4 +432,43 @@ public class WhatsAppCloudService
             defaultLanguage  = cfg.tplLang
         };
     }
+
+    public async Task<List<WhatsAppInboxThread>> GetInbox()
+    {
+        var cs = _settings.ConnectionString;
+        if (string.IsNullOrEmpty(cs)) return new();
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+        var rows = await c.QueryAsync<WhatsAppInboxThread>(@"
+            SELECT
+                COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
+                MAX(body) AS LastMessage,
+                MAX(template_name) AS LastTemplate,
+                MAX(created_at) AS LastAt,
+                COUNT(*) AS MessageCount,
+                SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount
+            FROM whatsapp_messages
+            GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
+            ORDER BY MAX(created_at) DESC");
+        return rows.ToList();
+    }
+
+    public async Task<List<WhatsAppMessage>> GetConversation(string phone)
+    {
+        var cs = _settings.ConnectionString;
+        if (string.IsNullOrEmpty(cs)) return new();
+        var clean = new string((phone ?? "").Where(char.IsDigit).ToArray());
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+        var rows = await c.QueryAsync<WhatsAppMessage>(@"
+            SELECT id AS Id, lead_id AS LeadId, proposal_id AS ProposalId, direction AS Direction,
+                   to_phone AS ToPhone, from_phone AS FromPhone, message_type AS MessageType,
+                   template_name AS TemplateName, body AS Body, wamid AS Wamid, status AS Status,
+                   error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload,
+                   created_at AS CreatedAt, updated_at AS UpdatedAt
+            FROM whatsapp_messages
+            WHERE to_phone = @Phone OR from_phone = @Phone
+            ORDER BY created_at ASC", new { Phone = clean });
+        return rows.ToList();
+    }
 }

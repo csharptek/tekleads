@@ -65,6 +65,14 @@ public class WhatsAppController : ControllerBase
     public async Task<IActionResult> Recent([FromQuery] int limit = 50)
         => Ok(await _svc.ListRecent(limit));
 
+    [HttpGet("inbox")]
+    public async Task<IActionResult> Inbox()
+        => Ok(await _svc.GetInbox());
+
+    [HttpGet("conversation/{phone}")]
+    public async Task<IActionResult> Conversation(string phone)
+        => Ok(await _svc.GetConversation(phone));
+
     [HttpGet("lead/{leadId}/messages")]
     public async Task<IActionResult> ByLead(string leadId)
         => Ok(await _svc.ListByLead(leadId));
