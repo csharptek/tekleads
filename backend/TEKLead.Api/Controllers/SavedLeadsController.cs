@@ -29,6 +29,7 @@ public class SavedLeadsController : ControllerBase
         [FromQuery] string? industry,
         [FromQuery] string? country,
         [FromQuery] string? state,
+        [FromQuery] string? phone,
         [FromQuery] string? hasPhone,
         [FromQuery] string? hasEmail,
         [FromQuery] string? savedAfter,
@@ -76,6 +77,12 @@ public class SavedLeadsController : ControllerBase
             {
                 where.Add("location ILIKE @state");
                 p.Add("state", $"%{state}%");
+            }
+            if (!string.IsNullOrWhiteSpace(phone))
+            {
+                var cleanPhone = new string(phone.Where(char.IsDigit).ToArray());
+                where.Add("EXISTS (SELECT 1 FROM unnest(phones) AS ph WHERE regexp_replace(ph, '[^0-9]', '', 'g') LIKE @phone)");
+                p.Add("phone", $"%{cleanPhone}%");
             }
             if (hasPhone == "true")
                 where.Add("array_length(phones, 1) > 0");

@@ -57,7 +57,7 @@ export default function SavedLeadsView() {
 
   const [filters, setFilters] = useState({
     name: "", company: "", title: "", industry: "",
-    country: "", state: "", hasPhone: "", hasEmail: "",
+    country: "", state: "", phone: "", hasPhone: "", hasEmail: "",
     savedAfter: "", savedBefore: "",
   });
   const [sortBy, setSortBy] = useState("saved_at");
@@ -205,6 +205,7 @@ export default function SavedLeadsView() {
               ["industry", "Industry", "e.g. SaaS"],
               ["country", "Country", "e.g. India"],
               ["state", "State / City", "e.g. Chennai"],
+              ["phone", "Phone Number", "e.g. 14155552671"],
             ] as [keyof typeof filters, string, string][]).map(([k, label, ph]) => (
               <div key={k}>
                 <div className="field-label">{label}</div>

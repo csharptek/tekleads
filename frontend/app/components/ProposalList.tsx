@@ -105,8 +105,19 @@ export default function ProposalList({
     .filter(p => {
       if (!search.trim()) return true;
       const s = search.toLowerCase();
-      return p.clientName?.toLowerCase().includes(s) || p.clientCompany?.toLowerCase().includes(s) ||
-        p.jobPostHeadline?.toLowerCase().includes(s) || p.tags?.toLowerCase().includes(s);
+      const sDigits = s.replace(/\D/g, "");
+      // text fields
+      if (p.clientName?.toLowerCase().includes(s) || p.clientCompany?.toLowerCase().includes(s) ||
+        p.jobPostHeadline?.toLowerCase().includes(s) || p.tags?.toLowerCase().includes(s)) return true;
+      // phone search — check contactsJson
+      if (sDigits.length >= 4) {
+        try {
+          const contacts: Contact[] = JSON.parse(p.contactsJson || "[]");
+          if (contacts.some(c => c.phone && c.phone.replace(/\D/g, "").includes(sDigits))) return true;
+        } catch { }
+        if (p.clientEmail && p.clientEmail.replace(/\D/g, "").includes(sDigits)) return true;
+      }
+      return false;
     })
     .sort((a, b) => {
       let va: any = a[sortField as keyof Proposal] ?? "";
@@ -311,7 +322,7 @@ export default function ProposalList({
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         <div style={{ position: "relative", flex: 1 }}>
           <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.4 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input className="input" style={{ paddingLeft: 32 }} placeholder="Search company, client, headline, tags..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <input className="input" style={{ paddingLeft: 32 }} placeholder="Search company, client, phone, headline, tags..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <select className="input" style={{ width: 160 }} value={sortField} onChange={e => setSortField(e.target.value as any)}>
           <option value="createdAt">Date Created</option>
