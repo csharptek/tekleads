@@ -301,7 +301,7 @@ export default function ArtifactsView({
         const res = await api.post<any>("/api/whatsapp/send-template", {
           to: targetPhone,
           proposalId,
-          templateName: "csharptek_intro_v2",
+
           languageCode: "en",
           bodyVariables: [
             firstName || "there",
