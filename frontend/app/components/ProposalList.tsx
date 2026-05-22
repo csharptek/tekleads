@@ -188,11 +188,9 @@ export default function ProposalList({
   const removeContact = (i: number) => setContacts(c => c.filter((_, j) => j !== i));
 
   const handleSyncFromLeads = async () => {
-    if (!drawer?.clientCompany) { setDrawerError("Proposal has no company name to match against."); return; }
     setSyncingLeads(true); setDrawerError(""); setDrawerSuccess("");
     try {
-      const companyLower = drawer.clientCompany.toLowerCase().trim();
-      // Fetch all saved leads — paginate through all pages
+      // Fetch all saved leads
       let allLeads: any[] = [];
       let page = 1;
       while (true) {
@@ -202,31 +200,57 @@ export default function ProposalList({
         if (batch.length < 100) break;
         page++;
       }
-      // Match by company name (case-insensitive, partial match)
-      const matched = allLeads.filter((l: any) => {
-        const lc = (l.company || "").toLowerCase().trim();
-        return lc === companyLower || lc.includes(companyLower) || companyLower.includes(lc);
-      });
+
+      // ── Determine match strategy ──────────────────────────────
+      // 1. Extract domain from primary contact email or drawer.clientEmail
+      const extractDomain = (email: string) => {
+        const parts = email.toLowerCase().trim().split("@");
+        if (parts.length === 2 && parts[1].includes(".")) return parts[1];
+        return null;
+      };
+
+      const PERSONAL_DOMAINS = new Set(["gmail.com","yahoo.com","hotmail.com","outlook.com","icloud.com","aol.com","protonmail.com","live.com","me.com","mail.com"]);
+
+      const primaryEmail = contacts.find(c => c.email)?.email || drawer?.clientEmail || "";
+      const domain = primaryEmail ? extractDomain(primaryEmail) : null;
+      const usableDomain = domain && !PERSONAL_DOMAINS.has(domain) ? domain : null;
+
+      const companyLower = (drawer?.clientCompany || "").toLowerCase().trim();
+
+      let matched: any[] = [];
+      let matchedBy = "";
+
+      if (usableDomain) {
+        // Match by email domain
+        matched = allLeads.filter((l: any) =>
+          (l.emails || []).some((e: string) => extractDomain(e) === usableDomain)
+        );
+        matchedBy = `domain @${usableDomain}`;
+      }
+
+      if (matched.length === 0 && companyLower.length >= 3) {
+        // Fallback: company name prefix match
+        matched = allLeads.filter((l: any) => {
+          const lc = (l.company || "").toLowerCase().trim();
+          if (!lc || lc.length < 3) return false;
+          return lc === companyLower || companyLower.startsWith(lc) || lc.startsWith(companyLower);
+        });
+        matchedBy = `company "${drawer?.clientCompany}"`;
+      }
+
       if (matched.length === 0) {
-        setDrawerSuccess(`No saved leads found matching "${drawer.clientCompany}".`);
+        setDrawerSuccess(`No saved leads found matching ${usableDomain ? `domain @${usableDomain} or ` : ""}company "${drawer?.clientCompany}".`);
         return;
       }
-      // Build new contacts from matched leads, dedupe by email
+
+      // Build contacts, dedupe by email
       const existingEmails = new Set(contacts.map(c => c.email?.toLowerCase()).filter(Boolean));
       const toAdd: Contact[] = [];
       for (const lead of matched) {
         const emails: string[] = lead.emails || [];
         const phones: string[] = lead.phones || [];
-        if (emails.length === 0 && phones.length === 0) {
-          // No contact info — add name-only if not already present by name
-          const alreadyByName = contacts.some(c => c.name?.toLowerCase() === (lead.name || "").toLowerCase());
-          if (!alreadyByName) {
-            toAdd.push({ name: lead.name || "", email: "", phone: phones[0] || "", role: lead.title || "", linkedin: lead.linkedinUrl || "" });
-          }
-          continue;
-        }
+        if (emails.length === 0 && phones.length === 0) continue;
         if (emails.length === 0) {
-          // Phone only
           toAdd.push({ name: lead.name || "", email: "", phone: phones[0] || "", role: lead.title || "", linkedin: lead.linkedinUrl || "" });
           continue;
         }
@@ -237,12 +261,13 @@ export default function ProposalList({
           toAdd.push({ name: lead.name || "", email, phone: phones[i] || phones[0] || "", role: lead.title || "", linkedin: lead.linkedinUrl || "" });
         }
       }
+
       if (toAdd.length === 0) {
         setDrawerSuccess(`All ${matched.length} matched lead(s) already in contacts.`);
         return;
       }
       setContacts(c => [...c, ...toAdd]);
-      setDrawerSuccess(`Added ${toAdd.length} contact(s) from ${matched.length} saved lead(s) matching "${drawer.clientCompany}". Click Save Changes to persist.`);
+      setDrawerSuccess(`Added ${toAdd.length} contact(s) from ${matched.length} saved lead(s) via ${matchedBy}. Click Save Changes to persist.`);
     } catch (e: any) { setDrawerError(e.message); }
     finally { setSyncingLeads(false); }
   };
