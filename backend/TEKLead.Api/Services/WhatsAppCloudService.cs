@@ -17,14 +17,16 @@ public class WhatsAppCloudService
     private readonly HttpClient _http;
     private readonly SettingsService _settings;
     private readonly ILogger<WhatsAppCloudService> _log;
+    private readonly GraphEmailService _email;
 
     private const string DefaultApiVersion = "v22.0";
 
-    public WhatsAppCloudService(HttpClient http, SettingsService settings, ILogger<WhatsAppCloudService> log)
+    public WhatsAppCloudService(HttpClient http, SettingsService settings, ILogger<WhatsAppCloudService> log, GraphEmailService email)
     {
         _http = http;
         _settings = settings;
         _log = log;
+        _email = email;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -418,6 +420,33 @@ public class WhatsAppCloudService
                                     UpdatedAt = DateTime.UtcNow
                                 });
                                 inbound++;
+
+                                // Email notification
+                                _ = Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        var contactName = await GetContactNameByPhone(from);
+                                        var displayName = string.IsNullOrEmpty(contactName) ? $"+{from}" : contactName;
+                                        var msgText = string.IsNullOrEmpty(body) ? $"[{type}]" : body;
+                                        var time = DateTime.UtcNow.ToString("dd MMM yyyy, hh:mm tt") + " UTC";
+                                        var subject = $"New WhatsApp Reply from +{from}";
+                                        var emailBody = $@"You have a new WhatsApp reply on TEKLead AI.
+
+Contact: {displayName}
+Phone: +{from}
+Message: {msgText}
+Time: {time}
+
+Login to TEKLead AI to respond.";
+                                        await _email.SendEmail("bhanu@csharptek.com", "Bhanu", subject, emailBody);
+                                        await _email.SendEmail("manjika.tantia@csharptek.com", "Manjika", subject, emailBody);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _log.LogWarning(ex, "WA reply email notification failed");
+                                    }
+                                });
                             }
                         }
                     }
@@ -502,5 +531,25 @@ public class WhatsAppCloudService
             WHERE to_phone = @Phone OR from_phone = @Phone
             ORDER BY created_at ASC", new { Phone = clean });
         return rows.ToList();
+    }
+
+    private async Task<string> GetContactNameByPhone(string phone)
+    {
+        var cs = _settings.ConnectionString;
+        if (string.IsNullOrEmpty(cs)) return "";
+        try
+        {
+            var clean = new string(phone.Where(char.IsDigit).ToArray());
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+            return await c.QueryFirstOrDefaultAsync<string>(@"
+                SELECT name FROM saved_leads
+                WHERE EXISTS (
+                    SELECT 1 FROM unnest(phones) AS p
+                    WHERE regexp_replace(p, '[^0-9]', '', 'g') = @Clean
+                )
+                LIMIT 1", new { Clean = clean }) ?? "";
+        }
+        catch { return ""; }
     }
 }

@@ -346,9 +346,16 @@ export default function NewProposalView({
     const allPhones: string[] = [];
     const allPhoneNames: string[] = [];
     contacts.forEach(c => {
-      c.checkedEmails.forEach(email => { allEmails.push(email); allEmailNames.push(c.lead.name || ""); });
-      c.checkedPhones.forEach(phone => { allPhones.push(phone); allPhoneNames.push(c.lead.name || ""); });
+      const emails = c.checkedEmails.length > 0 ? c.checkedEmails : c.lead.emails || [];
+      const phones = c.checkedPhones.length > 0 ? c.checkedPhones : c.lead.phones || [];
+      emails.forEach(email => { allEmails.push(email); allEmailNames.push(c.lead.name || ""); });
+      phones.forEach(phone => { allPhones.push(phone); allPhoneNames.push(c.lead.name || ""); });
     });
+    // also include clientEmail if not already present
+    if (form.clientEmail && !allEmails.includes(form.clientEmail)) {
+      allEmails.unshift(form.clientEmail);
+      allEmailNames.unshift(form.clientName || "");
+    }
     onGenerateArtifacts?.({
       proposalId: id,
       proposalHeadline: form.jobPostHeadline || form.jobPostBody.slice(0, 60),
