@@ -142,7 +142,7 @@ export default function SavedLeadsView() {
   };
 
   const clearFilters = () => {
-    setFilters({ name: "", company: "", title: "", industry: "", country: "", state: "", hasPhone: "", hasEmail: "", savedAfter: "", savedBefore: "" });
+    setFilters({ name: "", company: "", title: "", industry: "", country: "", state: "", phone: "", hasPhone: "", hasEmail: "", savedAfter: "", savedBefore: "" });
     setSortBy("saved_at"); setSortDir("desc");
   };
 
