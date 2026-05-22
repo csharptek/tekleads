@@ -115,7 +115,7 @@ public class WhatsAppCloudService
         {
             var parameters = bodyVariables
                 .Where(v => !string.IsNullOrWhiteSpace(v))
-                .Select(v => new { type = "text", text = v.Trim() })
+                .Select(v => new { type = "text", text = System.Text.RegularExpressions.Regex.Replace(v.Trim().Replace("\n", " ").Replace("\r", " ").Replace("\t", " "), @" {5,}", "    ") })
                 .ToArray();
 
             templateObj = new
@@ -458,15 +458,30 @@ public class WhatsAppCloudService
         await c.OpenAsync();
         var rows = await c.QueryAsync<WhatsAppInboxThread>(@"
             SELECT
-                COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
-                MAX(body) AS LastMessage,
-                MAX(template_name) AS LastTemplate,
-                MAX(created_at) AS LastAt,
-                COUNT(*) AS MessageCount,
-                SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount
-            FROM whatsapp_messages
-            GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
-            ORDER BY MAX(created_at) DESC");
+                w.Phone,
+                sl.name AS ContactName,
+                w.LastMessage,
+                w.LastTemplate,
+                w.LastAt,
+                w.MessageCount,
+                w.UnreadCount
+            FROM (
+                SELECT
+                    COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
+                    MAX(body) AS LastMessage,
+                    MAX(template_name) AS LastTemplate,
+                    MAX(created_at) AS LastAt,
+                    COUNT(*) AS MessageCount,
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount
+                FROM whatsapp_messages
+                GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
+            ) w
+            LEFT JOIN saved_leads sl
+                ON EXISTS (
+                    SELECT 1 FROM unnest(sl.phones) AS p
+                    WHERE regexp_replace(p, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+                )
+            ORDER BY w.LastAt DESC");
         return rows.ToList();
     }
 

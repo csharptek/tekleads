@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 
 interface Thread {
   phone: string;
+  contactName: string | null;
   lastMessage: string | null;
   lastTemplate: string | null;
   lastAt: string;
@@ -130,7 +131,9 @@ export default function WhatsAppInboxView() {
                 transition: "background 0.1s"
               }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>+{t.phone}</div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>
+                  {t.contactName || `+${t.phone}`}
+                </div>
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>{fmtTime(t.lastAt)}</div>
               </div>
               <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -163,8 +166,8 @@ export default function WhatsAppInboxView() {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
               </div>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>+{selected.phone}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)" }}>{selected.messageCount} messages</div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{selected.contactName || `+${selected.phone}`}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)" }}>+{selected.phone} · {selected.messageCount} messages</div>
               </div>
               <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => loadConversation(selected.phone)}>↻ Refresh</button>
             </div>

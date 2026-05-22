@@ -23,6 +23,7 @@ public class WhatsAppMessage
 public class WhatsAppInboxThread
 {
     public string Phone { get; set; } = "";
+    public string? ContactName { get; set; }
     public string? LastMessage { get; set; }
     public string? LastTemplate { get; set; }
     public DateTime LastAt { get; set; }
