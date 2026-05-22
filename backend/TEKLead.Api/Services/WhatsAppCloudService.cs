@@ -384,6 +384,23 @@ public class WhatsAppCloudService
                             if (type == "text" && m.TryGetProperty("text", out var tx) &&
                                 tx.TryGetProperty("body", out var bEl))
                                 body = bEl.GetString() ?? "";
+                            else if (type == "button" && m.TryGetProperty("button", out var btn) &&
+                                btn.TryGetProperty("text", out var btEl))
+                                body = btEl.GetString() ?? "";
+                            else if (type == "interactive" && m.TryGetProperty("interactive", out var intr))
+                            {
+                                var iType = intr.TryGetProperty("type", out var itEl) ? itEl.GetString() : "";
+                                if (iType == "button_reply" && intr.TryGetProperty("button_reply", out var br) &&
+                                    br.TryGetProperty("title", out var brT))
+                                    body = brT.GetString() ?? "";
+                                else if (iType == "list_reply" && intr.TryGetProperty("list_reply", out var lr) &&
+                                    lr.TryGetProperty("title", out var lrT))
+                                    body = lrT.GetString() ?? "";
+                            }
+                            else if (type == "image" || type == "video" || type == "audio" || type == "document")
+                                body = $"[{type}]";
+                            if (string.IsNullOrEmpty(body) && !string.IsNullOrEmpty(type))
+                                body = $"[{type}]";
 
                             if (!string.IsNullOrEmpty(cs))
                             {
