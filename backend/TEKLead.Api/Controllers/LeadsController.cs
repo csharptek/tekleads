@@ -91,7 +91,7 @@ public class LeadsController : ControllerBase
             var (emails, phones, fullName, location, linkedinUrl) = await _apollo.Enrich(lead.ApolloId, webhookUrl);
 
             var updated = false;
-            if (!string.IsNullOrEmpty(fullName) && string.IsNullOrEmpty(lead.Name)) { lead.Name = fullName; updated = true; }
+            if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
             if (!string.IsNullOrEmpty(location) && string.IsNullOrEmpty(lead.Location)) { lead.Location = location; updated = true; }
             if (emails.Length > 0) { var merged = MergeStrings(lead.Emails, emails); if (!Same(lead.Emails, merged)) { lead.Emails = merged; updated = true; } }
             if (phones.Length > 0) { var merged = MergeStrings(lead.Phones, phones); if (!Same(lead.Phones, merged)) { lead.Phones = merged; updated = true; } }
@@ -129,7 +129,7 @@ public class LeadsController : ControllerBase
             var (emails, fullName, location, linkedinUrl) = await _apollo.EnrichEmailOnly(lead.ApolloId);
 
             var updated = false;
-            if (!string.IsNullOrEmpty(fullName) && string.IsNullOrEmpty(lead.Name)) { lead.Name = fullName; updated = true; }
+            if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
             if (!string.IsNullOrEmpty(location) && string.IsNullOrEmpty(lead.Location)) { lead.Location = location; updated = true; }
             if (emails.Length > 0) { var merged = MergeStrings(lead.Emails, emails); if (!Same(lead.Emails, merged)) { lead.Emails = merged; updated = true; } }
             if (!string.IsNullOrEmpty(linkedinUrl) && string.IsNullOrEmpty(lead.LinkedinUrl)) { lead.LinkedinUrl = linkedinUrl; updated = true; }
@@ -165,7 +165,7 @@ public class LeadsController : ControllerBase
             var (phones, fullName, location, linkedinUrl) = await _apollo.EnrichPhoneOnly(lead.ApolloId, webhookUrl);
 
             var updated = false;
-            if (!string.IsNullOrEmpty(fullName) && string.IsNullOrEmpty(lead.Name)) { lead.Name = fullName; updated = true; }
+            if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
             if (!string.IsNullOrEmpty(location) && string.IsNullOrEmpty(lead.Location)) { lead.Location = location; updated = true; }
             if (phones.Length > 0) { var merged = MergeStrings(lead.Phones, phones); if (!Same(lead.Phones, merged)) { lead.Phones = merged; updated = true; } }
             if (!string.IsNullOrEmpty(linkedinUrl) && string.IsNullOrEmpty(lead.LinkedinUrl)) { lead.LinkedinUrl = linkedinUrl; updated = true; }
