@@ -20,7 +20,8 @@ public class GraphEmailService
         string toName,
         string subject,
         string body,
-        string? signature = null)
+        string? signature = null,
+        string? fromEmailOverride = null)
     {
         try
         {
@@ -28,7 +29,7 @@ public class GraphEmailService
             var tenantId = s.GetValueOrDefault(SettingKeys.GraphTenantId, "");
             var clientId = s.GetValueOrDefault(SettingKeys.GraphClientId, "");
             var clientSecret = s.GetValueOrDefault(SettingKeys.GraphClientSecret, "");
-            var senderEmail = s.GetValueOrDefault(SettingKeys.GraphSenderEmail, "");
+            var senderEmail = fromEmailOverride ?? s.GetValueOrDefault(SettingKeys.GraphSenderEmail, "");
 
             if (string.IsNullOrWhiteSpace(tenantId) || string.IsNullOrWhiteSpace(clientId) ||
                 string.IsNullOrWhiteSpace(clientSecret) || string.IsNullOrWhiteSpace(senderEmail))

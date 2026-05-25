@@ -111,7 +111,7 @@ public class EmailSendWorker : BackgroundService
                     sig = settings.GetValueOrDefault("email_signature", "");
                 }
 
-                var (ok, error) = await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig);
+                var (ok, error) = await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig, "manjika.tantia@csharptek.com");
 
                 if (ok)
                 {
