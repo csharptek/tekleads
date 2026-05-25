@@ -1,4 +1,4 @@
-// DEPLOY-CHECK: whatsapp-cloud-v1-20260520
+// DEPLOY-CHECK: whatsapp-cloud-v2-hr-inbox-20260525
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -8,10 +8,6 @@ using TEKLead.Api.Models;
 
 namespace TEKLead.Api.Services;
 
-/// <summary>
-/// WhatsApp Business Cloud API (Meta) integration.
-/// Docs: https://developers.facebook.com/docs/whatsapp/cloud-api
-/// </summary>
 public class WhatsAppCloudService
 {
     private readonly HttpClient _http;
@@ -58,13 +54,35 @@ public class WhatsAppCloudService
                 error_code TEXT NULL,
                 error_message TEXT NULL,
                 raw_payload TEXT NULL,
+                inbox_type TEXT NOT NULL DEFAULT 'sales',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )");
         await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_lead ON whatsapp_messages (lead_id)");
         await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_wamid ON whatsapp_messages (wamid)");
         await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_created ON whatsapp_messages (created_at DESC)");
+        await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_inbox_type ON whatsapp_messages (inbox_type)");
+        // Migration: add inbox_type if table already existed without it
+        await c.ExecuteAsync(@"
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='whatsapp_messages' AND column_name='inbox_type'
+                ) THEN
+                    ALTER TABLE whatsapp_messages ADD COLUMN inbox_type TEXT NOT NULL DEFAULT 'sales';
+                END IF;
+            END$$");
         _log.LogInformation("WhatsAppCloud schema OK.");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Routing: +91 → HR inbox
+    // ─────────────────────────────────────────────────────────────
+    private static string ResolveInboxType(string phone)
+    {
+        var clean = new string((phone ?? "").Where(char.IsDigit).ToArray());
+        return (clean.StartsWith("91") && clean.Length >= 12) ? "hr" : "sales";
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -112,47 +130,26 @@ public class WhatsAppCloudService
         var lang = string.IsNullOrWhiteSpace(langCode) ? cfg.tplLang : langCode!;
 
         object templateObj;
-
         if (bodyVariables != null && bodyVariables.Count > 0)
         {
             var parameters = bodyVariables
                 .Where(v => !string.IsNullOrWhiteSpace(v))
                 .Select(v => new { type = "text", text = System.Text.RegularExpressions.Regex.Replace(v.Trim().Replace("\n", " ").Replace("\r", " ").Replace("\t", " "), @" {5,}", "    ") })
                 .ToArray();
-
-            templateObj = new
-            {
-                name = tpl,
-                language = new { code = lang },
-                components = new[]
-                {
-                    new { type = "body", parameters }
-                }
-            };
+            templateObj = new { name = tpl, language = new { code = lang }, components = new[] { new { type = "body", parameters } } };
         }
         else
         {
-            templateObj = new
-            {
-                name = tpl,
-                language = new { code = lang }
-            };
+            templateObj = new { name = tpl, language = new { code = lang } };
         }
 
-        var payload = new
-        {
-            messaging_product = "whatsapp",
-            to = phone,
-            type = "template",
-            template = templateObj
-        };
-
+        var payload = new { messaging_product = "whatsapp", to = phone, type = "template", template = templateObj };
         var url = $"https://graph.facebook.com/{cfg.version}/{cfg.phoneId}/messages";
         return await Post(url, cfg.token, payload, phone, "template", tpl, null, leadId, proposalId);
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Send free-form text (only valid inside 24hr customer service window)
+    // Send free-form text
     // ─────────────────────────────────────────────────────────────
     public async Task<(bool Ok, string Wamid, string Error, string RawResponse)> SendText(
         string toPhone,
@@ -168,15 +165,7 @@ public class WhatsAppCloudService
         if (string.IsNullOrWhiteSpace(phone)) return (false, "", "Recipient phone is empty.", "");
         if (string.IsNullOrWhiteSpace(body)) return (false, "", "Message body is empty.", "");
 
-        var payload = new
-        {
-            messaging_product = "whatsapp",
-            recipient_type = "individual",
-            to = phone,
-            type = "text",
-            text = new { preview_url = false, body = body }
-        };
-
+        var payload = new { messaging_product = "whatsapp", recipient_type = "individual", to = phone, type = "text", text = new { preview_url = false, body = body } };
         var url = $"https://graph.facebook.com/{cfg.version}/{cfg.phoneId}/messages";
         return await Post(url, cfg.token, payload, phone, "text", null, body, leadId, proposalId);
     }
@@ -233,10 +222,10 @@ public class WhatsAppCloudService
             _log.LogError(ex, "WA Cloud send exception");
         }
 
-        // Persist
+        // Outbound messages from TEKLead are sales-context
         try
         {
-            await SaveOutbound(new WhatsAppMessage
+            await SaveMessage(new WhatsAppMessage
             {
                 Id = Guid.NewGuid().ToString(),
                 LeadId = leadId,
@@ -250,6 +239,7 @@ public class WhatsAppCloudService
                 Status = ok ? "sent" : "failed",
                 ErrorMessage = ok ? null : err,
                 RawPayload = raw,
+                InboxType = "sales",
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
@@ -265,7 +255,7 @@ public class WhatsAppCloudService
     // ─────────────────────────────────────────────────────────────
     // Persistence
     // ─────────────────────────────────────────────────────────────
-    public async Task SaveOutbound(WhatsAppMessage m)
+    public async Task SaveMessage(WhatsAppMessage m)
     {
         var cs = _settings.ConnectionString;
         if (string.IsNullOrEmpty(cs)) return;
@@ -274,12 +264,15 @@ public class WhatsAppCloudService
         await c.ExecuteAsync(@"
             INSERT INTO whatsapp_messages
                 (id, lead_id, proposal_id, direction, to_phone, from_phone, message_type, template_name,
-                 body, wamid, status, error_code, error_message, raw_payload, created_at, updated_at)
+                 body, wamid, status, error_code, error_message, raw_payload, inbox_type, created_at, updated_at)
             VALUES
                 (@Id, @LeadId, @ProposalId, @Direction, @ToPhone, @FromPhone, @MessageType, @TemplateName,
-                 @Body, @Wamid, @Status, @ErrorCode, @ErrorMessage, @RawPayload, @CreatedAt, @UpdatedAt)",
+                 @Body, @Wamid, @Status, @ErrorCode, @ErrorMessage, @RawPayload, @InboxType, @CreatedAt, @UpdatedAt)",
             m);
     }
+
+    // Keep old name as alias for callers that still use it
+    public Task SaveOutbound(WhatsAppMessage m) => SaveMessage(m);
 
     public async Task<List<WhatsAppMessage>> ListByLead(string leadId)
     {
@@ -292,7 +285,7 @@ public class WhatsAppCloudService
                    to_phone AS ToPhone, from_phone AS FromPhone, message_type AS MessageType,
                    template_name AS TemplateName, body AS Body, wamid AS Wamid, status AS Status,
                    error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload,
-                   created_at AS CreatedAt, updated_at AS UpdatedAt
+                   inbox_type AS InboxType, created_at AS CreatedAt, updated_at AS UpdatedAt
             FROM whatsapp_messages
             WHERE lead_id = @LeadId
             ORDER BY created_at DESC", new { LeadId = leadId });
@@ -310,7 +303,7 @@ public class WhatsAppCloudService
                    to_phone AS ToPhone, from_phone AS FromPhone, message_type AS MessageType,
                    template_name AS TemplateName, body AS Body, wamid AS Wamid, status AS Status,
                    error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload,
-                   created_at AS CreatedAt, updated_at AS UpdatedAt
+                   inbox_type AS InboxType, created_at AS CreatedAt, updated_at AS UpdatedAt
             FROM whatsapp_messages
             ORDER BY created_at DESC
             LIMIT @Limit", new { Limit = limit });
@@ -318,7 +311,7 @@ public class WhatsAppCloudService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Webhook ingestion (status updates + inbound messages)
+    // Webhook ingestion
     // ─────────────────────────────────────────────────────────────
     public async Task<(bool Ok, string Note)> IngestWebhook(string rawBody)
     {
@@ -383,20 +376,16 @@ public class WhatsAppCloudService
                             var from = m.TryGetProperty("from", out var fEl) ? fEl.GetString() ?? "" : "";
                             var type = m.TryGetProperty("type", out var tEl) ? tEl.GetString() ?? "" : "";
                             string body = "";
-                            if (type == "text" && m.TryGetProperty("text", out var tx) &&
-                                tx.TryGetProperty("body", out var bEl))
+                            if (type == "text" && m.TryGetProperty("text", out var tx) && tx.TryGetProperty("body", out var bEl))
                                 body = bEl.GetString() ?? "";
-                            else if (type == "button" && m.TryGetProperty("button", out var btn) &&
-                                btn.TryGetProperty("text", out var btEl))
+                            else if (type == "button" && m.TryGetProperty("button", out var btn) && btn.TryGetProperty("text", out var btEl))
                                 body = btEl.GetString() ?? "";
                             else if (type == "interactive" && m.TryGetProperty("interactive", out var intr))
                             {
                                 var iType = intr.TryGetProperty("type", out var itEl) ? itEl.GetString() : "";
-                                if (iType == "button_reply" && intr.TryGetProperty("button_reply", out var br) &&
-                                    br.TryGetProperty("title", out var brT))
+                                if (iType == "button_reply" && intr.TryGetProperty("button_reply", out var br) && br.TryGetProperty("title", out var brT))
                                     body = brT.GetString() ?? "";
-                                else if (iType == "list_reply" && intr.TryGetProperty("list_reply", out var lr) &&
-                                    lr.TryGetProperty("title", out var lrT))
+                                else if (iType == "list_reply" && intr.TryGetProperty("list_reply", out var lr) && lr.TryGetProperty("title", out var lrT))
                                     body = lrT.GetString() ?? "";
                             }
                             else if (type == "image" || type == "video" || type == "audio" || type == "document")
@@ -404,9 +393,12 @@ public class WhatsAppCloudService
                             if (string.IsNullOrEmpty(body) && !string.IsNullOrEmpty(type))
                                 body = $"[{type}]";
 
+                            // Determine inbox routing
+                            var inboxType = ResolveInboxType(from);
+
                             if (!string.IsNullOrEmpty(cs))
                             {
-                                await SaveOutbound(new WhatsAppMessage
+                                await SaveMessage(new WhatsAppMessage
                                 {
                                     Id = Guid.NewGuid().ToString(),
                                     Direction = "inbound",
@@ -416,35 +408,39 @@ public class WhatsAppCloudService
                                     Wamid = wamid,
                                     Status = "received",
                                     RawPayload = m.GetRawText(),
+                                    InboxType = inboxType,
                                     CreatedAt = DateTime.UtcNow,
                                     UpdatedAt = DateTime.UtcNow
                                 });
                                 inbound++;
 
-                                // Email notification
+                                var capturedFrom = from;
+                                var capturedBody = body;
+                                var capturedType = type;
+                                var capturedInboxType = inboxType;
+
                                 _ = Task.Run(async () =>
                                 {
                                     try
                                     {
-                                        var contactName = await GetContactNameByPhone(from);
-                                        var displayName = string.IsNullOrEmpty(contactName) ? $"+{from}" : contactName;
-                                        var msgText = string.IsNullOrEmpty(body) ? $"[{type}]" : body;
+                                        var contactName = await GetContactNameByPhone(capturedFrom);
+                                        var displayName = string.IsNullOrEmpty(contactName) ? $"+{capturedFrom}" : contactName;
+                                        var msgText = string.IsNullOrEmpty(capturedBody) ? $"[{capturedType}]" : capturedBody;
                                         var time = DateTime.UtcNow.ToString("dd MMM yyyy, hh:mm tt") + " UTC";
-                                        var subject = $"New WhatsApp Reply from +{from}";
+                                        var subject = $"New WhatsApp Reply from +{capturedFrom}";
                                         var emailBody = $@"You have a new WhatsApp reply on TEKLead AI.
 
 Contact: {displayName}
-Phone: +{from}
+Phone: +{capturedFrom}
 Message: {msgText}
 Time: {time}
 
 Login to TEKLead AI to respond.";
-                                        // +91 (India) → HR routing; all others → default recipients
-                                        var isIndiaNumber = from.StartsWith("91") && from.Length >= 12;
-                                        if (isIndiaNumber)
+
+                                        if (capturedInboxType == "hr")
                                         {
+                                            await _email.SendEmail("hr@csharptek.com", "HR Team", subject, emailBody);
                                             await _email.SendEmail("amrita.rani@csharptek.com", "Amrita", subject, emailBody);
-                                            await _email.SendEmail("hr@csharptek.com", "HR", subject, emailBody);
                                         }
                                         else
                                         {
@@ -473,7 +469,7 @@ Login to TEKLead AI to respond.";
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Status snapshot
+    // Status
     // ─────────────────────────────────────────────────────────────
     public async Task<object> Status()
     {
@@ -489,7 +485,10 @@ Login to TEKLead AI to respond.";
         };
     }
 
-    public async Task<List<WhatsAppInboxThread>> GetInbox()
+    // ─────────────────────────────────────────────────────────────
+    // Inbox — scoped by inbox type
+    // ─────────────────────────────────────────────────────────────
+    public async Task<List<WhatsAppInboxThread>> GetInbox(string inboxType = "sales")
     {
         var cs = _settings.ConnectionString;
         if (string.IsNullOrEmpty(cs)) return new();
@@ -503,7 +502,8 @@ Login to TEKLead AI to respond.";
                 w.LastTemplate,
                 w.LastAt,
                 w.MessageCount,
-                w.UnreadCount
+                w.UnreadCount,
+                w.InboxType
             FROM (
                 SELECT
                     COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
@@ -511,8 +511,10 @@ Login to TEKLead AI to respond.";
                     MAX(template_name) AS LastTemplate,
                     MAX(created_at) AS LastAt,
                     COUNT(*) AS MessageCount,
-                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount,
+                    MAX(inbox_type) AS InboxType
                 FROM whatsapp_messages
+                WHERE inbox_type = @InboxType
                 GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
             ) w
             LEFT JOIN saved_leads sl
@@ -520,10 +522,13 @@ Login to TEKLead AI to respond.";
                     SELECT 1 FROM unnest(sl.phones) AS p
                     WHERE regexp_replace(p, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
                 )
-            ORDER BY w.LastAt DESC");
+            ORDER BY w.LastAt DESC", new { InboxType = inboxType });
         return rows.ToList();
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Conversation — unchanged (phone-scoped, inbox-agnostic)
+    // ─────────────────────────────────────────────────────────────
     public async Task<List<WhatsAppMessage>> GetConversation(string phone)
     {
         var cs = _settings.ConnectionString;
@@ -536,7 +541,7 @@ Login to TEKLead AI to respond.";
                    to_phone AS ToPhone, from_phone AS FromPhone, message_type AS MessageType,
                    template_name AS TemplateName, body AS Body, wamid AS Wamid, status AS Status,
                    error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload,
-                   created_at AS CreatedAt, updated_at AS UpdatedAt
+                   inbox_type AS InboxType, created_at AS CreatedAt, updated_at AS UpdatedAt
             FROM whatsapp_messages
             WHERE to_phone = @Phone OR from_phone = @Phone
             ORDER BY created_at ASC", new { Phone = clean });

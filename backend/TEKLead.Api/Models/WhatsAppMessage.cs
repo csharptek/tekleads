@@ -11,11 +11,12 @@ public class WhatsAppMessage
     public string MessageType { get; set; } = "template"; // template | text
     public string? TemplateName { get; set; }
     public string? Body { get; set; }
-    public string? Wamid { get; set; } // WhatsApp message id from Meta
-    public string Status { get; set; } = "queued"; // queued | sent | delivered | read | failed | received
+    public string? Wamid { get; set; }
+    public string Status { get; set; } = "queued";
     public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
     public string? RawPayload { get; set; }
+    public string InboxType { get; set; } = "sales"; // sales | hr
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -29,4 +30,5 @@ public class WhatsAppInboxThread
     public DateTime LastAt { get; set; }
     public int MessageCount { get; set; }
     public int UnreadCount { get; set; }
+    public string InboxType { get; set; } = "sales";
 }

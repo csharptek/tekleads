@@ -20,7 +20,7 @@ public class WhatsAppController : ControllerBase
     }
 
     [HttpGet("version")]
-    public IActionResult Version() => Ok(new { version = "whatsapp-cloud-v1-20260520" });
+    public IActionResult Version() => Ok(new { version = "whatsapp-cloud-v2-hr-inbox-20260525" });
 
     [HttpGet("status")]
     public async Task<IActionResult> Status() => Ok(await _svc.Status());
@@ -66,8 +66,8 @@ public class WhatsAppController : ControllerBase
         => Ok(await _svc.ListRecent(limit));
 
     [HttpGet("inbox")]
-    public async Task<IActionResult> Inbox()
-        => Ok(await _svc.GetInbox());
+    public async Task<IActionResult> Inbox([FromQuery] string inbox = "sales")
+        => Ok(await _svc.GetInbox(inbox));
 
     [HttpGet("conversation/{phone}")]
     public async Task<IActionResult> Conversation(string phone)
