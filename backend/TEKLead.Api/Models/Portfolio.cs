@@ -11,6 +11,7 @@ public class PortfolioProject
     public string TechStack { get; set; } = "";
     public string Outcomes { get; set; } = "";
     public string Links { get; set; } = "";
+    public string YoutubeLinks { get; set; } = "";
     public bool EmbeddingIndexed { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

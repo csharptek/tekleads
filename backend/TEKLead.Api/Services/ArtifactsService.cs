@@ -233,6 +233,11 @@ public class ArtifactsService
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? FollowUp1Prompt() : savedPrompt);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
+        // Force subject to match initial email for inbox threading
+        var fu1ExistingForSubject = await GetExisting(proposalId);
+        if (!string.IsNullOrWhiteSpace(fu1ExistingForSubject.EmailSubject))
+            subject = "Re: " + fu1ExistingForSubject.EmailSubject;
+
         await SaveField(proposalId, "artifact_followup1_subject", subject);
         await SaveField(proposalId, "artifact_followup1_body", body);
         return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow };
@@ -258,6 +263,11 @@ public class ArtifactsService
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? FollowUp2Prompt() : savedPrompt);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
+        // Force subject to match initial email for inbox threading
+        var fu2ExistingForSubject = await GetExisting(proposalId);
+        if (!string.IsNullOrWhiteSpace(fu2ExistingForSubject.EmailSubject))
+            subject = "Re: " + fu2ExistingForSubject.EmailSubject;
+
         await SaveField(proposalId, "artifact_followup2_subject", subject);
         await SaveField(proposalId, "artifact_followup2_body", body);
         return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow };
@@ -370,12 +380,12 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 Email rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
 - Subject: specific, 8-12 words, references their project
-- Body: 150-200 words
+- Body: 100-130 words MAX — keep it tight
 - Professional tone
-- Para 1: show you understand their specific problem
-- Para 2: 1-2 relevant portfolio references with outcomes
-- Para 3: proposed approach in 2 sentences. Use the timeline and pricing from the PROPOSAL PRICING & TIMELINE section in the context. If FinalPrice is set, quote that exact amount. If only a budget range is set, quote within that range. Mention AI-assisted development (Claude Code, GitHub Copilot) as the reason for the competitive rate.
-- CTA: suggest a 20-min call
+- Para 1 (2 sentences): show you understand their specific problem
+- Para 2 (1-2 sentences): ONE most relevant portfolio reference with outcome. If a YouTube Demo link exists for that project in context, include it inline as: Demo: [url]
+- Para 3 (1 sentence): proposed approach + pricing. Use the timeline and pricing from the PROPOSAL PRICING & TIMELINE section. If FinalPrice is set, quote that exact amount. If only a budget range is set, quote within that range. Mention AI-assisted development as the reason for the competitive rate.
+- CTA (1 sentence): suggest a 20-min call
 - Do not include any name or company signature
 
 Pricing rules:
@@ -394,7 +404,7 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 
 Email rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
-- Subject: short, 5-8 words. Reference the initial email subject — e.g. ""Re: <topic>"" or ""Quick follow-up on <topic>"".
+- Subject: write any placeholder — it will be automatically set to ""Re: <initial subject>"" by the system for inbox threading.
 - Body: MAX 2 short paragraphs, 60-100 words total
 - Paragraph 1: Acknowledge the initial email briefly, then add ONE piece of new value — either a fresh insight, a relevant portfolio link, or a clarifying question about their project. Reference the INITIAL EMAIL ALREADY SENT in context so this feels like a continuation, not a copy.
 - Paragraph 2: A clear, low-friction CTA — propose a 20-min call, or ask one direct question that's easy to reply to with one line.
@@ -413,7 +423,7 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 
 Email rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
-- Subject: short, 4-7 words. Use a ""breakup email"" style — e.g. ""Closing the loop"", ""Last note from me"", ""Should I close this out?""
+- Subject: write any placeholder — it will be automatically set to ""Re: <initial subject>"" by the system for inbox threading.
 - Body: MAX 2 short paragraphs, 50-80 words total
 - Paragraph 1: Acknowledge this is the final follow-up. Briefly restate the core value you'd bring — one concrete outcome or a single relevant portfolio reference. Do not rehash the entire pitch.
 - Paragraph 2: A polite, definitive CTA — either ""Let me know if timing isn't right and I'll close this out"" or a soft yes/no question. Make it genuinely easy for them to walk away or say yes.
@@ -471,6 +481,7 @@ Return only the JSON. No preamble.";
                 if (!string.IsNullOrWhiteSpace(proj.Solution)) sb.AppendLine($"Solution: {proj.Solution}");
                 if (!string.IsNullOrWhiteSpace(proj.Outcomes)) sb.AppendLine($"Outcomes: {proj.Outcomes}");
                 if (!string.IsNullOrWhiteSpace(proj.Links))    sb.AppendLine($"Links: {proj.Links}");
+                if (!string.IsNullOrWhiteSpace(proj.YoutubeLinks)) sb.AppendLine($"YouTube Demo: {proj.YoutubeLinks}");
             }
         }
 

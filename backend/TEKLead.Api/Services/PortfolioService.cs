@@ -44,6 +44,9 @@ public class PortfolioService
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )");
 
+        // Migration: add youtube_links if not exists
+        try { await c.ExecuteAsync("ALTER TABLE portfolio_projects ADD COLUMN IF NOT EXISTS youtube_links TEXT NOT NULL DEFAULT \'\'"); } catch { }
+
         _log.LogInformation("portfolio_projects table ready.");
     }
 
@@ -81,9 +84,9 @@ public class PortfolioService
 
         await c.ExecuteAsync(@"
             INSERT INTO portfolio_projects
-                (id, title, industry, tags, problem, solution, tech_stack, outcomes, links, embedding_indexed, created_at)
+                (id, title, industry, tags, problem, solution, tech_stack, outcomes, links, youtube_links, embedding_indexed, created_at)
             VALUES
-                (@Id, @Title, @Industry, @Tags, @Problem, @Solution, @TechStack, @Outcomes, @Links, @EmbeddingIndexed, @CreatedAt)
+                (@Id, @Title, @Industry, @Tags, @Problem, @Solution, @TechStack, @Outcomes, @Links, @YoutubeLinks, @EmbeddingIndexed, @CreatedAt)
             ON CONFLICT (id) DO UPDATE SET
                 title = EXCLUDED.title,
                 industry = EXCLUDED.industry,
@@ -93,11 +96,12 @@ public class PortfolioService
                 tech_stack = EXCLUDED.tech_stack,
                 outcomes = EXCLUDED.outcomes,
                 links = EXCLUDED.links,
+                youtube_links = EXCLUDED.youtube_links,
                 embedding_indexed = EXCLUDED.embedding_indexed",
             new
             {
                 p.Id, p.Title, p.Industry, Tags = p.Tags,
-                p.Problem, p.Solution, p.TechStack, p.Outcomes, p.Links,
+                p.Problem, p.Solution, p.TechStack, p.Outcomes, p.Links, p.YoutubeLinks,
                 p.EmbeddingIndexed, p.CreatedAt
             });
 
@@ -576,6 +580,7 @@ DOCUMENT:
         TechStack        = r.tech_stack ?? "",
         Outcomes         = r.outcomes ?? "",
         Links            = r.links ?? "",
+        YoutubeLinks     = r.youtube_links ?? "",
         EmbeddingIndexed = r.embedding_indexed ?? false,
         CreatedAt        = r.created_at,
     };

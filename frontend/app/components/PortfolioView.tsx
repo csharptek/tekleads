@@ -19,7 +19,7 @@ interface Project {
 interface FormState {
   title: string; industry: string; tags: string[];
   problem: string; solution: string; techStack: string;
-  outcomes: string; links: string[];
+  outcomes: string; links: string[]; youtubeLinks: string[];
 }
 
 type ViewMode = "card" | "list";
@@ -27,7 +27,7 @@ type SortKey = "date" | "title" | "indexed";
 
 const empty = (): FormState => ({
   title: "", industry: "", tags: [], problem: "",
-  solution: "", techStack: "", outcomes: "", links: [""],
+  solution: "", techStack: "", outcomes: "", links: [""], youtubeLinks: [""],
 });
 
 function Banner({ b, onClose }: { b: { kind: "error" | "success" | "info"; text: string }; onClose: () => void }) {
@@ -98,10 +98,14 @@ export default function PortfolioView() {
     const linksArr = Array.isArray(p.links)
       ? p.links
       : (typeof p.links === "string" && p.links ? p.links.split("\n").filter(Boolean) : [""]);
+    const ytLinksArr = Array.isArray(p.youtubeLinks)
+      ? p.youtubeLinks
+      : (typeof p.youtubeLinks === "string" && p.youtubeLinks ? p.youtubeLinks.split("\n").filter(Boolean) : [""]);
     setForm({
       title: p.title, industry: p.industry, tags: p.tags, problem: p.problem,
       solution: p.solution, techStack: p.techStack, outcomes: p.outcomes,
       links: linksArr.length ? linksArr : [""],
+      youtubeLinks: ytLinksArr.length ? ytLinksArr : [""],
     });
     setShowForm(true);
     setTimeout(() => {
@@ -132,6 +136,7 @@ export default function PortfolioView() {
         problem: p.problem || "", solution: p.solution || "",
         techStack: p.techStack || "", outcomes: p.outcomes || "",
         links: linksArr.length ? linksArr : [""],
+        youtubeLinks: [""],
       });
       setShowForm(true);
       setBanner({ kind: "success", text: "Fields extracted — review and save." });
@@ -144,7 +149,7 @@ export default function PortfolioView() {
   async function handleSubmit() {
     if (!form.title.trim()) { setBanner({ kind: "error", text: "Title is required." }); return; }
     setLoading(true);
-    const payload = { ...form, links: form.links.filter(l => l.trim()).join("\n") };
+    const payload = { ...form, links: form.links.filter(l => l.trim()).join("\n"), youtubeLinks: form.youtubeLinks.filter(l => l.trim()).join("\n") };
     try {
       let savedId = editId;
       if (editId) {
@@ -467,6 +472,12 @@ export default function PortfolioView() {
                     ↗ {arr.length > 1 ? `Link ${i + 1}` : "Link"}
                   </a>
                 ))}
+                {p.youtubeLinks && p.youtubeLinks.split("\n").filter(Boolean).map((url, i, arr) => (
+                  <a key={"yt-" + i} href={url} target="_blank" rel="noreferrer"
+                    className="btn btn-ghost btn-sm" style={{ textDecoration: "none", fontSize: 11, color: "#ff4444" }}>
+                    ▶ {arr.length > 1 ? `Demo ${i + 1}` : "Demo"}
+                  </a>
+                ))}
                 {deleteConfirmId === p.id ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
                     <span style={{ fontSize: 11, color: "var(--red)" }}>Delete?</span>
@@ -576,6 +587,19 @@ export default function PortfolioView() {
                                   <a key={li} href={url} target="_blank" rel="noreferrer"
                                     className="btn btn-ghost btn-sm" style={{ fontSize: 11, textDecoration: "none" }}>
                                     ↗ Link {li + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {p.youtubeLinks && p.youtubeLinks.split("\n").filter(Boolean).length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#ff4444", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>YouTube Demos</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {p.youtubeLinks.split("\n").filter(Boolean).map((url, li) => (
+                                  <a key={li} href={url} target="_blank" rel="noreferrer"
+                                    className="btn btn-ghost btn-sm" style={{ fontSize: 11, textDecoration: "none", color: "#ff4444" }}>
+                                    ▶ Demo {li + 1}
                                   </a>
                                 ))}
                               </div>
