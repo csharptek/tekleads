@@ -96,7 +96,7 @@ public class ArtifactsController : ControllerBase
             {
                 Subject = req.FollowUp1.Subject!,
                 Body = req.FollowUp1.Body!,
-                DelayHours = req.FollowUp1.DelayHours > 0 ? req.FollowUp1.DelayHours : 24,
+                DelayHours = req.FollowUp1.DelayHours > 0 ? req.FollowUp1.DelayHours : 6,
             };
         }
         if (req.FollowUp2 != null && !string.IsNullOrWhiteSpace(req.FollowUp2.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp2.Body))
@@ -105,7 +105,7 @@ public class ArtifactsController : ControllerBase
             {
                 Subject = req.FollowUp2.Subject!,
                 Body = req.FollowUp2.Body!,
-                DelayHours = req.FollowUp2.DelayHours > 0 ? req.FollowUp2.DelayHours : 48,
+                DelayHours = req.FollowUp2.DelayHours > 0 ? req.FollowUp2.DelayHours : 12,
             };
         }
 
@@ -133,6 +133,8 @@ public class ArtifactsController : ControllerBase
             status        = j.Status,
             error         = j.Error,
             followUpStage = j.FollowUpStage,
+            subject       = j.Subject,
+            body          = j.Body,
         }));
     }
 

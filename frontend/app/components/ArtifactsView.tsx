@@ -100,12 +100,12 @@ export default function ArtifactsView({
   // Send to All state
   const [sendInterval, setSendInterval] = useState(5);
   const [sendAllQueued, setSendAllQueued] = useState(false);
-  const [sendAllJobs, setSendAllJobs] = useState<{ id: string; toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string; followUpStage?: number }[]>([]);
+  const [sendAllJobs, setSendAllJobs] = useState<{ id: string; toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string; followUpStage?: number; subject?: string; body?: string }[]>([]);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Follow-up delays (subject/body now in artifacts state, AI-generated)
-  const [fu1Delay, setFu1Delay] = useState(24);
-  const [fu2Delay, setFu2Delay] = useState(48);
+  const [fu1Delay, setFu1Delay] = useState(6);
+  const [fu2Delay, setFu2Delay] = useState(12);
 
   // Push to Instantly state
   const [instantlyCampaigns, setInstantlyCampaigns] = useState<{ id: string; name: string }[]>([]);
@@ -346,10 +346,10 @@ export default function ArtifactsView({
     const recipients = allEmails.map((email, i) => ({ email, name: allEmailNames?.[i] || "" }));
 
     const followUp1 = (artifacts.followUp1Subject?.trim() && artifacts.followUp1Body?.trim())
-      ? { subject: artifacts.followUp1Subject, body: artifacts.followUp1Body, delayHours: fu1Delay > 0 ? fu1Delay : 24 }
+      ? { subject: artifacts.followUp1Subject, body: artifacts.followUp1Body, delayHours: fu1Delay > 0 ? fu1Delay : 6 }
       : null;
     const followUp2 = (artifacts.followUp2Subject?.trim() && artifacts.followUp2Body?.trim())
-      ? { subject: artifacts.followUp2Subject, body: artifacts.followUp2Body, delayHours: fu2Delay > 0 ? fu2Delay : 48 }
+      ? { subject: artifacts.followUp2Subject, body: artifacts.followUp2Body, delayHours: fu2Delay > 0 ? fu2Delay : 12 }
       : null;
 
     await api.post(`/api/artifacts/${proposalId}/send-bulk`, {
@@ -734,7 +734,10 @@ export default function ArtifactsView({
                     {job.status === "failed" && <span style={{ color: "#ef4444" }}>✕</span>}
                     {job.status === "cancelled" && <span style={{ color: "var(--muted)" }}>–</span>}
                     <span style={{ background: stageColor, color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 42, textAlign: "center" }}>{stageLabel}</span>
-                    <span style={{ color: "var(--text)" }}>{job.toName || job.toEmail}</span>
+                    <span
+                      style={{ color: "var(--text)", cursor: job.subject ? "help" : "default", position: "relative" }}
+                      title={job.subject ? `Subject: ${job.subject}\n\n${(job.body || "").slice(0, 300)}${(job.body || "").length > 300 ? "…" : ""}` : undefined}
+                    >{job.toName || job.toEmail}</span>
                     <span style={{ color: "var(--muted)", fontSize: 11 }}>{job.toEmail}</span>
                     {job.status === "pending" && (
                       <span style={{ color: "var(--muted)", fontSize: 11 }}>
