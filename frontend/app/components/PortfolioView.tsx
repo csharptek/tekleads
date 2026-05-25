@@ -12,6 +12,7 @@ interface Project {
   techStack: string;
   outcomes: string;
   links: string;
+  youtubeLinks: string;
   embeddingIndexed: boolean;
   createdAt: string;
 }

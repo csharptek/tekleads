@@ -439,8 +439,18 @@ Message: {msgText}
 Time: {time}
 
 Login to TEKLead AI to respond.";
-                                        await _email.SendEmail("bhanu@csharptek.com", "Bhanu", subject, emailBody);
-                                        await _email.SendEmail("manjika.tantia@csharptek.com", "Manjika", subject, emailBody);
+                                        // +91 (India) → HR routing; all others → default recipients
+                                        var isIndiaNumber = from.StartsWith("91") && from.Length >= 12;
+                                        if (isIndiaNumber)
+                                        {
+                                            await _email.SendEmail("amrita.rani@csharptek.com", "Amrita", subject, emailBody);
+                                            await _email.SendEmail("hr@csharptek.com", "HR", subject, emailBody);
+                                        }
+                                        else
+                                        {
+                                            await _email.SendEmail("bhanu@csharptek.com", "Bhanu", subject, emailBody);
+                                            await _email.SendEmail("manjika.tantia@csharptek.com", "Manjika", subject, emailBody);
+                                        }
                                     }
                                     catch (Exception ex)
                                     {
