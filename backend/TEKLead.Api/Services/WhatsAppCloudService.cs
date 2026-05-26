@@ -149,6 +149,55 @@ public class WhatsAppCloudService
     }
 
     // ─────────────────────────────────────────────────────────────
+    // Send attachment (document / image / video / audio)
+    // ─────────────────────────────────────────────────────────────
+    public async Task<(bool Ok, string Wamid, string Error, string RawResponse)> SendAttachment(
+        string toPhone,
+        string fileUrl,
+        string attachmentType,   // document | image | video | audio
+        string? caption,
+        string? filename,
+        string? leadId = null,
+        string? proposalId = null)
+    {
+        var cfg = await LoadConfig();
+        if (string.IsNullOrWhiteSpace(cfg.token)) return (false, "", "Access token not configured.", "");
+        if (string.IsNullOrWhiteSpace(cfg.phoneId)) return (false, "", "Phone Number ID not configured.", "");
+
+        var phone = CleanPhone(toPhone);
+        if (string.IsNullOrWhiteSpace(phone)) return (false, "", "Recipient phone is empty.", "");
+        if (string.IsNullOrWhiteSpace(fileUrl)) return (false, "", "File URL is empty.", "");
+
+        var type = attachmentType?.ToLower() switch
+        {
+            "image"    => "image",
+            "video"    => "video",
+            "audio"    => "audio",
+            _          => "document"
+        };
+
+        object mediaObj;
+        if (type == "document")
+            mediaObj = new { link = fileUrl, caption = caption ?? "", filename = filename ?? System.IO.Path.GetFileName(fileUrl) };
+        else if (type == "image")
+            mediaObj = new { link = fileUrl, caption = caption ?? "" };
+        else
+            mediaObj = new { link = fileUrl };
+
+        var payloadDict = new Dictionary<string, object>
+        {
+            ["messaging_product"] = "whatsapp",
+            ["recipient_type"]    = "individual",
+            ["to"]                = phone,
+            ["type"]              = type,
+            [type]                = mediaObj
+        };
+
+        var url = $"https://graph.facebook.com/{cfg.version}/{cfg.phoneId}/messages";
+        return await Post(url, cfg.token, payloadDict, phone, type, null, caption ?? filename ?? fileUrl, leadId, proposalId);
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // Send free-form text
     // ─────────────────────────────────────────────────────────────
     public async Task<(bool Ok, string Wamid, string Error, string RawResponse)> SendText(

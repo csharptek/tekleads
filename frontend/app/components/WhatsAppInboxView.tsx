@@ -52,6 +52,11 @@ export default function WhatsAppInboxView() {
   const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [msgLoading, setMsgLoading] = useState(false);
+  const [showAttach, setShowAttach] = useState(false);
+  const [attachUrl, setAttachUrl] = useState("");
+  const [attachType, setAttachType] = useState("document");
+  const [attachCaption, setAttachCaption] = useState("");
+  const [attachFilename, setAttachFilename] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const loadInbox = async () => {
@@ -80,6 +85,32 @@ export default function WhatsAppInboxView() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const sendAttachment = async () => {
+    if (!selected || !attachUrl.trim()) return;
+    setSending(true);
+    setSendResult(null);
+    try {
+      const res = await api.post<any>("/api/whatsapp/send-attachment", {
+        to: selected.phone,
+        fileUrl: attachUrl.trim(),
+        attachmentType: attachType,
+        caption: attachCaption.trim() || undefined,
+        filename: attachFilename.trim() || undefined,
+      });
+      if (res?.ok) {
+        setSendResult({ ok: true, msg: "Attachment sent" });
+        setAttachUrl(""); setAttachCaption(""); setAttachFilename(""); setShowAttach(false);
+      } else {
+        setSendResult({ ok: false, msg: res?.error || "Failed" });
+      }
+      await loadConversation(selected.phone);
+      await loadInbox();
+    } catch (e: any) {
+      setSendResult({ ok: false, msg: e?.message || "Error" });
+    }
+    setSending(false);
+  };
 
   const sendReply = async (mode: "text" | "template") => {
     if (!selected) return;
@@ -219,6 +250,63 @@ export default function WhatsAppInboxView() {
                   {sendResult.ok ? "✓ " : "✗ "}{sendResult.msg}
                 </div>
               )}
+
+              {/* Attachment panel */}
+              {showAttach && (
+                <div style={{ marginBottom: 10, padding: 12, background: "#f8fafc", border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <select
+                      className="input"
+                      style={{ width: 120, fontSize: 12, padding: "4px 8px" }}
+                      value={attachType}
+                      onChange={e => setAttachType(e.target.value)}
+                    >
+                      <option value="document">Document</option>
+                      <option value="image">Image</option>
+                      <option value="video">Video</option>
+                      <option value="audio">Audio</option>
+                    </select>
+                    <input
+                      className="input"
+                      style={{ flex: 1, fontSize: 12 }}
+                      placeholder="File URL (Azure Blob or public URL)"
+                      value={attachUrl}
+                      onChange={e => setAttachUrl(e.target.value)}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {attachType === "document" && (
+                      <input
+                        className="input"
+                        style={{ flex: 1, fontSize: 12 }}
+                        placeholder="Filename (e.g. Proposal.pdf)"
+                        value={attachFilename}
+                        onChange={e => setAttachFilename(e.target.value)}
+                      />
+                    )}
+                    {(attachType === "document" || attachType === "image") && (
+                      <input
+                        className="input"
+                        style={{ flex: 1, fontSize: 12 }}
+                        placeholder="Caption (optional)"
+                        value={attachCaption}
+                        onChange={e => setAttachCaption(e.target.value)}
+                      />
+                    )}
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={sendAttachment}
+                      disabled={sending || !attachUrl.trim()}
+                    >
+                      {sending ? "…" : "Send"}
+                    </button>
+                    <button className="btn btn-sm" onClick={() => setShowAttach(false)} style={{ fontSize: 11 }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: 8 }}>
                 <textarea
                   className="input"
@@ -236,6 +324,14 @@ export default function WhatsAppInboxView() {
                     style={{ background: "#128C7E", color: "white", border: "none", fontSize: 11 }}
                     title="Send csharptek_intro_v2 template">
                     Template
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => { setShowAttach(v => !v); setSendResult(null); }}
+                    style={{ background: "#6366f1", color: "white", border: "none", fontSize: 11 }}
+                    title="Send attachment"
+                  >
+                    📎
                   </button>
                 </div>
               </div>

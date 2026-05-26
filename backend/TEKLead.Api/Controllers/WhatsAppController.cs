@@ -59,7 +59,25 @@ public class WhatsAppController : ControllerBase
     }
 
     // ─────────────────────────────────────────────
-    // History
+    // Send attachment
+    // ─────────────────────────────────────────────
+    [HttpPost("send-attachment")]
+    public async Task<IActionResult> SendAttachment([FromBody] SendAttachmentRequest req)
+    {
+        if (req == null || string.IsNullOrWhiteSpace(req.To))
+            return BadRequest(new { error = "'to' phone required" });
+        if (string.IsNullOrWhiteSpace(req.FileUrl))
+            return BadRequest(new { error = "'fileUrl' required" });
+
+        var (ok, wamid, err, raw) = await _svc.SendAttachment(
+            req.To, req.FileUrl, req.AttachmentType ?? "document",
+            req.Caption, req.Filename, req.LeadId, req.ProposalId);
+
+        if (!ok) return StatusCode(502, new { ok = false, error = err, raw });
+        return Ok(new { ok = true, wamid, raw });
+    }
+
+    // ─────────────────────────────────────────────
     // ─────────────────────────────────────────────
     [HttpGet("messages")]
     public async Task<IActionResult> Recent([FromQuery] int limit = 50)
@@ -124,8 +142,17 @@ public class SendTemplateRequest
     public string? ProposalId { get; set; }
 }
 
-public class SendTextRequest
+public class SendAttachmentRequest
 {
+    public string To { get; set; } = "";
+    public string FileUrl { get; set; } = "";
+    public string? AttachmentType { get; set; } // document | image | video | audio
+    public string? Caption { get; set; }
+    public string? Filename { get; set; }
+    public string? LeadId { get; set; }
+    public string? ProposalId { get; set; }
+}
+
     public string To { get; set; } = "";
     public string Body { get; set; } = "";
     public string? LeadId { get; set; }
