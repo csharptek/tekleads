@@ -95,11 +95,24 @@ export default function NewProposalView({
   const sf = (k: keyof typeof searchForm, v: string) => setSearchForm(p => ({ ...p, [k]: v }));
   const set = (k: keyof Proposal, v: any) => setForm(f => ({ ...f, [k]: v }));
 
-  const primaryContact = contacts.find(c => c.isPrimary);
   const [haveDetails, setHaveDetails] = useState(false);
   const [manualContact, setManualContact] = useState({ name: "", title: "", company: "", email: "", phone: "", linkedin: "" });
   const mc = (k: string, v: string) => setManualContact(p => ({ ...p, [k]: v }));
   const section2Unlocked = contacts.some(c => c.enriched) || haveDetails;
+
+  const primaryContact = contacts.find(c => c.isPrimary) ??
+    (haveDetails && manualContact.name.trim() ? {
+      lead: {
+        id: "", apolloId: "", name: manualContact.name, title: manualContact.title,
+        company: manualContact.company, location: "", industry: "",
+        emails: manualContact.email ? [manualContact.email] : [],
+        phones: manualContact.phone ? [manualContact.phone] : [],
+        linkedinUrl: manualContact.linkedin,
+      } as any,
+      enriching: false, enriched: true, isPrimary: true,
+      checkedEmails: manualContact.email ? [manualContact.email] : [],
+      checkedPhones: manualContact.phone ? [manualContact.phone] : [],
+    } as EnrichedContact : undefined);
 
   // ── Search ──
   const doSearch = async (p = 1) => {
@@ -294,6 +307,16 @@ export default function NewProposalView({
   const handleSave = async (andNew = false) => {
     if (!primaryContact) { setError("Select a primary contact first."); return; }
     setSaving(true); setError(""); setSuccess("");
+
+    // auto-fill form fields from manual contact if not already set
+    const effectiveForm = { ...form };
+    if (haveDetails && !contacts.some(c => c.enriched)) {
+      if (!effectiveForm.clientName  && manualContact.name)    effectiveForm.clientName    = manualContact.name;
+      if (!effectiveForm.clientEmail && manualContact.email)   effectiveForm.clientEmail   = manualContact.email;
+      if (!effectiveForm.clientCompany && manualContact.company) effectiveForm.clientCompany = manualContact.company;
+      if (!effectiveForm.clientLinkedin && manualContact.linkedin) effectiveForm.clientLinkedin = manualContact.linkedin;
+    }
+
     try {
       const secondary = contacts.filter(c => !c.isPrimary && c.enriched);
       // Build contactsJson from ALL enriched contacts (primary first, then secondary)
@@ -314,12 +337,12 @@ export default function NewProposalView({
         }));
       });
       const payload: any = {
-        ...form,
-        budgetMin: form.budgetMin ? parseFloat(form.budgetMin) : null,
-        budgetMax: form.budgetMax ? parseFloat(form.budgetMax) : null,
-        clientQuestions: form.clientQuestions.filter(q => q.trim()),
-        links: form.links.filter(l => l.trim()),
-        followUpDate: form.followUpDate || null,
+        ...effectiveForm,
+        budgetMin: effectiveForm.budgetMin ? parseFloat(effectiveForm.budgetMin) : null,
+        budgetMax: effectiveForm.budgetMax ? parseFloat(effectiveForm.budgetMax) : null,
+        clientQuestions: effectiveForm.clientQuestions.filter(q => q.trim()),
+        links: effectiveForm.links.filter(l => l.trim()),
+        followUpDate: effectiveForm.followUpDate || null,
         linkedLeadId: primaryContact.lead.id || null,
         apolloContactJson: JSON.stringify(primaryContact.lead),
         contactsJson: JSON.stringify(contactsForJson),
