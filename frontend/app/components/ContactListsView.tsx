@@ -317,6 +317,7 @@ function ContactsTab({ list }: { list: ContactList }) {
   }[]>([]);
   const waBulkRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waBulkCancelRef = useRef(false);
+  const [showWaPreview, setShowWaPreview] = useState(false);
 
   // Per-row WA API status (keyed by contactId)
   const [rowWaStatus, setRowWaStatus] = useState<Record<string, WaSendStatus>>({});
@@ -614,7 +615,6 @@ function ContactsTab({ list }: { list: ContactList }) {
         <select value={waBulkMode} onChange={e => setWaBulkMode(e.target.value as "template" | "text")} disabled={waBulkRunning}
           style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid #128C7E55", background: "var(--surface)", color: "var(--text)" }}>
           <option value="template">Template (API)</option>
-          <option value="text">Text (API)</option>
         </select>
         <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (sec):</span>
         <input type="number" min={5} max={3600} value={waInterval} disabled={waBulkRunning}
@@ -628,7 +628,12 @@ function ContactsTab({ list }: { list: ContactList }) {
             ✕ Cancel
           </button>
         ) : (
-          <button onClick={startWaBulkSend} disabled={selected.size === 0}
+          <button onClick={() => {
+              if (selected.size === 0) return;
+              const targets = contacts.filter(c => selected.has(c.id) && c.phone);
+              if (!targets.length) { setEnrichMsg("No contacts with phone in selection."); return; }
+              setShowWaPreview(true);
+            }} disabled={selected.size === 0}
             style={{ background: selected.size === 0 ? "#64748b" : "#128C7E", color: "white", border: "none",
               borderRadius: 6, padding: "5px 14px", cursor: selected.size === 0 ? "default" : "pointer",
               opacity: selected.size === 0 ? 0.5 : 1, fontSize: 12, fontWeight: 600,
@@ -767,22 +772,7 @@ function ContactsTab({ list }: { list: ContactList }) {
                           )}
                           TPL
                         </button>
-                        {/* WA Text API button */}
-                        <button
-                          title={c.phone ? "Send free-form text via Cloud API (24hr window)" : "No phone"}
-                          onClick={() => c.phone && sendRowWaApi(c, "text")}
-                          disabled={waRowStatus === "sending"}
-                          style={{ background: c.phone ? "#25D366" : "#94a3b8", border: "none", borderRadius: 6,
-                            padding: "4px 7px", cursor: c.phone ? "pointer" : "default",
-                            display: "flex", alignItems: "center", gap: 4,
-                            opacity: c.phone ? 1 : 0.35, fontSize: 10, color: "white", fontWeight: 600 }}>
-                          {!waRowStatus && (
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
-                            </svg>
-                          )}
-                          TXT
-                        </button>
+                        {/* TXT button hidden — next session */}
                       </div>
                     </td>
                     <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap", fontSize: 12 }}>{c.title || "—"}</td>
@@ -812,6 +802,126 @@ function ContactsTab({ list }: { list: ContactList }) {
           listId={list.id} templates={templates.filter(t => t.type === sendModal.type)}
           onClose={() => setSendModal(null)} />
       )}
+
+      {/* ── WA Bulk Preview Modal ── */}
+      {showWaPreview && (() => {
+        const targets = contacts.filter(c => selected.has(c.id) && c.phone);
+        const noPhone = contacts.filter(c => selected.has(c.id) && !c.phone);
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1000,
+            display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="card" style={{ width: 640, maxWidth: "96vw", maxHeight: "88vh",
+              display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                marginBottom: 16, flexShrink: 0 }}>
+                <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#128C7E" strokeWidth="2">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                  </svg>
+                  WhatsApp Bulk Preview
+                  <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)" }}>
+                    — {targets.length} contacts · Template API · {waInterval}s interval
+                  </span>
+                </h2>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowWaPreview(false)}>✕</button>
+              </div>
+
+              {/* Summary bar */}
+              <div style={{ display: "flex", gap: 16, marginBottom: 14, flexShrink: 0,
+                padding: "8px 14px", background: "var(--surface2)", borderRadius: 8, fontSize: 12 }}>
+                <span><strong style={{ color: "#22c55e" }}>{targets.length}</strong> <span style={{ color: "var(--muted)" }}>will send</span></span>
+                {noPhone.length > 0 && (
+                  <span><strong style={{ color: "#f59e0b" }}>{noPhone.length}</strong> <span style={{ color: "var(--muted)" }}>skipped (no phone)</span></span>
+                )}
+                <span style={{ color: "var(--muted)" }}>
+                  Est. time: ~{Math.ceil((targets.length * waInterval) / 60)} min
+                </span>
+              </div>
+
+              {/* Variable legend */}
+              <div style={{ marginBottom: 12, flexShrink: 0, padding: "8px 14px",
+                background: "#128C7E11", borderRadius: 8, border: "1px solid #128C7E33", fontSize: 12 }}>
+                <span style={{ color: "#128C7E", fontWeight: 600 }}>Variables sent per contact: </span>
+                <span style={{ color: "var(--muted)" }}>
+                  var1 = <strong style={{ color: "var(--text)" }}>First Name</strong>
+                  &nbsp;·&nbsp;
+                  var2 = <strong style={{ color: "var(--text)" }}>Company</strong>
+                </span>
+              </div>
+
+              {/* Contact list */}
+              <div style={{ flex: 1, overflowY: "auto", borderRadius: 8, border: "1px solid var(--border)" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "var(--surface2)", borderBottom: "1px solid var(--border)", position: "sticky", top: 0 }}>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>#</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Name</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Phone</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>var1 (First Name)</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>var2 (Company)</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {targets.map((c, i) => (
+                      <tr key={c.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "8px 12px", color: "var(--muted)", fontSize: 12 }}>{i + 1}</td>
+                        <td style={{ padding: "8px 12px", fontWeight: 600, color: "var(--text)" }}>{c.name}</td>
+                        <td style={{ padding: "8px 12px", color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap" }}>{c.phone}</td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <span style={{ background: "#128C7E22", color: "#128C7E", padding: "2px 8px",
+                            borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
+                            {c.name?.split(" ")[0] || "—"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <span style={{ background: "#128C7E22", color: "#128C7E", padding: "2px 8px",
+                            borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
+                            {c.company || "—"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "8px 12px" }}>
+                          {sentToday[c.id]
+                            ? <StatusBadge status="sent" />
+                            : <span style={{ fontSize: 11, color: "var(--muted)" }}>pending</span>}
+                        </td>
+                      </tr>
+                    ))}
+                    {noPhone.map(c => (
+                      <tr key={c.id} style={{ borderBottom: "1px solid var(--border)", opacity: 0.4 }}>
+                        <td style={{ padding: "8px 12px", color: "var(--muted)" }}>—</td>
+                        <td style={{ padding: "8px 12px", color: "var(--muted)" }}>{c.name}</td>
+                        <td colSpan={3} style={{ padding: "8px 12px", color: "#f59e0b", fontSize: 12 }}>No phone — will be skipped</td>
+                        <td style={{ padding: "8px 12px" }}><StatusBadge status="skipped" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer */}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16, flexShrink: 0 }}>
+                <button className="btn btn-ghost" onClick={() => setShowWaPreview(false)}>Cancel</button>
+                <button
+                  onClick={() => { setShowWaPreview(false); startWaBulkSend(); }}
+                  disabled={targets.length === 0}
+                  style={{ background: targets.length === 0 ? "#64748b" : "#128C7E", color: "white",
+                    border: "none", borderRadius: 6, padding: "7px 18px", cursor: "pointer",
+                    fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8,
+                    opacity: targets.length === 0 ? 0.5 : 1 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                  </svg>
+                  Confirm & Send {targets.length} messages
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {showInstantly && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
