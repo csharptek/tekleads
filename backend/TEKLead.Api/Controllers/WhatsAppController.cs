@@ -153,6 +153,8 @@ public class SendAttachmentRequest
     public string? ProposalId { get; set; }
 }
 
+public class SendTextRequest
+{
     public string To { get; set; } = "";
     public string Body { get; set; } = "";
     public string? LeadId { get; set; }

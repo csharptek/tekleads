@@ -17,6 +17,29 @@ interface Lead {
 }
 
 const PER_PAGE = 20;
+
+function CopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button onClick={copy} title="Copy" style={{
+      background: "none", border: "none", cursor: "pointer", padding: "0 3px",
+      color: copied ? "#22c55e" : "var(--muted)", opacity: 0.7,
+      verticalAlign: "middle", lineHeight: 1, flexShrink: 0
+    }}>
+      {copied
+        ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      }
+    </button>
+  );
+}
 const SORT_OPTIONS = [
   { value: "saved_at", label: "Date Saved" },
   { value: "name", label: "Name" },
@@ -333,7 +356,10 @@ export default function SavedLeadsView() {
                       />
                     </td>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{lead.name || "—"}</div>
+                      <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                        {lead.name || "—"}
+                        {lead.name && <CopyBtn text={lead.name} />}
+                      </div>
                       {lead.linkedinUrl && (<a href={lead.linkedinUrl} target="_blank" rel="noreferrer" title="LinkedIn"
                         style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none" }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -346,10 +372,20 @@ export default function SavedLeadsView() {
                     <td style={{ fontSize: 12, color: "var(--muted)" }}>{lead.industry || "—"}</td>
                     <td style={{ fontSize: 12, color: "var(--muted)" }}>{lead.location || "—"}</td>
                     <td style={{ fontSize: 12 }}>
-                      {lead.emails?.[0] ? <span className="chip chip-blue" style={{ fontSize: 11 }}>{lead.emails[0]}</span> : <span style={{ color: "var(--dim)" }}>—</span>}
+                      {lead.emails?.[0]
+                        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <span className="chip chip-blue" style={{ fontSize: 11 }}>{lead.emails[0]}</span>
+                            <CopyBtn text={lead.emails[0]} />
+                          </span>
+                        : <span style={{ color: "var(--dim)" }}>—</span>}
                     </td>
                     <td style={{ fontSize: 12 }}>
-                      {lead.phones?.[0] ? <WaLink phone={lead.phones[0]} message={waTemplate} name={lead.name} /> : <span style={{ color: "var(--dim)" }}>—</span>}
+                      {lead.phones?.[0]
+                        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <WaLink phone={lead.phones[0]} message={waTemplate} name={lead.name} />
+                            <CopyBtn text={lead.phones[0]} />
+                          </span>
+                        : <span style={{ color: "var(--dim)" }}>—</span>}
                     </td>
                     <td style={{ fontSize: 11, color: "var(--dim)", whiteSpace: "nowrap" }}>{new Date(lead.savedAt).toLocaleDateString()}</td>
                     <td>

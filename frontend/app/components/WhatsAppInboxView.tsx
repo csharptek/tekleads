@@ -53,10 +53,11 @@ export default function WhatsAppInboxView() {
   const [loading, setLoading] = useState(true);
   const [msgLoading, setMsgLoading] = useState(false);
   const [showAttach, setShowAttach] = useState(false);
-  const [attachUrl, setAttachUrl] = useState("");
+  const [attachFile, setAttachFile] = useState<File | null>(null);
   const [attachType, setAttachType] = useState("document");
   const [attachCaption, setAttachCaption] = useState("");
-  const [attachFilename, setAttachFilename] = useState("");
+  const [attachUploading, setAttachUploading] = useState(false);
+  const attachInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const loadInbox = async () => {
@@ -87,20 +88,35 @@ export default function WhatsAppInboxView() {
   }, [messages]);
 
   const sendAttachment = async () => {
-    if (!selected || !attachUrl.trim()) return;
+    if (!selected || !attachFile) return;
     setSending(true);
+    setAttachUploading(true);
     setSendResult(null);
     try {
+      // 1. Upload to blob
+      const formData = new FormData();
+      formData.append("file", attachFile);
+      const uploadRes = await fetch("/api/blob/upload", { method: "POST", body: formData });
+      const uploadJson = await uploadRes.json();
+      if (!uploadRes.ok) {
+        setSendResult({ ok: false, msg: uploadJson?.error || "Upload failed" });
+        setSending(false); setAttachUploading(false);
+        return;
+      }
+      const fileUrl: string = uploadJson.url;
+
+      // 2. Send via WhatsApp
       const res = await api.post<any>("/api/whatsapp/send-attachment", {
         to: selected.phone,
-        fileUrl: attachUrl.trim(),
+        fileUrl,
         attachmentType: attachType,
         caption: attachCaption.trim() || undefined,
-        filename: attachFilename.trim() || undefined,
+        filename: attachFile.name,
       });
       if (res?.ok) {
         setSendResult({ ok: true, msg: "Attachment sent" });
-        setAttachUrl(""); setAttachCaption(""); setAttachFilename(""); setShowAttach(false);
+        setAttachFile(null); setAttachCaption(""); setShowAttach(false);
+        if (attachInputRef.current) attachInputRef.current.value = "";
       } else {
         setSendResult({ ok: false, msg: res?.error || "Failed" });
       }
@@ -110,6 +126,7 @@ export default function WhatsAppInboxView() {
       setSendResult({ ok: false, msg: e?.message || "Error" });
     }
     setSending(false);
+    setAttachUploading(false);
   };
 
   const sendReply = async (mode: "text" | "template") => {
@@ -254,7 +271,7 @@ export default function WhatsAppInboxView() {
               {/* Attachment panel */}
               {showAttach && (
                 <div style={{ marginBottom: 10, padding: 12, background: "#f8fafc", border: "1px solid var(--border)", borderRadius: 8 }}>
-                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
                     <select
                       className="input"
                       style={{ width: 120, fontSize: 12, padding: "4px 8px" }}
@@ -267,40 +284,43 @@ export default function WhatsAppInboxView() {
                       <option value="audio">Audio</option>
                     </select>
                     <input
-                      className="input"
+                      ref={attachInputRef}
+                      type="file"
+                      accept={
+                        attachType === "image" ? "image/*" :
+                        attachType === "video" ? "video/*" :
+                        attachType === "audio" ? "audio/*" :
+                        ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      }
+                      onChange={e => setAttachFile(e.target.files?.[0] ?? null)}
                       style={{ flex: 1, fontSize: 12 }}
-                      placeholder="File URL (Azure Blob or public URL)"
-                      value={attachUrl}
-                      onChange={e => setAttachUrl(e.target.value)}
                     />
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {attachType === "document" && (
+                  {(attachType === "document" || attachType === "image") && (
+                    <div style={{ marginBottom: 8 }}>
                       <input
                         className="input"
-                        style={{ flex: 1, fontSize: 12 }}
-                        placeholder="Filename (e.g. Proposal.pdf)"
-                        value={attachFilename}
-                        onChange={e => setAttachFilename(e.target.value)}
-                      />
-                    )}
-                    {(attachType === "document" || attachType === "image") && (
-                      <input
-                        className="input"
-                        style={{ flex: 1, fontSize: 12 }}
+                        style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }}
                         placeholder="Caption (optional)"
                         value={attachCaption}
                         onChange={e => setAttachCaption(e.target.value)}
                       />
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    {attachFile && (
+                      <span style={{ fontSize: 11, color: "var(--muted)", alignSelf: "center", flex: 1 }}>
+                        {attachFile.name} ({(attachFile.size / 1024).toFixed(0)} KB)
+                      </span>
                     )}
                     <button
                       className="btn btn-sm btn-primary"
                       onClick={sendAttachment}
-                      disabled={sending || !attachUrl.trim()}
+                      disabled={sending || !attachFile}
                     >
-                      {sending ? "…" : "Send"}
+                      {attachUploading ? "Uploading…" : sending ? "Sending…" : "Send"}
                     </button>
-                    <button className="btn btn-sm" onClick={() => setShowAttach(false)} style={{ fontSize: 11 }}>
+                    <button className="btn btn-sm" onClick={() => { setShowAttach(false); setAttachFile(null); if (attachInputRef.current) attachInputRef.current.value = ""; }} style={{ fontSize: 11 }}>
                       Cancel
                     </button>
                   </div>
