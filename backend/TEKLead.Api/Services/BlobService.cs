@@ -10,6 +10,7 @@ public class BlobService
     private readonly SettingsService _settings;
     private readonly ILogger<BlobService> _log;
     private const string Container = "proposal-docs";
+    private const string WaContainer = "whatsapp-media";
 
     public BlobService(SettingsService settings, ILogger<BlobService> log)
     {
@@ -17,7 +18,7 @@ public class BlobService
         _log = log;
     }
 
-    private async Task<BlobContainerClient> GetContainerAsync()
+    private async Task<BlobContainerClient> GetContainerAsync(string containerName = Container)
     {
         var all = await _settings.GetAll();
         var connStr = all.GetValueOrDefault(TEKLead.Api.Models.SettingKeys.AzureBlobConnString, "");
@@ -25,8 +26,9 @@ public class BlobService
             throw new InvalidOperationException("Azure Blob connection string not configured in Settings.");
 
         var serviceClient = new BlobServiceClient(connStr);
-        var container = serviceClient.GetBlobContainerClient(Container);
-        await container.CreateIfNotExistsAsync(PublicAccessType.None);
+        var container = serviceClient.GetBlobContainerClient(containerName);
+        var accessType = containerName == WaContainer ? PublicAccessType.Blob : PublicAccessType.None;
+        await container.CreateIfNotExistsAsync(accessType);
         return container;
     }
 
@@ -37,6 +39,16 @@ public class BlobService
         var blob = container.GetBlobClient(blobName);
         await blob.UploadAsync(data, new BlobHttpHeaders { ContentType = contentType });
         _log.LogInformation("Uploaded blob: {0}", blobName);
+        return blob.Uri.ToString();
+    }
+
+    public async Task<string> UploadPublicAsync(Stream data, string fileName, string contentType)
+    {
+        var container = await GetContainerAsync(WaContainer);
+        var blobName = $"{Guid.NewGuid()}/{fileName}";
+        var blob = container.GetBlobClient(blobName);
+        await blob.UploadAsync(data, new BlobHttpHeaders { ContentType = contentType });
+        _log.LogInformation("Uploaded public blob: {0}", blobName);
         return blob.Uri.ToString();
     }
 
