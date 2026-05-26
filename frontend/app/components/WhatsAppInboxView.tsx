@@ -96,13 +96,7 @@ export default function WhatsAppInboxView() {
       // 1. Upload to blob
       const formData = new FormData();
       formData.append("file", attachFile);
-      const uploadRes = await fetch("/api/blob/upload", { method: "POST", body: formData });
-      const uploadJson = await uploadRes.json();
-      if (!uploadRes.ok) {
-        setSendResult({ ok: false, msg: uploadJson?.error || "Upload failed" });
-        setSending(false); setAttachUploading(false);
-        return;
-      }
+      const uploadJson = await api.upload<{ url: string; name: string }>("/api/blob/upload", formData);
       const fileUrl: string = uploadJson.url;
 
       // 2. Send via WhatsApp
