@@ -176,8 +176,8 @@ export default function HRWhatsAppInboxView() {
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{selected.contactName || `+${selected.phone}`}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>+{selected.phone} · {selected.messageCount} messages</div>
               </div>
-              <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => loadConversation(selected.phone)}>↻ Refresh</button>
               {isMobile && <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>← Back</button>}
+              <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => loadConversation(selected.phone)}>↻ Refresh</button>
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10, background: "#fef9f0" }}>
