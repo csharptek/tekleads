@@ -30,6 +30,7 @@ public static class SettingKeys
     public const string WhatsappCloudTemplateName  = "whatsapp_cloud_template_name";
     public const string WhatsappCloudTemplateLang  = "whatsapp_cloud_template_lang";
     public const string WhatsappCloudApiVersion    = "whatsapp_cloud_api_version";
+    public const string WhatsappBlobContainer      = "whatsapp_blob_container";
 
     public const string AzureSearchEndpoint        = "azure_search_endpoint";
     public const string AzureSearchKey             = "azure_search_key";
@@ -70,7 +71,7 @@ public static class SettingKeys
         GraphTenantId, GraphClientId, GraphClientSecret, GraphSenderEmail,
         WhatsappCountryCode, WhatsappMessageTemplate,
         WhatsappCloudPhoneNumberId, WhatsappCloudWabaId, WhatsappCloudAccessToken, WhatsappCloudVerifyToken,
-        WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion,
+        WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion, WhatsappBlobContainer,
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,

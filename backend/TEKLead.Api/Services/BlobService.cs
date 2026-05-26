@@ -10,7 +10,7 @@ public class BlobService
     private readonly SettingsService _settings;
     private readonly ILogger<BlobService> _log;
     private const string Container = "proposal-docs";
-    private const string WaContainer = "whatsapp-media";
+    private const string DefaultWaContainer = "whatsapp-media";
 
     public BlobService(SettingsService settings, ILogger<BlobService> log)
     {
@@ -27,9 +27,16 @@ public class BlobService
 
         var serviceClient = new BlobServiceClient(connStr);
         var container = serviceClient.GetBlobContainerClient(containerName);
-        var accessType = containerName == WaContainer ? PublicAccessType.Blob : PublicAccessType.None;
+        var accessType = containerName == Container ? PublicAccessType.None : PublicAccessType.Blob;
         await container.CreateIfNotExistsAsync(accessType);
         return container;
+    }
+
+    private async Task<string> GetWaContainerName()
+    {
+        var all = await _settings.GetAll();
+        var name = all.GetValueOrDefault(TEKLead.Api.Models.SettingKeys.WhatsappBlobContainer, "");
+        return string.IsNullOrWhiteSpace(name) ? DefaultWaContainer : name;
     }
 
     public async Task<string> UploadAsync(Stream data, string fileName, string contentType)
@@ -44,7 +51,8 @@ public class BlobService
 
     public async Task<string> UploadPublicAsync(Stream data, string fileName, string contentType)
     {
-        var container = await GetContainerAsync(WaContainer);
+        var waContainer = await GetWaContainerName();
+        var container = await GetContainerAsync(waContainer);
         var blobName = $"{Guid.NewGuid()}/{fileName}";
         var blob = container.GetBlobClient(blobName);
         await blob.UploadAsync(data, new BlobHttpHeaders { ContentType = contentType });

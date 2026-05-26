@@ -23,6 +23,7 @@ const KEYS = {
   WhatsappCloudTemplateName: "whatsapp_cloud_template_name",
   WhatsappCloudTemplateLang: "whatsapp_cloud_template_lang",
   WhatsappCloudApiVersion: "whatsapp_cloud_api_version",
+  WhatsappBlobContainer: "whatsapp_blob_container",
   EmailSignature: "email_signature",
   ArtifactCoverLetterPrompt: "artifact_cover_letter_prompt",
   ArtifactWhatsappPrompt: "artifact_whatsapp_prompt",
@@ -60,6 +61,7 @@ const TECH_GROUPS: Group[] = [
     subtitle: "File attachments",
     fields: [
       { key: KEYS.AzureBlobConnString, label: "Connection String", placeholder: "DefaultEndpointsProtocol=https;...", secret: true, full: true },
+      { key: KEYS.WhatsappBlobContainer, label: "WhatsApp Media Container", placeholder: "whatsapp-media" },
     ],
   },
   {
