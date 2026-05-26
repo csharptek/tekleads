@@ -64,8 +64,16 @@ export default function WhatsAppInboxView() {
   const [attachType, setAttachType] = useState("document");
   const [attachCaption, setAttachCaption] = useState("");
   const [attachUploading, setAttachUploading] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const attachInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const loadInbox = async () => {
     try {
@@ -156,7 +164,7 @@ export default function WhatsAppInboxView() {
   return (
     <div className="page" style={{ padding: 0, display: "flex", height: "100%", overflow: "hidden" }}>
       {/* Thread list */}
-      <div style={{ width: 300, minWidth: 240, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--surface)" }}>
+      <div style={{ width: isMobile ? "100%" : 300, minWidth: isMobile ? "unset" : 240, borderRight: "1px solid var(--border)", display: isMobile && selected ? "none" : "flex", flexDirection: "column", background: "var(--surface)" }}>
         <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div className="page-title" style={{ fontSize: 16, margin: 0 }}>WA Inbox</div>
@@ -202,7 +210,7 @@ export default function WhatsAppInboxView() {
       </div>
 
       {/* Conversation */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: isMobile && !selected ? "none" : "flex", flexDirection: "column", overflow: "hidden" }}>
         {!selected ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 14 }}>
             Select a conversation
@@ -218,6 +226,7 @@ export default function WhatsAppInboxView() {
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{selected.contactName || `+${selected.phone}`}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>+{selected.phone} · {selected.messageCount} messages</div>
               </div>
+              {isMobile && <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>← Back</button>}
               <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => loadConversation(selected.phone)}>↻ Refresh</button>
             </div>
 

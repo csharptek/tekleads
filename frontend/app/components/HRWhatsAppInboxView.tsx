@@ -52,7 +52,15 @@ export default function HRWhatsAppInboxView() {
   const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [msgLoading, setMsgLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const loadInbox = async () => {
     try {
@@ -107,7 +115,7 @@ export default function HRWhatsAppInboxView() {
   return (
     <div className="page" style={{ padding: 0, display: "flex", height: "100%", overflow: "hidden" }}>
       {/* Thread list */}
-      <div style={{ width: 300, minWidth: 240, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--surface)" }}>
+      <div style={{ width: isMobile ? "100%" : 300, minWidth: isMobile ? "unset" : 240, borderRight: "1px solid var(--border)", display: isMobile && selected ? "none" : "flex", flexDirection: "column", background: "var(--surface)" }}>
         <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div className="page-title" style={{ fontSize: 16, margin: 0 }}>HR WA Inbox</div>
@@ -153,7 +161,7 @@ export default function HRWhatsAppInboxView() {
       </div>
 
       {/* Conversation */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: isMobile && !selected ? "none" : "flex", flexDirection: "column", overflow: "hidden" }}>
         {!selected ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 14 }}>
             Select a conversation
@@ -169,6 +177,7 @@ export default function HRWhatsAppInboxView() {
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>+{selected.phone} · {selected.messageCount} messages</div>
               </div>
               <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => loadConversation(selected.phone)}>↻ Refresh</button>
+              {isMobile && <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>← Back</button>}
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10, background: "#fef9f0" }}>

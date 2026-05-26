@@ -181,11 +181,11 @@ export default function SavedLeadsView() {
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {/* Sort inline */}
-          <select className="input" style={{ width: 150, padding: "6px 10px", fontSize: 13 }}
+          <select className="input" style={{ minWidth: 0, flex: "1 1 120px", maxWidth: 180, padding: "6px 10px", fontSize: 13 }}
             value={sortBy} onChange={e => setSortBy(e.target.value)}>
             {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <select className="input" style={{ width: 120, padding: "6px 10px", fontSize: 13 }}
+          <select className="input" style={{ minWidth: 0, flex: "1 1 90px", maxWidth: 130, padding: "6px 10px", fontSize: 13 }}
             value={sortDir} onChange={e => setSortDir(e.target.value)}>
             <option value="desc">Newest</option>
             <option value="asc">Oldest</option>
@@ -220,7 +220,7 @@ export default function SavedLeadsView() {
       {/* Collapsible filter panel */}
       {showFilters && (
         <div className="card" style={{ marginBottom: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 10 }}>
             {([
               ["name", "Name", "e.g. John"],
               ["company", "Company", "e.g. Acme"],
