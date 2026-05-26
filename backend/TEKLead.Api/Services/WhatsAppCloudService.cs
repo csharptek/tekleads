@@ -683,4 +683,69 @@ Login to TEKLead AI to respond.";
         }
         catch { return ""; }
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Fetch Meta message templates
+    // ─────────────────────────────────────────────────────────────
+    public async Task<(bool Ok, List<MetaTemplate> Templates, string Error)> GetTemplates()
+    {
+        var s = await _settings.GetAll();
+        var token  = s.GetValueOrDefault(SettingKeys.WhatsappCloudAccessToken, "");
+        var wabaId = s.GetValueOrDefault(SettingKeys.WhatsappCloudWabaId, "");
+        var ver    = string.IsNullOrWhiteSpace(s.GetValueOrDefault(SettingKeys.WhatsappCloudApiVersion, ""))
+            ? DefaultApiVersion : s[SettingKeys.WhatsappCloudApiVersion];
+
+        if (string.IsNullOrWhiteSpace(token))  return (false, new(), "Access token not configured.");
+        if (string.IsNullOrWhiteSpace(wabaId)) return (false, new(), "WABA ID not configured.");
+
+        var url = $"https://graph.facebook.com/{ver}/{wabaId}/message_templates?fields=name,status,language,components&limit=100";
+        var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var resp = await _http.SendAsync(req);
+        var raw  = await resp.Content.ReadAsStringAsync();
+
+        if (!resp.IsSuccessStatusCode)
+            return (false, new(), $"Meta API error: {raw}");
+
+        try
+        {
+            var doc  = System.Text.Json.JsonDocument.Parse(raw);
+            var data = doc.RootElement.GetProperty("data");
+            var list = new List<MetaTemplate>();
+            foreach (var el in data.EnumerateArray())
+            {
+                var name   = el.TryGetProperty("name",     out var n) ? n.GetString() ?? "" : "";
+                var status = el.TryGetProperty("status",   out var st) ? st.GetString() ?? "" : "";
+                var lang   = el.TryGetProperty("language", out var l) ? l.GetString() ?? "" : "";
+                string bodyText = "";
+                if (el.TryGetProperty("components", out var comps))
+                {
+                    foreach (var comp in comps.EnumerateArray())
+                    {
+                        if (comp.TryGetProperty("type", out var t) && t.GetString() == "BODY"
+                            && comp.TryGetProperty("text", out var tx))
+                        {
+                            bodyText = tx.GetString() ?? "";
+                            break;
+                        }
+                    }
+                }
+                list.Add(new MetaTemplate { Name = name, Status = status, Language = lang, BodyText = bodyText });
+            }
+            return (true, list, "");
+        }
+        catch (Exception ex)
+        {
+            return (false, new(), $"Parse error: {ex.Message}");
+        }
+    }
+}
+
+public class MetaTemplate
+{
+    public string Name     { get; set; } = "";
+    public string Status   { get; set; } = "";
+    public string Language { get; set; } = "";
+    public string BodyText { get; set; } = "";
 }

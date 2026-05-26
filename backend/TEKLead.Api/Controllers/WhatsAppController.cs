@@ -25,6 +25,14 @@ public class WhatsAppController : ControllerBase
     [HttpGet("status")]
     public async Task<IActionResult> Status() => Ok(await _svc.Status());
 
+    [HttpGet("templates")]
+    public async Task<IActionResult> GetTemplates()
+    {
+        var (ok, templates, error) = await _svc.GetTemplates();
+        if (!ok) return StatusCode(500, new { error });
+        return Ok(templates);
+    }
+
     // ─────────────────────────────────────────────
     // Send template
     // ─────────────────────────────────────────────

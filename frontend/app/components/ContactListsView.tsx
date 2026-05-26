@@ -318,6 +318,8 @@ function ContactsTab({ list }: { list: ContactList }) {
   const waBulkRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waBulkCancelRef = useRef(false);
   const [showWaPreview, setShowWaPreview] = useState(false);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [selectedMetaTemplate, setSelectedMetaTemplate] = useState<{ name: string; language: string; bodyText: string } | null>(null);
 
   // Per-row WA API status (keyed by contactId)
   const [rowWaStatus, setRowWaStatus] = useState<Record<string, WaSendStatus>>({});
@@ -454,6 +456,8 @@ function ContactsTab({ list }: { list: ContactList }) {
           phone: c.phone,
           mode: waBulkMode,
           body: "",
+          templateName: selectedMetaTemplate?.name ?? null,
+          templateLang: selectedMetaTemplate?.language ?? "en",
           bodyVariables: [c.name?.split(" ")[0] || "there", c.company || "your business"],
         });
         if (res?.ok) {
@@ -568,13 +572,11 @@ function ContactsTab({ list }: { list: ContactList }) {
         )}
       </div>
 
-      {/* ── Row 3: Email Send bar ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8,
-        padding: "9px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", color: "var(--muted)" }}>📧 Email</span>
-        <div style={{ width: 1, height: 18, background: "var(--border)", flexShrink: 0 }} />
-        <button
-          disabled={selected.size === 0}
+      {/* ── Action Toolbar ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 12, padding: "8px 0" }}>
+
+        {/* Send Email */}
+        <button disabled={selected.size === 0}
           onClick={() => {
             const tpl = templates.find(t => t.type === "email");
             if (!tpl) { setEnrichMsg("No email template — create in Templates tab"); return; }
@@ -585,46 +587,38 @@ function ContactsTab({ list }: { list: ContactList }) {
               api.post(`/api/contact-lists/${list.id}/log-whatsapp`, { contactId: c.id, phone: c.email }).catch(() => {});
             }, i * waInterval * 1000));
           }}
-          style={{ background: selected.size === 0 ? "#64748b" : "#0078d4", color: "white", border: "none",
-            borderRadius: 6, padding: "5px 14px", cursor: selected.size === 0 ? "default" : "pointer",
-            opacity: selected.size === 0 ? 0.5 : 1, fontSize: 12, fontWeight: 600,
-            display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8,
+            border: "1px solid var(--border)", background: "var(--surface2)",
+            color: selected.size === 0 ? "var(--muted)" : "var(--text)",
+            cursor: selected.size === 0 ? "default" : "pointer", fontSize: 13, fontWeight: 500,
+            opacity: selected.size === 0 ? 0.5 : 1 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <polyline points="22,6 12,13 2,6"/>
           </svg>
-          Send to All
+          Send Email
         </button>
-        <div style={{ width: 1, height: 18, background: "var(--border)", flexShrink: 0 }} />
+
+        {/* Push to Instantly */}
         <button onClick={openInstantly} disabled={selected.size === 0}
-          style={{ background: selected.size === 0 ? "#64748b" : "#7c3aed", color: "white", border: "none",
-            borderRadius: 6, padding: "5px 14px", cursor: selected.size === 0 ? "default" : "pointer",
-            opacity: selected.size === 0 ? 0.5 : 1, fontSize: 12, fontWeight: 600,
-            display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8,
+            border: "1px solid var(--border)", background: "var(--surface2)",
+            color: selected.size === 0 ? "var(--muted)" : "var(--text)",
+            cursor: selected.size === 0 ? "default" : "pointer", fontSize: 13, fontWeight: 500,
+            opacity: selected.size === 0 ? 0.5 : 1 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
           </svg>
           Push to Instantly
         </button>
-      </div>
 
-      {/* ── Row 4: WhatsApp API send bar ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12,
-        padding: "9px 12px", background: "#0d1f1566", borderRadius: 8, border: "1px solid #128C7E44" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#25D366", whiteSpace: "nowrap" }}>💬 WhatsApp API</span>
-        <div style={{ width: 1, height: 18, background: "#128C7E55", flexShrink: 0 }} />
-        <select value={waBulkMode} onChange={e => setWaBulkMode(e.target.value as "template" | "text")} disabled={waBulkRunning}
-          style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid #128C7E55", background: "var(--surface)", color: "var(--text)" }}>
-          <option value="template">Template (API)</option>
-        </select>
-        <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (sec):</span>
-        <input type="number" min={5} max={3600} value={waInterval} disabled={waBulkRunning}
-          onChange={e => setWaInterval(Math.max(5, Number(e.target.value)))}
-          style={{ width: 64, fontSize: 12, padding: "4px 8px", borderRadius: 6,
-            border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} />
+        <div style={{ width: 1, height: 28, background: "var(--border)", flexShrink: 0, margin: "0 2px" }} />
+
+        {/* Send Template (API) */}
         {waBulkRunning ? (
           <button onClick={cancelWaBulk}
-            style={{ background: "#dc3545", color: "white", border: "none", borderRadius: 6,
-              padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8,
+              border: "none", background: "#dc3545", color: "white", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
             ✕ Cancel
           </button>
         ) : (
@@ -632,42 +626,47 @@ function ContactsTab({ list }: { list: ContactList }) {
               if (selected.size === 0) return;
               const targets = contacts.filter(c => selected.has(c.id) && c.phone);
               if (!targets.length) { setEnrichMsg("No contacts with phone in selection."); return; }
-              setShowWaPreview(true);
+              setShowTemplatePicker(true);
             }} disabled={selected.size === 0}
-            style={{ background: selected.size === 0 ? "#64748b" : "#128C7E", color: "white", border: "none",
-              borderRadius: 6, padding: "5px 14px", cursor: selected.size === 0 ? "default" : "pointer",
-              opacity: selected.size === 0 ? 0.5 : 1, fontSize: 12, fontWeight: 600,
-              display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8,
+              border: "none", background: selected.size === 0 ? "#64748b" : "#128C7E",
+              color: "white", cursor: selected.size === 0 ? "default" : "pointer",
+              fontSize: 13, fontWeight: 600, opacity: selected.size === 0 ? 0.5 : 1 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
             </svg>
-            Send WA ({selected.size})
+            Send Template (API)
           </button>
         )}
+
+        {/* Interval */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (sec):</span>
+          <input type="number" min={5} max={3600} value={waInterval} disabled={waBulkRunning}
+            onChange={e => setWaInterval(Math.max(5, Number(e.target.value)))}
+            style={{ width: 60, fontSize: 12, padding: "4px 8px", borderRadius: 6,
+              border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} />
+        </div>
+
         {/* Live counter */}
         {waTotalCount > 0 && (
-          <span style={{ fontSize: 12, fontWeight: 600,
-            color: waSentCount === waTotalCount ? "#22c55e" : "#f59e0b" }}>
-            {waBulkRunning && "⏳ "}
-            Sent {waSentCount}/{waTotalCount}
+          <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 4,
+            color: waSentCount === waTotalCount && !waBulkRunning ? "#22c55e" : "#f59e0b" }}>
+            {waBulkRunning && "⏳ "}Sent {waSentCount}/{waTotalCount}
             {waFailCount > 0 && <span style={{ color: "#ef4444" }}> · {waFailCount} failed</span>}
           </span>
         )}
       </div>
 
-      {/* Bulk WA progress panel — persists after completion */}
+      {/* Bulk WA progress panel */}
       {waBulkJobs.length > 0 && (
         <div style={{ maxHeight: 120, overflowY: "auto", marginBottom: 10,
           padding: "6px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>
-              WA Bulk Progress
-            </span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>WA Bulk Progress</span>
             {!waBulkRunning && (
               <button onClick={() => setWaBulkJobs([])}
-                style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer" }}>
-                Clear
-              </button>
+                style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer" }}>Clear</button>
             )}
           </div>
           {waBulkJobs.map((j, i) => (
@@ -803,6 +802,18 @@ function ContactsTab({ list }: { list: ContactList }) {
           onClose={() => setSendModal(null)} />
       )}
 
+      {/* ── Meta Template Picker Modal ── */}
+      {showTemplatePicker && (
+        <MetaTemplatePicker
+          onClose={() => setShowTemplatePicker(false)}
+          onSelect={(tpl) => {
+            setSelectedMetaTemplate(tpl);
+            setShowTemplatePicker(false);
+            setShowWaPreview(true);
+          }}
+        />
+      )}
+
       {/* ── WA Bulk Preview Modal ── */}
       {showWaPreview && (() => {
         const targets = contacts.filter(c => selected.has(c.id) && c.phone);
@@ -822,7 +833,7 @@ function ContactsTab({ list }: { list: ContactList }) {
                   </svg>
                   WhatsApp Bulk Preview
                   <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)" }}>
-                    — {targets.length} contacts · Template API · {waInterval}s interval
+                    — {targets.length} contacts · {selectedMetaTemplate ? <><strong style={{ color: "#128C7E" }}>{selectedMetaTemplate.name}</strong></> : "Template API"} · {waInterval}s interval
                   </span>
                 </h2>
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowWaPreview(false)}>✕</button>
@@ -843,12 +854,22 @@ function ContactsTab({ list }: { list: ContactList }) {
               {/* Variable legend */}
               <div style={{ marginBottom: 12, flexShrink: 0, padding: "8px 14px",
                 background: "#128C7E11", borderRadius: 8, border: "1px solid #128C7E33", fontSize: 12 }}>
-                <span style={{ color: "#128C7E", fontWeight: 600 }}>Variables sent per contact: </span>
-                <span style={{ color: "var(--muted)" }}>
-                  var1 = <strong style={{ color: "var(--text)" }}>First Name</strong>
-                  &nbsp;·&nbsp;
-                  var2 = <strong style={{ color: "var(--text)" }}>Company</strong>
-                </span>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div>
+                    <span style={{ color: "#128C7E", fontWeight: 600 }}>Variables: </span>
+                    <span style={{ color: "var(--muted)" }}>
+                      {"{1}"} = <strong style={{ color: "var(--text)" }}>First Name</strong>
+                      &nbsp;·&nbsp;
+                      {"{2}"} = <strong style={{ color: "var(--text)" }}>Company</strong>
+                    </span>
+                  </div>
+                  {selectedMetaTemplate?.bodyText && (
+                    <div style={{ flex: 1, minWidth: 200, color: "var(--muted)", fontStyle: "italic", fontSize: 11,
+                      borderLeft: "2px solid #128C7E44", paddingLeft: 10 }}>
+                      {selectedMetaTemplate.bodyText}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Contact list */}
@@ -1231,4 +1252,93 @@ function LogTab({ list }: { list: ContactList }) {
         </table>
       </div>
     );
+}
+
+// ── Meta Template Picker ──────────────────────────────────────────────────────
+
+function MetaTemplatePicker({ onClose, onSelect }: {
+  onClose: () => void;
+  onSelect: (tpl: { name: string; language: string; bodyText: string }) => void;
+}) {
+  const [templates, setTemplates] = useState<{ name: string; status: string; language: string; bodyText: string }[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
+  const [selected, setSelected]   = useState<string>("");
+
+  useEffect(() => {
+    api.get<{ name: string; status: string; language: string; bodyText: string }[]>("/api/whatsapp/templates")
+      .then(data => {
+        const approved = data.filter(t => t.status === "APPROVED");
+        setTemplates(approved);
+        if (approved.length) setSelected(approved[0].name);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const selectedTpl = templates.find(t => t.name === selected);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1010,
+      display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div className="card" style={{ width: 560, maxWidth: "95vw", maxHeight: "85vh",
+        display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexShrink: 0 }}>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#128C7E" strokeWidth="2">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+            </svg>
+            Select Meta Template
+          </h2>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 40 }}><span className="spinner spinner-dark" /></div>
+        ) : error ? (
+          <div style={{ padding: 20, color: "#ef4444", fontSize: 13 }}>{error}</div>
+        ) : templates.length === 0 ? (
+          <div style={{ padding: 20, color: "var(--muted)", fontSize: 13 }}>No approved templates found in your WABA.</div>
+        ) : (
+          <>
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+              {templates.map(t => (
+                <div key={t.name} onClick={() => setSelected(t.name)}
+                  style={{ padding: "12px 14px", borderRadius: 8, cursor: "pointer",
+                    border: selected === t.name ? "2px solid #128C7E" : "1px solid var(--border)",
+                    background: selected === t.name ? "#128C7E11" : "var(--surface2)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{t.name}</span>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 10, fontWeight: 600,
+                        background: "#22c55e22", color: "#22c55e" }}>APPROVED</span>
+                      <span style={{ fontSize: 11, color: "var(--muted)" }}>{t.language}</span>
+                    </div>
+                  </div>
+                  {t.bodyText && (
+                    <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                      {t.bodyText.length > 180 ? t.bodyText.slice(0, 180) + "…" : t.bodyText}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexShrink: 0 }}>
+              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button
+                disabled={!selectedTpl}
+                onClick={() => selectedTpl && onSelect({ name: selectedTpl.name, language: selectedTpl.language, bodyText: selectedTpl.bodyText })}
+                style={{ background: selectedTpl ? "#128C7E" : "#64748b", color: "white", border: "none",
+                  borderRadius: 6, padding: "7px 18px", cursor: selectedTpl ? "pointer" : "default",
+                  fontSize: 13, fontWeight: 600, opacity: selectedTpl ? 1 : 0.5 }}>
+                Use This Template →
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }

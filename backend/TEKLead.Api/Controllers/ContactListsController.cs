@@ -179,7 +179,7 @@ public class ContactListsController : ControllerBase
         {
             (bool ok, string wamid, string error, string _) result;
             if (req.Mode == "template")
-                result = await _wa.SendTemplate(req.Phone, null, "en", req.BodyVariables);
+                result = await _wa.SendTemplate(req.Phone, req.TemplateName, req.TemplateLang ?? "en", req.BodyVariables);
             else
                 result = await _wa.SendText(req.Phone, req.Body ?? "");
 
@@ -237,9 +237,11 @@ public class ContactWhatsAppLogRequest
 
 public class ContactWaSendApiRequest
 {
-    public Guid        ContactId    { get; set; }
-    public string      Phone        { get; set; } = "";
-    public string      Mode         { get; set; } = "text"; // "template" | "text"
-    public string?     Body         { get; set; }
+    public Guid        ContactId     { get; set; }
+    public string      Phone         { get; set; } = "";
+    public string      Mode          { get; set; } = "text"; // "template" | "text"
+    public string?     Body          { get; set; }
+    public string?     TemplateName  { get; set; }
+    public string?     TemplateLang  { get; set; }
     public List<string>? BodyVariables { get; set; }
 }
