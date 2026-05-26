@@ -16,6 +16,8 @@ public class WhatsAppMessage
     public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
     public string? RawPayload { get; set; }
+    public string? MediaUrl { get; set; }
+    public string? MediaCaption { get; set; }
     public string InboxType { get; set; } = "sales"; // sales | hr
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

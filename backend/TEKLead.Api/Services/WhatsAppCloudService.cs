@@ -54,6 +54,8 @@ public class WhatsAppCloudService
                 error_code TEXT NULL,
                 error_message TEXT NULL,
                 raw_payload TEXT NULL,
+                media_url TEXT NULL,
+                media_caption TEXT NULL,
                 inbox_type TEXT NOT NULL DEFAULT 'sales',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -73,7 +75,51 @@ public class WhatsAppCloudService
                     ALTER TABLE whatsapp_messages ADD COLUMN inbox_type TEXT NOT NULL DEFAULT 'sales';
                 END IF;
             END$$");
+        await c.ExecuteAsync(@"
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='whatsapp_messages' AND column_name='media_url'
+                ) THEN
+                    ALTER TABLE whatsapp_messages ADD COLUMN media_url TEXT NULL;
+                END IF;
+            END$$");
+        await c.ExecuteAsync(@"
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='whatsapp_messages' AND column_name='media_caption'
+                ) THEN
+                    ALTER TABLE whatsapp_messages ADD COLUMN media_caption TEXT NULL;
+                END IF;
+            END$$");
         _log.LogInformation("WhatsAppCloud schema OK.");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Resolve Meta media_id → public download URL
+    // ─────────────────────────────────────────────────────────────
+    private async Task<string?> ResolveMediaUrl(string mediaId, string token, string version)
+    {
+        try
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get,
+                $"https://graph.facebook.com/{version}/{mediaId}");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var res = await _http.SendAsync(req);
+            if (!res.IsSuccessStatusCode) return null;
+            var raw = await res.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.TryGetProperty("url", out var urlEl))
+                return urlEl.GetString();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "ResolveMediaUrl failed for {MediaId}", mediaId);
+        }
+        return null;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -313,10 +359,12 @@ public class WhatsAppCloudService
         await c.ExecuteAsync(@"
             INSERT INTO whatsapp_messages
                 (id, lead_id, proposal_id, direction, to_phone, from_phone, message_type, template_name,
-                 body, wamid, status, error_code, error_message, raw_payload, inbox_type, created_at, updated_at)
+                 body, wamid, status, error_code, error_message, raw_payload, media_url, media_caption,
+                 inbox_type, created_at, updated_at)
             VALUES
                 (@Id, @LeadId, @ProposalId, @Direction, @ToPhone, @FromPhone, @MessageType, @TemplateName,
-                 @Body, @Wamid, @Status, @ErrorCode, @ErrorMessage, @RawPayload, @InboxType, @CreatedAt, @UpdatedAt)",
+                 @Body, @Wamid, @Status, @ErrorCode, @ErrorMessage, @RawPayload, @MediaUrl, @MediaCaption,
+                 @InboxType, @CreatedAt, @UpdatedAt)",
             m);
     }
 
@@ -333,7 +381,7 @@ public class WhatsAppCloudService
             SELECT id AS Id, lead_id AS LeadId, proposal_id AS ProposalId, direction AS Direction,
                    to_phone AS ToPhone, from_phone AS FromPhone, message_type AS MessageType,
                    template_name AS TemplateName, body AS Body, wamid AS Wamid, status AS Status,
-                   error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload,
+                   error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload, media_url AS MediaUrl, media_caption AS MediaCaption,
                    inbox_type AS InboxType, created_at AS CreatedAt, updated_at AS UpdatedAt
             FROM whatsapp_messages
             WHERE lead_id = @LeadId
@@ -351,7 +399,7 @@ public class WhatsAppCloudService
             SELECT id AS Id, lead_id AS LeadId, proposal_id AS ProposalId, direction AS Direction,
                    to_phone AS ToPhone, from_phone AS FromPhone, message_type AS MessageType,
                    template_name AS TemplateName, body AS Body, wamid AS Wamid, status AS Status,
-                   error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload,
+                   error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload, media_url AS MediaUrl, media_caption AS MediaCaption,
                    inbox_type AS InboxType, created_at AS CreatedAt, updated_at AS UpdatedAt
             FROM whatsapp_messages
             ORDER BY created_at DESC
@@ -442,6 +490,23 @@ public class WhatsAppCloudService
                             if (string.IsNullOrEmpty(body) && !string.IsNullOrEmpty(type))
                                 body = $"[{type}]";
 
+                            // Extract media_id and caption for media messages
+                            string? mediaUrl = null;
+                            string? mediaCaption = null;
+                            if (type == "image" || type == "video" || type == "audio" || type == "document")
+                            {
+                                if (m.TryGetProperty(type, out var mediaEl))
+                                {
+                                    var mediaId = mediaEl.TryGetProperty("id", out var midEl) ? midEl.GetString() : null;
+                                    mediaCaption = mediaEl.TryGetProperty("caption", out var capEl) ? capEl.GetString() : null;
+                                    if (!string.IsNullOrEmpty(mediaId))
+                                    {
+                                        var cfg2 = await LoadConfig();
+                                        mediaUrl = await ResolveMediaUrl(mediaId, cfg2.token, cfg2.version);
+                                    }
+                                }
+                            }
+
                             // Determine inbox routing
                             var inboxType = ResolveInboxType(from);
 
@@ -457,6 +522,8 @@ public class WhatsAppCloudService
                                     Wamid = wamid,
                                     Status = "received",
                                     RawPayload = m.GetRawText(),
+                                    MediaUrl = mediaUrl,
+                                    MediaCaption = mediaCaption,
                                     InboxType = inboxType,
                                     CreatedAt = DateTime.UtcNow,
                                     UpdatedAt = DateTime.UtcNow
@@ -589,7 +656,7 @@ Login to TEKLead AI to respond.";
             SELECT id AS Id, lead_id AS LeadId, proposal_id AS ProposalId, direction AS Direction,
                    to_phone AS ToPhone, from_phone AS FromPhone, message_type AS MessageType,
                    template_name AS TemplateName, body AS Body, wamid AS Wamid, status AS Status,
-                   error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload,
+                   error_code AS ErrorCode, error_message AS ErrorMessage, raw_payload AS RawPayload, media_url AS MediaUrl, media_caption AS MediaCaption,
                    inbox_type AS InboxType, created_at AS CreatedAt, updated_at AS UpdatedAt
             FROM whatsapp_messages
             WHERE to_phone = @Phone OR from_phone = @Phone

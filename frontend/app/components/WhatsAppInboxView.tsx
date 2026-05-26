@@ -23,6 +23,8 @@ interface Message {
   wamid: string | null;
   status: string;
   errorMessage: string | null;
+  mediaUrl: string | null;
+  mediaCaption: string | null;
   createdAt: string;
 }
 
@@ -231,8 +233,37 @@ export default function WhatsAppInboxView() {
                           Template: {m.templateName}
                         </div>
                       )}
+                      {/* Media rendering */}
+                      {m.mediaUrl && m.messageType === "image" && (
+                        <a href={m.mediaUrl} target="_blank" rel="noreferrer">
+                          <img src={m.mediaUrl} alt="image" style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 6, display: "block", marginBottom: 4 }} />
+                        </a>
+                      )}
+                      {m.mediaUrl && m.messageType === "video" && (
+                        <video controls style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 6, display: "block", marginBottom: 4 }}>
+                          <source src={m.mediaUrl} />
+                        </video>
+                      )}
+                      {m.mediaUrl && m.messageType === "audio" && (
+                        <audio controls style={{ width: "100%", marginBottom: 4 }}>
+                          <source src={m.mediaUrl} />
+                        </audio>
+                      )}
+                      {m.mediaUrl && m.messageType === "document" && (
+                        <a href={m.mediaUrl} target="_blank" rel="noreferrer"
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", background: "rgba(0,0,0,0.05)", borderRadius: 6, marginBottom: 4, textDecoration: "none", color: "#111" }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                          <span style={{ fontSize: 12 }}>Download document</span>
+                        </a>
+                      )}
+                      {!m.mediaUrl && m.messageType === "document" && m.body === "[document]" && (
+                        <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>📎 Document (preview unavailable)</div>
+                      )}
+                      {m.mediaCaption && (
+                        <div style={{ fontSize: 12, color: "#555", marginBottom: 2 }}>{m.mediaCaption}</div>
+                      )}
                       <div style={{ fontSize: 13, color: "#111", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                        {m.body || (m.templateName ? `[${m.templateName}]` : "—")}
+                        {m.mediaUrl ? null : (m.body || (m.templateName ? `[${m.templateName}]` : "—"))}
                       </div>
                       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: 4 }}>
                         <span style={{ fontSize: 10, color: "#94a3b8" }}>{fmtTime(m.createdAt)}</span>
