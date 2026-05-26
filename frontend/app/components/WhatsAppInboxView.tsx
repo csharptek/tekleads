@@ -1,6 +1,11 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { api } from "../../lib/api";
+import { api, API_BASE } from "../../lib/api";
+
+function proxyMedia(url: string | null) {
+  if (!url) return null;
+  return `${API_BASE}/api/whatsapp/media?url=${encodeURIComponent(url)}`;
+}
 
 interface Thread {
   phone: string;
@@ -235,22 +240,22 @@ export default function WhatsAppInboxView() {
                       )}
                       {/* Media rendering */}
                       {m.mediaUrl && m.messageType === "image" && (
-                        <a href={m.mediaUrl} target="_blank" rel="noreferrer">
-                          <img src={m.mediaUrl} alt="image" style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 6, display: "block", marginBottom: 4 }} />
+                        <a href={proxyMedia(m.mediaUrl)!} target="_blank" rel="noreferrer">
+                          <img src={proxyMedia(m.mediaUrl)!} alt="image" style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 6, display: "block", marginBottom: 4 }} />
                         </a>
                       )}
                       {m.mediaUrl && m.messageType === "video" && (
                         <video controls style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 6, display: "block", marginBottom: 4 }}>
-                          <source src={m.mediaUrl} />
+                          <source src={proxyMedia(m.mediaUrl)!} />
                         </video>
                       )}
                       {m.mediaUrl && m.messageType === "audio" && (
                         <audio controls style={{ width: "100%", marginBottom: 4 }}>
-                          <source src={m.mediaUrl} />
+                          <source src={proxyMedia(m.mediaUrl)!} />
                         </audio>
                       )}
                       {m.mediaUrl && m.messageType === "document" && (
-                        <a href={m.mediaUrl} target="_blank" rel="noreferrer"
+                        <a href={proxyMedia(m.mediaUrl)!} target="_blank" rel="noreferrer"
                           style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", background: "rgba(0,0,0,0.05)", borderRadius: 6, marginBottom: 4, textDecoration: "none", color: "#111" }}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                           <span style={{ fontSize: 12 }}>Download document</span>

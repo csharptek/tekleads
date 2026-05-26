@@ -79,6 +79,29 @@ public class WhatsAppController : ControllerBase
 
     // ─────────────────────────────────────────────
     // ─────────────────────────────────────────────
+    [HttpGet("media")]
+    public async Task<IActionResult> MediaProxy([FromQuery] string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return BadRequest(new { error = "url required" });
+
+        var all = await _settings.GetAll();
+        var token = all.GetValueOrDefault(SettingKeys.WhatsappCloudAccessToken, "");
+        if (string.IsNullOrWhiteSpace(token))
+            return StatusCode(503, new { error = "WhatsApp access token not configured" });
+
+        using var http = new System.Net.Http.HttpClient();
+        var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, url);
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        var res = await http.SendAsync(req, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+        if (!res.IsSuccessStatusCode)
+            return StatusCode((int)res.StatusCode, new { error = "Meta media fetch failed" });
+
+        var contentType = res.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
+        var stream = await res.Content.ReadAsStreamAsync();
+        return File(stream, contentType);
+    }
+
     [HttpGet("messages")]
     public async Task<IActionResult> Recent([FromQuery] int limit = 50)
         => Ok(await _svc.ListRecent(limit));
