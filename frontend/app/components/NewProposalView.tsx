@@ -96,7 +96,10 @@ export default function NewProposalView({
   const set = (k: keyof Proposal, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   const primaryContact = contacts.find(c => c.isPrimary);
-  const section2Unlocked = contacts.some(c => c.enriched);
+  const [haveDetails, setHaveDetails] = useState(false);
+  const [manualContact, setManualContact] = useState({ name: "", title: "", company: "", email: "", phone: "", linkedin: "" });
+  const mc = (k: string, v: string) => setManualContact(p => ({ ...p, [k]: v }));
+  const section2Unlocked = contacts.some(c => c.enriched) || haveDetails;
 
   // ── Search ──
   const doSearch = async (p = 1) => {
@@ -597,12 +600,54 @@ export default function NewProposalView({
             )}
           </div>
         )}
+
+        {/* ── I have the details toggle ── */}
+        {!contacts.some(c => c.enriched) && (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }}>
+              <div
+                onClick={() => setHaveDetails(v => !v)}
+                style={{
+                  width: 40, height: 22, borderRadius: 11,
+                  background: haveDetails ? "var(--accent, #0078d4)" : "var(--border)",
+                  position: "relative", transition: "background .2s", flexShrink: 0,
+                }}>
+                <div style={{
+                  position: "absolute", top: 3, left: haveDetails ? 21 : 3,
+                  width: 16, height: 16, borderRadius: "50%",
+                  background: "white", transition: "left .2s",
+                  boxShadow: "0 1px 3px rgba(0,0,0,.3)",
+                }} />
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>I have the details</span>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>— skip enrichment, enter contact manually</span>
+            </label>
+
+            {haveDetails && (
+              <div style={{ marginTop: 14, padding: "14px 16px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12, marginBottom: 12 }}>
+                  <div><div className="field-label">Name *</div><input className="input" placeholder="Full name" value={manualContact.name} onChange={e => mc("name", e.target.value)} /></div>
+                  <div><div className="field-label">Title</div><input className="input" placeholder="e.g. CEO" value={manualContact.title} onChange={e => mc("title", e.target.value)} /></div>
+                  <div><div className="field-label">Company</div><input className="input" placeholder="Company name" value={manualContact.company} onChange={e => mc("company", e.target.value)} /></div>
+                  <div><div className="field-label">Email</div><input className="input" type="email" placeholder="email@example.com" value={manualContact.email} onChange={e => mc("email", e.target.value)} /></div>
+                  <div><div className="field-label">Phone</div><input className="input" placeholder="+1 234 567 8900" value={manualContact.phone} onChange={e => mc("phone", e.target.value)} /></div>
+                  <div><div className="field-label">LinkedIn</div><input className="input" placeholder="https://linkedin.com/in/..." value={manualContact.linkedin} onChange={e => mc("linkedin", e.target.value)} /></div>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "default" }}>
+                  <input type="checkbox" checked readOnly style={{ width: 15, height: 15, accentColor: "var(--accent, #0078d4)" }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent, #0078d4)" }}>Primary</span>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>— this contact will be used for outreach</span>
+                </label>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── SECTION 2 ── */}
       <div className="card" style={{ opacity: section2Unlocked ? 1 : 0.5, pointerEvents: section2Unlocked ? "auto" : "none" }}>
         <div className="card-title">Section 2 — Proposal Details</div>
-        <div className="card-sub">{section2Unlocked ? "Enrich at least one contact above to enable" : "Unlocked — enter proposal details below"}</div>
+        <div className="card-sub">{!section2Unlocked ? "Enrich at least one contact above to enable" : "Enter proposal details below"}</div>
 
         {/* Manual client fields */}
         <div className="grid-2" style={{ marginBottom: 14 }}>
