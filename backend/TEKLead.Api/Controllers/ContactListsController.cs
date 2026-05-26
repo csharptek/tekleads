@@ -8,20 +8,23 @@ namespace TEKLead.Api.Controllers;
 [Route("api/contact-lists")]
 public class ContactListsController : ControllerBase
 {
-    private readonly ContactListService _svc;
-    private readonly GraphEmailService  _graphEmail;
-    private readonly ApolloService      _apollo;
+    private readonly ContactListService   _svc;
+    private readonly GraphEmailService    _graphEmail;
+    private readonly ApolloService        _apollo;
+    private readonly WhatsAppCloudService _wa;
     private readonly ILogger<ContactListsController> _log;
 
     public ContactListsController(
         ContactListService svc,
         GraphEmailService graphEmail,
         ApolloService apollo,
+        WhatsAppCloudService wa,
         ILogger<ContactListsController> log)
     {
         _svc        = svc;
         _graphEmail = graphEmail;
         _apollo     = apollo;
+        _wa         = wa;
         _log        = log;
     }
 
@@ -166,6 +169,47 @@ public class ContactListsController : ControllerBase
         return Ok(new { logged = true });
     }
 
+    [HttpPost("{listId:guid}/send-whatsapp-api")]
+    public async Task<IActionResult> SendWhatsAppApi(Guid listId, [FromBody] ContactWaSendApiRequest req)
+    {
+        if (string.IsNullOrEmpty(req.Phone))
+            return BadRequest(new { error = "Phone required." });
+
+        try
+        {
+            (bool ok, string wamid, string error, string _) result;
+            if (req.Mode == "template")
+                result = await _wa.SendTemplate(req.Phone, null, "en", req.BodyVariables);
+            else
+                result = await _wa.SendText(req.Phone, req.Body ?? "");
+
+            await _svc.LogOutreach(new ContactOutreachLog
+            {
+                ContactId = req.ContactId,
+                ListId    = listId,
+                Type      = req.Mode == "template" ? "whatsapp-template" : "whatsapp-text",
+                Recipient = req.Phone,
+                Status    = result.ok ? "sent" : "failed",
+                Error     = result.ok ? null : result.error,
+            });
+            if (!result.ok) return StatusCode(500, new { ok = false, error = result.error });
+            return Ok(new { ok = true, wamid = result.wamid });
+        }
+        catch (Exception ex)
+        {
+            await _svc.LogOutreach(new ContactOutreachLog
+            {
+                ContactId = req.ContactId,
+                ListId    = listId,
+                Type      = "whatsapp-text",
+                Recipient = req.Phone,
+                Status    = "failed",
+                Error     = ex.Message,
+            });
+            return StatusCode(500, new { ok = false, error = ex.Message });
+        }
+    }
+
     [HttpGet("{listId:guid}/outreach-log")]
     public async Task<IActionResult> GetOutreachLog(Guid listId) =>
         Ok(await _svc.GetOutreachLog(listId));
@@ -189,4 +233,13 @@ public class ContactWhatsAppLogRequest
 {
     public Guid   ContactId { get; set; }
     public string Phone     { get; set; } = "";
+}
+
+public class ContactWaSendApiRequest
+{
+    public Guid        ContactId    { get; set; }
+    public string      Phone        { get; set; } = "";
+    public string      Mode         { get; set; } = "text"; // "template" | "text"
+    public string?     Body         { get; set; }
+    public List<string>? BodyVariables { get; set; }
 }

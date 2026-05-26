@@ -27,6 +27,8 @@ type OutreachLog = {
 type SortKey = "name" | "title" | "company" | "location" | "email" | "phone" | "enrichStatus";
 type SortDir = "asc" | "desc";
 
+type WaSendStatus = "idle" | "sending" | "sent" | "failed";
+
 const TOKENS = [
   { label: "Name",     value: "{{name}}" },
   { label: "Company",  value: "{{company}}" },
@@ -39,11 +41,17 @@ const TOKENS = [
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = { enriched: "#22c55e", pending: "#f59e0b", failed: "#ef4444", sent: "#22c55e", skipped: "#94a3b8", opened: "#22c55e" };
+  const colors: Record<string, string> = {
+    enriched: "#22c55e", pending: "#f59e0b", failed: "#ef4444",
+    sent: "#22c55e", skipped: "#94a3b8", opened: "#22c55e",
+    "whatsapp-template": "#128C7E", "whatsapp-text": "#25D366",
+    sending: "#f59e0b",
+  };
+  const label = status === "whatsapp-template" ? "wa-sent" : status === "whatsapp-text" ? "wa-sent" : status;
   return (
     <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 12,
       background: `${colors[status] || "#94a3b8"}22`, color: colors[status] || "#94a3b8",
-      border: `1px solid ${colors[status] || "#94a3b8"}44` }}>{status}</span>
+      border: `1px solid ${colors[status] || "#94a3b8"}44` }}>{label}</span>
   );
 }
 
@@ -298,12 +306,24 @@ function ContactsTab({ list }: { list: ContactList }) {
   const [enrichMsg, setEnrichMsg] = useState("");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [sendModal, setSendModal] = useState<{ contact: Contact; type: "email" | "whatsapp" } | null>(null);
-  const [sendInterval, setSendInterval] = useState(5);
-  const [bulkType, setBulkType]         = useState<"email" | "whatsapp">("email");
-  const [bulkTemplate, setBulkTemplate] = useState("");
-  const [bulkJobs, setBulkJobs]         = useState<{ name: string; recipient: string; status: "pending" | "sent" | "skipped" }[]>([]);
-  const [bulkRunning, setBulkRunning]   = useState(false);
-  const bulkRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Bulk WA API send state
+  const [waBulkMode, setWaBulkMode]       = useState<"template" | "text">("template");
+  const [waInterval, setWaInterval]       = useState(15); // seconds
+  const [waBulkRunning, setWaBulkRunning] = useState(false);
+  const [waBulkJobs, setWaBulkJobs]       = useState<{
+    contactId: string; name: string; phone: string;
+    status: "pending" | "sending" | "sent" | "failed" | "skipped"; error?: string;
+  }[]>([]);
+  const waBulkRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const waBulkCancelRef = useRef(false);
+
+  // Per-row WA API status (keyed by contactId)
+  const [rowWaStatus, setRowWaStatus] = useState<Record<string, WaSendStatus>>({});
+
+  // Outreach log sent map (contactId -> true) loaded from DB
+  const [sentToday, setSentToday] = useState<Record<string, string>>({}); // contactId -> type
+
   const [showInstantly, setShowInstantly] = useState(false);
   const [inCampaigns, setInCampaigns]     = useState<{ id: string; name: string }[]>([]);
   const [inCampaignId, setInCampaignId]   = useState("");
@@ -332,10 +352,22 @@ function ContactsTab({ list }: { list: ContactList }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Load outreach log to mark already-sent contacts
+  useEffect(() => {
+    api.get<OutreachLog[]>(`/api/contact-lists/${list.id}/outreach-log`).then(logs => {
+      const map: Record<string, string> = {};
+      logs.forEach(l => {
+        if (l.status === "sent" || l.type === "whatsapp-template" || l.type === "whatsapp-text") {
+          if (!map[l.contactId]) map[l.contactId] = l.type;
+        }
+      });
+      setSentToday(map);
+    }).catch(() => {});
+  }, [list.id]);
+
   useEffect(() => {
     api.get<Template[]>(`/api/contact-lists/${list.id}/templates`).then(t => {
       setTemplates(t);
-      if (t.length) setBulkTemplate(t[0].id || "");
     }).catch(() => {});
   }, [list.id]);
 
@@ -362,44 +394,94 @@ function ContactsTab({ list }: { list: ContactList }) {
     finally { setEnriching(false); }
   }
 
-  function startBulkSend() {
-    if (!selected.size) return;
-    const tpl = templates.find(t => t.id === bulkTemplate);
-    if (!tpl) return;
-    const targets = contacts.filter(c => selected.has(c.id));
-    const jobs = targets.map(c => ({
-      name: c.name,
-      recipient: bulkType === "email" ? c.email : c.phone,
-      status: "pending" as const,
-      contact: c,
-    })).filter(j => j.recipient);
-    if (!jobs.length) { setEnrichMsg(`No contacts with ${bulkType} in selection.`); return; }
-    const jobsDisplay = jobs.map(j => ({ name: j.name, recipient: j.recipient, status: "pending" as const }));
-    setBulkJobs(jobsDisplay);
-    setBulkRunning(true);
-    let i = 0;
-    function sendNext() {
-      if (i >= jobs.length) { setBulkRunning(false); return; }
-      const { contact, recipient } = jobs[i];
-      if (bulkType === "email") {
-        window.open(`mailto:${recipient}?subject=${encodeURIComponent(interpolate(tpl!.subject, contact))}&body=${encodeURIComponent(interpolate(tpl!.body, contact))}`, "_blank");
+  // Per-row WA API send
+  async function sendRowWaApi(contact: Contact, mode: "template" | "text") {
+    if (!contact.phone) return;
+    setRowWaStatus(s => ({ ...s, [contact.id]: "sending" }));
+    try {
+      const res: any = await api.post(`/api/contact-lists/${list.id}/send-whatsapp-api`, {
+        contactId: contact.id,
+        phone: contact.phone,
+        mode,
+        body: "",
+        bodyVariables: [contact.name?.split(" ")[0] || "there", contact.company || "your business"],
+      });
+      if (res?.ok) {
+        setRowWaStatus(s => ({ ...s, [contact.id]: "sent" }));
+        setSentToday(s => ({ ...s, [contact.id]: mode === "template" ? "whatsapp-template" : "whatsapp-text" }));
       } else {
-        const phone = recipient.replace(/\D/g, "");
-        window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(interpolate(tpl!.body, contact))}` : `https://wa.me/?text=${encodeURIComponent(interpolate(tpl!.body, contact))}`, "_blank");
+        setRowWaStatus(s => ({ ...s, [contact.id]: "failed" }));
       }
-      api.post(`/api/contact-lists/${list.id}/log-whatsapp`, { contactId: contact.id, phone: recipient }).catch(() => {});
-      setBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "sent" } : j));
-      i++;
-      if (i < jobs.length) bulkRef.current = setTimeout(sendNext, sendInterval * 60 * 1000);
-      else setBulkRunning(false);
+    } catch {
+      setRowWaStatus(s => ({ ...s, [contact.id]: "failed" }));
     }
+  }
+
+  // Bulk WA API send
+  function startWaBulkSend() {
+    if (!selected.size) return;
+    const targets = contacts.filter(c => selected.has(c.id) && c.phone);
+    if (!targets.length) { setEnrichMsg("No contacts with phone in selection."); return; }
+
+    const jobs = targets.map(c => ({
+      contactId: c.id, name: c.name, phone: c.phone,
+      status: "pending" as const,
+    }));
+
+    setWaBulkJobs(jobs);
+    setWaBulkRunning(true);
+    waBulkCancelRef.current = false;
+
+    let i = 0;
+    const contact = (idx: number) => contacts.find(c => c.id === jobs[idx].contactId)!;
+
+    async function sendNext() {
+      if (waBulkCancelRef.current || i >= jobs.length) {
+        setWaBulkRunning(false);
+        if (waBulkCancelRef.current) {
+          setWaBulkJobs(prev => prev.map(j => j.status === "pending" ? { ...j, status: "skipped" } : j));
+        }
+        return;
+      }
+
+      setWaBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "sending" } : j));
+
+      const c = contact(i);
+      try {
+        const res: any = await api.post(`/api/contact-lists/${list.id}/send-whatsapp-api`, {
+          contactId: c.id,
+          phone: c.phone,
+          mode: waBulkMode,
+          body: "",
+          bodyVariables: [c.name?.split(" ")[0] || "there", c.company || "your business"],
+        });
+        if (res?.ok) {
+          setWaBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "sent" } : j));
+          setSentToday(s => ({ ...s, [c.id]: waBulkMode === "template" ? "whatsapp-template" : "whatsapp-text" }));
+          setRowWaStatus(s => ({ ...s, [c.id]: "sent" }));
+        } else {
+          setWaBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "failed", error: res?.error } : j));
+        }
+      } catch (e: any) {
+        setWaBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "failed", error: e?.message } : j));
+      }
+
+      i++;
+      if (i < jobs.length && !waBulkCancelRef.current) {
+        waBulkRef.current = setTimeout(sendNext, waInterval * 1000);
+      } else {
+        setWaBulkRunning(false);
+      }
+    }
+
     sendNext();
   }
 
-  function cancelBulk() {
-    if (bulkRef.current) clearTimeout(bulkRef.current);
-    setBulkRunning(false);
-    setBulkJobs(prev => prev.map(j => j.status === "pending" ? { ...j, status: "skipped" } : j));
+  function cancelWaBulk() {
+    waBulkCancelRef.current = true;
+    if (waBulkRef.current) clearTimeout(waBulkRef.current);
+    setWaBulkRunning(false);
+    setWaBulkJobs(prev => prev.map(j => j.status === "pending" || j.status === "sending" ? { ...j, status: "skipped" } : j));
   }
 
   async function openInstantly() {
@@ -441,6 +523,10 @@ function ContactsTab({ list }: { list: ContactList }) {
     { key: "enrichStatus", label: "Status" },
   ];
 
+  const waSentCount  = waBulkJobs.filter(j => j.status === "sent").length;
+  const waFailCount  = waBulkJobs.filter(j => j.status === "failed").length;
+  const waTotalCount = waBulkJobs.length;
+
   return (
     <>
       {/* ── Row 1: Search + Filter + Enrich ── */}
@@ -481,61 +567,34 @@ function ContactsTab({ list }: { list: ContactList }) {
         )}
       </div>
 
-      {/* ── Row 3: Send bar ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12,
+      {/* ── Row 3: Email Send bar ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8,
         padding: "9px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 90 }}>
-          {selected.size > 0
-            ? <span style={{ color: "var(--accent)" }}>{selected.size} selected</span>
-            : <span style={{ color: "var(--muted)" }}>Select to send</span>}
-        </span>
-        <div style={{ width: 1, height: 18, background: "var(--border)", flexShrink: 0 }} />
-        <select value={bulkType} onChange={e => setBulkType(e.target.value as "email" | "whatsapp")}
-          style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}>
-          <option value="email">📧 Email</option>
-          <option value="whatsapp">💬 WhatsApp</option>
-        </select>
-        {templates.filter(t => t.type === bulkType).length > 0 ? (
-          <select value={bulkTemplate} onChange={e => setBulkTemplate(e.target.value)}
-            style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", maxWidth: 200 }}>
-            {templates.filter(t => t.type === bulkType).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-        ) : (
-          <span style={{ fontSize: 11, color: "#f59e0b" }}>No {bulkType} template — create in Templates tab</span>
-        )}
-        <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (min):</span>
-        <select value={sendInterval} onChange={e => setSendInterval(Number(e.target.value))} disabled={bulkRunning}
-          style={{ fontSize: 12, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", width: 56 }}>
-          {[1,2,3,4,5,6,7,8,9,10,15,20,30].map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-        {bulkRunning ? (
-          <button onClick={cancelBulk}
-            style={{ background: "#dc3545", color: "white", border: "none", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-            ✕ Cancel
-          </button>
-        ) : (
-          <button onClick={startBulkSend}
-            disabled={selected.size === 0 || !bulkTemplate || templates.filter(t => t.type === bulkType).length === 0}
-            style={{ background: selected.size === 0 ? "#64748b" : bulkType === "email" ? "#0078d4" : "#25d366",
-              color: "white", border: "none", borderRadius: 6, padding: "5px 14px",
-              cursor: selected.size === 0 ? "default" : "pointer",
-              opacity: selected.size === 0 ? 0.5 : 1,
-              fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-            {bulkType === "email" ? "Send to All" : "WhatsApp All"}
-          </button>
-        )}
-        {bulkJobs.filter(j => j.status === "sent").length > 0 && (
-          <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>
-            ✓ {bulkJobs.filter(j => j.status === "sent").length}/{bulkJobs.length} sent
-          </span>
-        )}
+        <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", color: "var(--muted)" }}>📧 Email</span>
         <div style={{ width: 1, height: 18, background: "var(--border)", flexShrink: 0 }} />
         <button
-          onClick={openInstantly}
           disabled={selected.size === 0}
+          onClick={() => {
+            const tpl = templates.find(t => t.type === "email");
+            if (!tpl) { setEnrichMsg("No email template — create in Templates tab"); return; }
+            const targets = contacts.filter(c => selected.has(c.id) && c.email);
+            if (!targets.length) { setEnrichMsg("No contacts with email in selection."); return; }
+            targets.forEach((c, i) => setTimeout(() => {
+              window.open(`mailto:${c.email}?subject=${encodeURIComponent(interpolate(tpl.subject, c))}&body=${encodeURIComponent(interpolate(tpl.body, c))}`, "_blank");
+              api.post(`/api/contact-lists/${list.id}/log-whatsapp`, { contactId: c.id, phone: c.email }).catch(() => {});
+            }, i * waInterval * 1000));
+          }}
+          style={{ background: selected.size === 0 ? "#64748b" : "#0078d4", color: "white", border: "none",
+            borderRadius: 6, padding: "5px 14px", cursor: selected.size === 0 ? "default" : "pointer",
+            opacity: selected.size === 0 ? 0.5 : 1, fontSize: 12, fontWeight: 600,
+            display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+          Send to All
+        </button>
+        <div style={{ width: 1, height: 18, background: "var(--border)", flexShrink: 0 }} />
+        <button onClick={openInstantly} disabled={selected.size === 0}
           style={{ background: selected.size === 0 ? "#64748b" : "#7c3aed", color: "white", border: "none",
             borderRadius: 6, padding: "5px 14px", cursor: selected.size === 0 ? "default" : "pointer",
             opacity: selected.size === 0 ? 0.5 : 1, fontSize: 12, fontWeight: 600,
@@ -547,17 +606,75 @@ function ContactsTab({ list }: { list: ContactList }) {
         </button>
       </div>
 
-      {/* Progress while bulk running */}
-      {bulkRunning && bulkJobs.length > 0 && (
-        <div style={{ maxHeight: 90, overflowY: "auto", marginBottom: 10,
+      {/* ── Row 4: WhatsApp API send bar ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12,
+        padding: "9px 12px", background: "#0d1f1566", borderRadius: 8, border: "1px solid #128C7E44" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#25D366", whiteSpace: "nowrap" }}>💬 WhatsApp API</span>
+        <div style={{ width: 1, height: 18, background: "#128C7E55", flexShrink: 0 }} />
+        <select value={waBulkMode} onChange={e => setWaBulkMode(e.target.value as "template" | "text")} disabled={waBulkRunning}
+          style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid #128C7E55", background: "var(--surface)", color: "var(--text)" }}>
+          <option value="template">Template (API)</option>
+          <option value="text">Text (API)</option>
+        </select>
+        <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (sec):</span>
+        <input type="number" min={5} max={3600} value={waInterval} disabled={waBulkRunning}
+          onChange={e => setWaInterval(Math.max(5, Number(e.target.value)))}
+          style={{ width: 64, fontSize: 12, padding: "4px 8px", borderRadius: 6,
+            border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} />
+        {waBulkRunning ? (
+          <button onClick={cancelWaBulk}
+            style={{ background: "#dc3545", color: "white", border: "none", borderRadius: 6,
+              padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+            ✕ Cancel
+          </button>
+        ) : (
+          <button onClick={startWaBulkSend} disabled={selected.size === 0}
+            style={{ background: selected.size === 0 ? "#64748b" : "#128C7E", color: "white", border: "none",
+              borderRadius: 6, padding: "5px 14px", cursor: selected.size === 0 ? "default" : "pointer",
+              opacity: selected.size === 0 ? 0.5 : 1, fontSize: 12, fontWeight: 600,
+              display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+            </svg>
+            Send WA ({selected.size})
+          </button>
+        )}
+        {/* Live counter */}
+        {waTotalCount > 0 && (
+          <span style={{ fontSize: 12, fontWeight: 600,
+            color: waSentCount === waTotalCount ? "#22c55e" : "#f59e0b" }}>
+            {waBulkRunning && "⏳ "}
+            Sent {waSentCount}/{waTotalCount}
+            {waFailCount > 0 && <span style={{ color: "#ef4444" }}> · {waFailCount} failed</span>}
+          </span>
+        )}
+      </div>
+
+      {/* Bulk WA progress panel — persists after completion */}
+      {waBulkJobs.length > 0 && (
+        <div style={{ maxHeight: 120, overflowY: "auto", marginBottom: 10,
           padding: "6px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
-          {bulkJobs.map((j, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, padding: "2px 0", color: "var(--muted)" }}>
-              <span style={{ color: j.status === "sent" ? "#22c55e" : "var(--muted)", width: 12 }}>
-                {j.status === "sent" ? "✓" : j.status === "skipped" ? "–" : "○"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>
+              WA Bulk Progress
+            </span>
+            {!waBulkRunning && (
+              <button onClick={() => setWaBulkJobs([])}
+                style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer" }}>
+                Clear
+              </button>
+            )}
+          </div>
+          {waBulkJobs.map((j, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, padding: "2px 0", alignItems: "center" }}>
+              <span style={{ width: 14, textAlign: "center",
+                color: j.status === "sent" ? "#22c55e" : j.status === "failed" ? "#ef4444" :
+                       j.status === "skipped" ? "#94a3b8" : j.status === "sending" ? "#f59e0b" : "var(--muted)" }}>
+                {j.status === "sent" ? "✓" : j.status === "failed" ? "✗" : j.status === "skipped" ? "–" : j.status === "sending" ? "⋯" : "○"}
               </span>
-              <span style={{ flex: 1 }}>{j.name}</span>
-              <span>{j.recipient}</span>
+              <span style={{ flex: 1, color: "var(--text)" }}>{j.name}</span>
+              <span style={{ color: "var(--muted)" }}>{j.phone}</span>
+              {j.error && <span style={{ color: "#ef4444", fontSize: 10 }}>{j.error}</span>}
             </div>
           ))}
         </div>
@@ -601,46 +718,84 @@ function ContactsTab({ list }: { list: ContactList }) {
               </tr>
             </thead>
             <tbody>
-              {contacts.map(c => (
-                <tr key={c.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                  <td style={{ padding: "10px 12px" }}>
-                    <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} />
-                  </td>
-                  <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>{c.name || "—"}</td>
-                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{c.company || "—"}</td>
-                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap", fontSize: 12 }}>{c.phone || "—"}</td>
-                  <td style={{ padding: "10px 12px" }}>
-                    {c.email
-                      ? <a href={"mailto:" + c.email} style={{ color: "var(--accent)", textDecoration: "none", fontSize: 12 }}>{c.email}</a>
-                      : <span style={{ color: "#334155" }}>—</span>}
-                  </td>
-                  <td style={{ padding: "10px 12px" }}>
-                    <div style={{ display: "flex", gap: 5 }}>
-                      <button title={c.email ? "Send Email" : "No email"} onClick={() => c.email && setSendModal({ contact: c, type: "email" })}
-                        style={{ background: c.email ? "#0078d4" : "#94a3b8", border: "none", borderRadius: 6,
-                          padding: "4px 8px", cursor: c.email ? "pointer" : "default",
-                          display: "flex", alignItems: "center", opacity: c.email ? 1 : 0.35 }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                          <polyline points="22,6 12,13 2,6"/>
-                        </svg>
-                      </button>
-                      <button title={c.phone ? "Open WhatsApp" : "No phone"} onClick={() => c.phone && setSendModal({ contact: c, type: "whatsapp" })}
-                        style={{ background: c.phone ? "#25d366" : "#94a3b8", border: "none", borderRadius: 6,
-                          padding: "4px 8px", cursor: c.phone ? "pointer" : "default",
-                          display: "flex", alignItems: "center", opacity: c.phone ? 1 : 0.35 }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                  <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap", fontSize: 12 }}>{c.title || "—"}</td>
-                  <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap", fontSize: 12 }}>{c.location || "—"}</td>
-                  <td style={{ padding: "10px 12px" }}><StatusBadge status={c.enrichStatus} /></td>
-                  <td style={{ padding: "10px 12px" }}><LinkedInIcon url={c.linkedinUrl} /></td>
-                </tr>
-              ))}
+              {contacts.map(c => {
+                const waRowStatus = rowWaStatus[c.id];
+                const alreadySent = sentToday[c.id];
+                return (
+                  <tr key={c.id} style={{ borderBottom: "1px solid var(--border)",
+                    background: alreadySent ? "#128C7E08" : undefined }}>
+                    <td style={{ padding: "10px 12px" }}>
+                      <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} />
+                    </td>
+                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>{c.name || "—"}</td>
+                    <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{c.company || "—"}</td>
+                    <td style={{ padding: "10px 12px", whiteSpace: "nowrap", fontSize: 12 }}>{c.phone || "—"}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      {c.email
+                        ? <a href={"mailto:" + c.email} style={{ color: "var(--accent)", textDecoration: "none", fontSize: 12 }}>{c.email}</a>
+                        : <span style={{ color: "#334155" }}>—</span>}
+                    </td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+                        {/* Email button */}
+                        <button title={c.email ? "Send Email" : "No email"} onClick={() => c.email && setSendModal({ contact: c, type: "email" })}
+                          style={{ background: c.email ? "#0078d4" : "#94a3b8", border: "none", borderRadius: 6,
+                            padding: "4px 8px", cursor: c.email ? "pointer" : "default",
+                            display: "flex", alignItems: "center", opacity: c.email ? 1 : 0.35 }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                            <polyline points="22,6 12,13 2,6"/>
+                          </svg>
+                        </button>
+                        {/* WA Template API button */}
+                        <button
+                          title={c.phone ? "Send approved template via Meta Cloud API" : "No phone"}
+                          onClick={() => c.phone && sendRowWaApi(c, "template")}
+                          disabled={waRowStatus === "sending"}
+                          style={{ background: c.phone ? "#128C7E" : "#94a3b8", border: "none", borderRadius: 6,
+                            padding: "4px 7px", cursor: c.phone ? "pointer" : "default",
+                            display: "flex", alignItems: "center", gap: 4,
+                            opacity: c.phone ? 1 : 0.35, fontSize: 10, color: "white", fontWeight: 600,
+                            outline: alreadySent ? "2px solid #22c55e" : "none" }}>
+                          {waRowStatus === "sending" ? <span style={{ width: 10, height: 10 }} className="spinner" /> :
+                           waRowStatus === "sent" || alreadySent ? "✓" :
+                           waRowStatus === "failed" ? "✗" : null}
+                          {!waRowStatus && !alreadySent && (
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                            </svg>
+                          )}
+                          TPL
+                        </button>
+                        {/* WA Text API button */}
+                        <button
+                          title={c.phone ? "Send free-form text via Cloud API (24hr window)" : "No phone"}
+                          onClick={() => c.phone && sendRowWaApi(c, "text")}
+                          disabled={waRowStatus === "sending"}
+                          style={{ background: c.phone ? "#25D366" : "#94a3b8", border: "none", borderRadius: 6,
+                            padding: "4px 7px", cursor: c.phone ? "pointer" : "default",
+                            display: "flex", alignItems: "center", gap: 4,
+                            opacity: c.phone ? 1 : 0.35, fontSize: 10, color: "white", fontWeight: 600 }}>
+                          {!waRowStatus && (
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                            </svg>
+                          )}
+                          TXT
+                        </button>
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap", fontSize: 12 }}>{c.title || "—"}</td>
+                    <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap", fontSize: 12 }}>{c.location || "—"}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      {alreadySent
+                        ? <StatusBadge status={alreadySent} />
+                        : <StatusBadge status={c.enrichStatus} />}
+                    </td>
+                    <td style={{ padding: "10px 12px" }}><LinkedInIcon url={c.linkedinUrl} /></td>
+                  </tr>
+                );
+              })}
               {!contacts.length && (
                 <tr><td colSpan={10} style={{ textAlign: "center", padding: 32, color: "var(--muted)" }}>No contacts found.</td></tr>
               )}
@@ -668,12 +823,10 @@ function ContactsTab({ list }: { list: ContactList }) {
               </h2>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowInstantly(false)}>✕</button>
             </div>
-
             <div style={{ padding: "10px 14px", background: "var(--surface2)", borderRadius: 8, fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
               <strong style={{ color: "var(--text)" }}>{selected.size} contacts</strong> selected ·{" "}
               {contacts.filter(c => selected.has(c.id) && c.email).length} have email
             </div>
-
             {inLoading ? (
               <div style={{ textAlign: "center", padding: 24 }}><span className="spinner spinner-dark" /></div>
             ) : (
@@ -693,9 +846,7 @@ function ContactsTab({ list }: { list: ContactList }) {
                 )}
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                   <button className="btn btn-ghost" onClick={() => setShowInstantly(false)}>Cancel</button>
-                  <button
-                    onClick={pushToInstantly}
-                    disabled={inPushing || !inCampaignId || inCampaigns.length === 0}
+                  <button onClick={pushToInstantly} disabled={inPushing || !inCampaignId || inCampaigns.length === 0}
                     style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 6,
                       padding: "7px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600,
                       display: "flex", alignItems: "center", gap: 6,
@@ -733,28 +884,20 @@ function SendOutreachModal({ contact, type, listId, templates, onClose }: {
     window.open(`mailto:${contact.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, "_blank");
     api.post(`/api/contact-lists/${listId}/log-whatsapp`, { contactId: contact.id, phone: contact.email }).catch(() => {});
   }
-  function openWhatsApp() {
-    const phone = contact.phone.replace(/\D/g, "");
-    window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(body)}` : `https://wa.me/?text=${encodeURIComponent(body)}`, "_blank");
-    api.post(`/api/contact-lists/${listId}/log-whatsapp`, { contactId: contact.id, phone: contact.phone }).catch(() => {});
-  }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="card" style={{ width: 520, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
-            {type === "email"
-              ? <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 6 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Email</>
-              : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#25d366" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 6 }}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>WhatsApp</>}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 6 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Email
             <span style={{ fontWeight: 400, fontSize: 13, color: "var(--muted)", marginLeft: 8 }}>— {contact.name}</span>
           </h2>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
         <div style={{ marginBottom: 14, padding: "8px 12px", background: "var(--surface2)", borderRadius: 8, fontSize: 12, color: "var(--muted)" }}>
-          {type === "email"
-            ? <><strong style={{ color: "var(--text)" }}>To:</strong> {contact.email || <span style={{ color: "#ef4444" }}>No email</span>} · Opens Outlook</>
-            : <><strong style={{ color: "var(--text)" }}>Phone:</strong> {contact.phone || <span style={{ color: "#ef4444" }}>No phone</span>} · Opens WhatsApp</>}
+          <strong style={{ color: "var(--text)" }}>To:</strong> {contact.email || <span style={{ color: "#ef4444" }}>No email</span>} · Opens Outlook
         </div>
         {templates.length > 0 && (
           <div style={{ marginBottom: 12 }}>
@@ -765,29 +908,21 @@ function SendOutreachModal({ contact, type, listId, templates, onClose }: {
             </select>
           </div>
         )}
-        {type === "email" && (
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 6 }}>SUBJECT</label>
-            <input className="input" value={subject} onChange={e => setSubject(e.target.value)} style={{ width: "100%" }} />
-          </div>
-        )}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 6 }}>SUBJECT</label>
+          <input className="input" value={subject} onChange={e => setSubject(e.target.value)} style={{ width: "100%" }} />
+        </div>
         <div style={{ marginBottom: 14 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 6 }}>MESSAGE</label>
           <textarea className="input" value={body} onChange={e => setBody(e.target.value)} rows={8} style={{ width: "100%", resize: "vertical" }} />
         </div>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          {type === "email"
-            ? <button onClick={openEmail} disabled={!contact.email || !body.trim()}
-                style={{ background: "#0078d4", color: "white", border: "none", borderRadius: 6, padding: "7px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                Open in Outlook
-              </button>
-            : <button onClick={openWhatsApp} disabled={!body.trim()}
-                style={{ background: "#25d366", color: "white", border: "none", borderRadius: 6, padding: "7px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-                Open WhatsApp
-              </button>}
+          <button onClick={openEmail} disabled={!contact.email || !body.trim()}
+            style={{ background: "#0078d4", color: "white", border: "none", borderRadius: 6, padding: "7px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Open in Outlook
+          </button>
         </div>
       </div>
     </div>
@@ -876,8 +1011,6 @@ function TemplatesTab({ list }: { list: ContactList }) {
               </h2>
               <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>✕</button>
             </div>
-
-            {/* Token palette */}
             <div style={{ marginBottom: 14, padding: "10px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".5px" }}>
                 Insert Placeholder at cursor — click to add
@@ -899,13 +1032,11 @@ function TemplatesTab({ list }: { list: ContactList }) {
               </div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Click inside subject or body first, then click a token to insert at that position.</div>
             </div>
-
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 6 }}>TEMPLATE NAME</label>
               <input className="input" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })}
                 style={{ width: "100%" }} placeholder="e.g. Med Spa Cold Outreach" />
             </div>
-
             {editing.type === "email" && (
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 6 }}>SUBJECT</label>
@@ -914,7 +1045,6 @@ function TemplatesTab({ list }: { list: ContactList }) {
                   style={{ width: "100%" }} placeholder="e.g. Quick intro — {{company}}" />
               </div>
             )}
-
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 6 }}>BODY</label>
               <textarea ref={bodyRef as React.RefObject<HTMLTextAreaElement>} className="input" value={editing.body}
@@ -922,8 +1052,6 @@ function TemplatesTab({ list }: { list: ContactList }) {
                 rows={10} style={{ width: "100%", resize: "vertical", fontFamily: "inherit" }}
                 placeholder={"Hi {{name}},\n\nI noticed {{company}} is…\n\nWould love to connect!\n\nBest,\n[Your Name]"} />
             </div>
-
-            {/* Live preview */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 6 }}>
                 PREVIEW <span style={{ fontWeight: 400, fontSize: 11 }}>(sample: John Smith · CEO · Acme Corp · Sydney)</span>
@@ -939,7 +1067,6 @@ function TemplatesTab({ list }: { list: ContactList }) {
                   : <span style={{ color: "var(--muted)" }}>Preview appears here as you type…</span>}
               </div>
             </div>
-
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Template"}</button>
@@ -979,8 +1106,10 @@ function LogTab({ list }: { list: ContactList }) {
               <tr key={l.id} style={{ borderBottom: "1px solid var(--border)" }}>
                 <td style={{ padding: "10px 14px" }}>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                    background: l.type === "email" ? "var(--accent-10)" : "#25d36622",
-                    color: l.type === "email" ? "var(--accent)" : "#25d366" }}>{l.type}</span>
+                    background: l.type === "email" ? "var(--accent-10)" :
+                               l.type.startsWith("whatsapp") ? "#128C7E22" : "#25d36622",
+                    color: l.type === "email" ? "var(--accent)" :
+                           l.type.startsWith("whatsapp") ? "#128C7E" : "#25d366" }}>{l.type}</span>
                 </td>
                 <td style={{ padding: "10px 14px" }}>{l.recipient}</td>
                 <td style={{ padding: "10px 14px" }}><StatusBadge status={l.status} /></td>
