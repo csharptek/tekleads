@@ -308,14 +308,30 @@ export default function WhatsAppInboxView() {
               )}
 
               <div style={{ display: "flex", gap: 8 }}>
-                <textarea
-                  className="input"
-                  style={{ flex: 1, minHeight: 60, resize: "none", fontSize: 13 }}
-                  placeholder="Type a reply… (only works within 24hr reply window)"
-                  value={replyText}
-                  onChange={e => setReplyText(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply("text"); } }}
-                />
+                <div style={{ flex: 1, position: "relative" }}>
+                  <textarea
+                    className="input"
+                    style={{ width: "100%", minHeight: 60, resize: "none", fontSize: 13, paddingRight: 36, boxSizing: "border-box" }}
+                    placeholder="Type a reply… (only works within 24hr reply window)"
+                    value={replyText}
+                    onChange={e => setReplyText(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply("text"); } }}
+                  />
+                  <button
+                    onClick={() => { setShowAttach(v => !v); setSendResult(null); }}
+                    title="Send attachment"
+                    style={{
+                      position: "absolute", bottom: 8, right: 8,
+                      background: "none", border: "none", cursor: "pointer",
+                      color: showAttach ? "#6366f1" : "var(--muted)",
+                      padding: 2, lineHeight: 1, transition: "color 0.15s"
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                    </svg>
+                  </button>
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <button className="btn btn-sm btn-primary" onClick={() => sendReply("text")} disabled={sending || !replyText.trim()}>
                     {sending ? "…" : "Send"}
@@ -324,14 +340,6 @@ export default function WhatsAppInboxView() {
                     style={{ background: "#128C7E", color: "white", border: "none", fontSize: 11 }}
                     title="Send csharptek_intro_v2 template">
                     Template
-                  </button>
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => { setShowAttach(v => !v); setSendResult(null); }}
-                    style={{ background: "#6366f1", color: "white", border: "none", fontSize: 11 }}
-                    title="Send attachment"
-                  >
-                    📎
                   </button>
                 </div>
               </div>
