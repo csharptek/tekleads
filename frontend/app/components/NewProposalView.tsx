@@ -72,7 +72,7 @@ export default function NewProposalView({
   }, []);
 
   // Section 1 — search
-  const [searchForm, setSearchForm] = useState({ name: "", company: "", title: "", industry: "", location: "", linkedinUrl: "" });
+  const [searchForm, setSearchForm] = useState({ name: "", company: "", title: "", industry: "", location: "", domain: "", linkedinUrl: "" });
   const [searchResults, setSearchResults] = useState<Lead[]>([]);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -160,7 +160,7 @@ export default function NewProposalView({
   const doSearch = async (p = 1) => {
     setSearching(true); setError(""); setSearchResults([]);
     try {
-      if (searchForm.linkedinUrl.trim() && !searchForm.name && !searchForm.title && !searchForm.company && !searchForm.industry && !searchForm.location) {
+      if (searchForm.linkedinUrl.trim() && !searchForm.name && !searchForm.title && !searchForm.company && !searchForm.industry && !searchForm.location && !searchForm.domain) {
         const res: any = await api.post("/api/leads/search-by-linkedin", { linkedinUrl: searchForm.linkedinUrl.trim() });
         setSearchResults(res.lead ? [res.lead] : []);
         setSearchTotal(res.lead ? 1 : 0);
@@ -180,7 +180,7 @@ export default function NewProposalView({
   };
 
   const resetAll = () => {
-    setSearchForm({ name: "", company: "", title: "", industry: "", location: "", linkedinUrl: "" });
+    setSearchForm({ name: "", company: "", title: "", industry: "", location: "", domain: "", linkedinUrl: "" });
     setSearchResults([]); setSearched(false); setSearchPage(1); setSearchTotal(0);
     setContacts([]); setPhonePending(new Set());
     setForm({ ...EMPTY_PROPOSAL }); setSavedId(null);
@@ -537,7 +537,7 @@ export default function NewProposalView({
 
         {/* Search filters */}
         <div className="grid-3" style={{ marginBottom: 12 }}>
-          {([["name","Person Name","e.g. John Smith"],["title","Job Title","e.g. CTO"],["company","Company","e.g. Acme Corp"],["industry","Industry","e.g. Software"],["location","Location","e.g. London"]] as [keyof typeof searchForm, string, string][]).map(([k, lbl, ph]) => (
+          {([["name","Person Name","e.g. John Smith"],["title","Job Title","e.g. CTO"],["company","Company","e.g. Acme Corp"],["industry","Industry","e.g. Software"],["location","Location","e.g. London"],["domain","Website Domain","e.g. acmecorp.com"]] as [keyof typeof searchForm, string, string][]).map(([k, lbl, ph]) => (
             <div key={k}>
               <div className="field-label">{lbl}</div>
               <input className="input" placeholder={ph} value={searchForm[k]}
