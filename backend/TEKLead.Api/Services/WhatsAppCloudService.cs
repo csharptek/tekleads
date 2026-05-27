@@ -649,7 +649,7 @@ Login to TEKLead AI to respond.";
                 w.InboxType,
                 w.IsHotLead,
                 w.HasInbound,
-                w.LastOutboundStatus
+                ls.status AS LastOutboundStatus
             FROM (
                 SELECT
                     COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
@@ -660,16 +660,18 @@ Login to TEKLead AI to respond.";
                     SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount,
                     MAX(inbox_type) AS InboxType,
                     BOOL_OR(COALESCE(is_hot_lead, FALSE)) AS IsHotLead,
-                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound,
-                    (SELECT status FROM whatsapp_messages m2
-                     WHERE m2.direction='outbound'
-                       AND (m2.to_phone = COALESCE(NULLIF(wm.from_phone,''), wm.to_phone)
-                            OR m2.from_phone = COALESCE(NULLIF(wm.from_phone,''), wm.to_phone))
-                     ORDER BY m2.created_at DESC LIMIT 1) AS LastOutboundStatus
-                FROM whatsapp_messages wm
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound
+                FROM whatsapp_messages
                 WHERE inbox_type = @InboxType
                 GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
             ) w
+            LEFT JOIN LATERAL (
+                SELECT status FROM whatsapp_messages m2
+                WHERE m2.direction = 'outbound'
+                  AND regexp_replace(m2.to_phone, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+                ORDER BY m2.created_at DESC
+                LIMIT 1
+            ) ls ON TRUE
             LEFT JOIN saved_leads sl
                 ON EXISTS (
                     SELECT 1 FROM unnest(sl.phones) AS p
