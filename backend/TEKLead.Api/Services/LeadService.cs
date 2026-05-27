@@ -110,6 +110,49 @@ public class LeadService
         return lead;
     }
 
+    public async Task<List<Lead>> FindDuplicates(string? apolloId, string? name, string? company, string? linkedinUrl)
+    {
+        await using var c = Conn();
+        await c.OpenAsync();
+        var results = new List<Lead>();
+        var seen = new HashSet<Guid>();
+
+        // 1. Match by apolloId
+        if (!string.IsNullOrWhiteSpace(apolloId))
+        {
+            var rows = await c.QueryAsync<dynamic>("SELECT * FROM saved_leads WHERE apollo_id = @apolloId", new { apolloId });
+            foreach (var r in rows) { var l = Map(r); if (seen.Add(l.Id)) results.Add(l); }
+        }
+
+        // 2. Match by linkedinUrl
+        if (!string.IsNullOrWhiteSpace(linkedinUrl))
+        {
+            var rows = await c.QueryAsync<dynamic>("SELECT * FROM saved_leads WHERE LOWER(linkedin_url) = LOWER(@linkedinUrl)", new { linkedinUrl });
+            foreach (var r in rows) { var l = Map(r); if (seen.Add(l.Id)) results.Add(l); }
+        }
+
+        // 3. Match by name + company (case-insensitive)
+        if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(company))
+        {
+            var rows = await c.QueryAsync<dynamic>(
+                "SELECT * FROM saved_leads WHERE LOWER(name) = LOWER(@name) AND LOWER(company) = LOWER(@company)",
+                new { name, company });
+            foreach (var r in rows) { var l = Map(r); if (seen.Add(l.Id)) results.Add(l); }
+        }
+
+        return results;
+    }
+
+    public async Task<List<Lead>> FindByName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return new List<Lead>();
+        await using var c = Conn();
+        await c.OpenAsync();
+        var rows = await c.QueryAsync<dynamic>(
+            "SELECT * FROM saved_leads WHERE LOWER(name) = LOWER(@name)", new { name });
+        return rows.Select(Map).ToList();
+    }
+
     private static Lead Map(dynamic r) => new()
     {
         Id          = r.id,

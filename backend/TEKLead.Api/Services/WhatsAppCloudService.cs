@@ -613,7 +613,7 @@ Login to TEKLead AI to respond.";
         var rows = await c.QueryAsync<WhatsAppInboxThread>(@"
             SELECT
                 w.Phone,
-                sl.name AS ContactName,
+                COALESCE(sl.name, ct.name) AS ContactName,
                 w.LastMessage,
                 w.LastTemplate,
                 w.LastAt,
@@ -638,6 +638,8 @@ Login to TEKLead AI to respond.";
                     SELECT 1 FROM unnest(sl.phones) AS p
                     WHERE regexp_replace(p, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
                 )
+            LEFT JOIN contacts ct
+                ON regexp_replace(ct.phone, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
             ORDER BY w.LastAt DESC", new { InboxType = inboxType });
         return rows.ToList();
     }
@@ -673,12 +675,17 @@ Login to TEKLead AI to respond.";
             var clean = new string(phone.Where(char.IsDigit).ToArray());
             await using var c = new NpgsqlConnection(cs);
             await c.OpenAsync();
-            return await c.QueryFirstOrDefaultAsync<string>(@"
+            var name = await c.QueryFirstOrDefaultAsync<string>(@"
                 SELECT name FROM saved_leads
                 WHERE EXISTS (
                     SELECT 1 FROM unnest(phones) AS p
                     WHERE regexp_replace(p, '[^0-9]', '', 'g') = @Clean
                 )
+                LIMIT 1", new { Clean = clean });
+            if (!string.IsNullOrEmpty(name)) return name;
+            return await c.QueryFirstOrDefaultAsync<string>(@"
+                SELECT name FROM contacts
+                WHERE regexp_replace(phone, '[^0-9]', '', 'g') = @Clean
                 LIMIT 1", new { Clean = clean }) ?? "";
         }
         catch { return ""; }

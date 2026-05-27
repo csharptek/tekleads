@@ -63,6 +63,21 @@ public class LeadsController : ControllerBase
         }
     }
 
+    [HttpPost("check-duplicate")]
+    public async Task<IActionResult> CheckDuplicate([FromBody] DuplicateCheckRequest req)
+    {
+        var matches = await _leads.FindDuplicates(req.ApolloId, req.Name, req.Company, req.LinkedinUrl);
+        return Ok(new { matches });
+    }
+
+    [HttpPost("check-name")]
+    public async Task<IActionResult> CheckName([FromBody] NameCheckRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name)) return Ok(new { matches = new List<object>() });
+        var matches = await _leads.FindByName(req.Name);
+        return Ok(new { matches });
+    }
+
     [HttpPost("save")]
     public async Task<IActionResult> Save([FromBody] List<Lead> leads)
     {
@@ -236,7 +251,18 @@ public class LeadsController : ControllerBase
     }
 }
 
-public class LeadSearchRequest
+public class DuplicateCheckRequest
+{
+    public string? ApolloId { get; set; }
+    public string? Name { get; set; }
+    public string? Company { get; set; }
+    public string? LinkedinUrl { get; set; }
+}
+
+public class NameCheckRequest
+{
+    public string? Name { get; set; }
+}
 {
     public string? Name { get; set; }
     public string? Title { get; set; }

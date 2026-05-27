@@ -17,7 +17,17 @@ interface Lead {
 
 interface SearchResult { leads: Lead[]; total: number; }
 
+type DupMatch = { id: string; name: string; title: string; company: string; emails: string[]; phones: string[] };
+type EnrichType = "email" | "phone" | "all";
+type EnrichModal = { lead: Lead; matches: DupMatch[]; enrichType: EnrichType } | null;
+
 const PER_PAGE = 25;
+
+const CREDIT_INFO: Record<EnrichType, string> = {
+  email: "Reveals email only · uses Apollo credits · phone will not be revealed.",
+  phone: "Reveals phone only · uses Apollo credits · reveal is async.",
+  all:   "Reveals email + phone · uses Apollo credits · phone reveal is async.",
+};
 
 function WaLink({ phone, message, name }: { phone: string; message: string; name: string }) {
   const clean = phone.replace(/\D/g, "");
@@ -46,9 +56,7 @@ export default function LeadSearchView() {
   const [phonePending, setPhonePending] = useState<Set<string>>(new Set());
   const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
   const [searched, setSearched] = useState(false);
-  const [enrichConfirm, setEnrichConfirm] = useState<Lead | null>(null);
-  const [emailConfirm, setEmailConfirm] = useState<Lead | null>(null);
-  const [phoneConfirm, setPhoneConfirm] = useState<Lead | null>(null);
+  const [enrichModal, setEnrichModal] = useState<EnrichModal>(null);
   const [waTemplate, setWaTemplate] = useState("Hi {name}, I'd love to connect!");
 
   useEffect(() => {
@@ -113,9 +121,39 @@ export default function LeadSearchView() {
     } finally { setSaving(false); }
   };
 
-  const doEnrich = async (lead: Lead) => {
-    setEnrichConfirm(null);
+  // Check duplicates then show single modal (with credit info) or go straight to enrich
+  const startEnrich = async (lead: Lead, enrichType: EnrichType) => {
     if (!lead.apolloId) { setBanner({ kind: "info", text: "No Apollo ID — cannot enrich." }); return; }
+    try {
+      const res = await api.post<{ matches: DupMatch[] }>("/api/leads/check-duplicate", {
+        apolloId: lead.apolloId,
+        name: lead.name,
+        company: lead.company,
+        linkedinUrl: lead.linkedinUrl,
+      });
+      if (res.matches && res.matches.length > 0) {
+        setEnrichModal({ lead, matches: res.matches, enrichType });
+      } else {
+        // No duplicate — show credit-only modal (no matches section)
+        setEnrichModal({ lead, matches: [], enrichType });
+      }
+    } catch {
+      // On error just show credit confirm
+      setEnrichModal({ lead, matches: [], enrichType });
+    }
+  };
+
+  const confirmEnrich = () => {
+    if (!enrichModal) return;
+    const { lead, enrichType } = enrichModal;
+    setEnrichModal(null);
+    if (enrichType === "email") doEnrichEmail(lead);
+    else if (enrichType === "phone") doEnrichPhone(lead);
+    else doEnrich(lead);
+  };
+
+  const doEnrich = async (lead: Lead) => {
+    if (!lead.apolloId) return;
     setRevealingId(lead.id); setBanner(null);
     try {
       const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
@@ -165,8 +203,7 @@ export default function LeadSearchView() {
   };
 
   const doEnrichEmail = async (lead: Lead) => {
-    setEmailConfirm(null);
-    if (!lead.apolloId) { setBanner({ kind: "info", text: "No Apollo ID — cannot enrich." }); return; }
+    if (!lead.apolloId) return;
     setRevealingEmailId(lead.id); setBanner(null);
     try {
       const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
@@ -197,8 +234,7 @@ export default function LeadSearchView() {
   };
 
   const doEnrichPhone = async (lead: Lead) => {
-    setPhoneConfirm(null);
-    if (!lead.apolloId) { setBanner({ kind: "info", text: "No Apollo ID — cannot enrich." }); return; }
+    if (!lead.apolloId) return;
     setRevealingPhoneId(lead.id); setBanner(null);
     try {
       const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
@@ -251,46 +287,42 @@ export default function LeadSearchView() {
 
   return (
     <div className="page">
-      {emailConfirm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ maxWidth: 480, margin: 0, width: "100%" }}>
-            <div className="card-title">⚠ Email enrich uses Apollo credits</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
-              Enriching email for <strong>{emailConfirm.name}</strong> consumes credits. Phone will not be revealed.
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="btn btn-ghost" onClick={() => setEmailConfirm(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => doEnrichEmail(emailConfirm)}>Yes, Get Email</button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {phoneConfirm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ maxWidth: 480, margin: 0, width: "100%" }}>
-            <div className="card-title">⚠ Phone enrich uses Apollo credits</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
-              Enriching phone for <strong>{phoneConfirm.name}</strong> consumes credits. Phone reveal is async — email will not be revealed.
+      {/* ── Unified Enrich Modal (duplicate check + credit info) ── */}
+      {enrichModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ maxWidth: 500, margin: 0, width: "100%" }}>
+            <div className="card-title">
+              {enrichModal.matches.length > 0 ? "⚠ Duplicate Found" : "⚠ Confirm Enrich"}
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="btn btn-ghost" onClick={() => setPhoneConfirm(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => doEnrichPhone(phoneConfirm)}>Yes, Get Phone</button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {enrichConfirm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ maxWidth: 480, margin: 0, width: "100%" }}>
-            <div className="card-title">⚠ Enrich uses Apollo credits</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
-              Enriching <strong>{enrichConfirm.name}</strong> consumes credits. Phone reveal is async.
+            {enrichModal.matches.length > 0 && (
+              <>
+                <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
+                  <strong>{enrichModal.lead.name}</strong> may already exist in Prospects:
+                </div>
+                {enrichModal.matches.map((m, i) => (
+                  <div key={i} style={{ background: "var(--surface2)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13 }}>
+                    <div style={{ fontWeight: 600 }}>{m.name}</div>
+                    <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>
+                      {[m.title, m.company].filter(Boolean).join(" @ ")}
+                      {m.emails?.[0] && <span style={{ marginLeft: 8 }}>{m.emails[0]}</span>}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ borderTop: "1px solid var(--border)", margin: "12px 0" }} />
+              </>
+            )}
+
+            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, marginBottom: 20 }}>
+              ⚡ {CREDIT_INFO[enrichModal.enrichType]}
             </div>
+
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="btn btn-ghost" onClick={() => setEnrichConfirm(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => doEnrich(enrichConfirm)}>Yes, Enrich</button>
+              <button className="btn btn-ghost" onClick={() => setEnrichModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmEnrich}>
+                {enrichModal.enrichType === "email" ? "Get Email" : enrichModal.enrichType === "phone" ? "Get Phone" : "Enrich"}
+              </button>
             </div>
           </div>
         </div>
@@ -409,15 +441,15 @@ export default function LeadSearchView() {
                         </td>
                         <td>
                           <div style={{ display: "flex", gap: 4 }}>
-                            <button className="btn btn-ghost btn-sm" onClick={() => setEmailConfirm(lead)}
+                            <button className="btn btn-ghost btn-sm" onClick={() => startEnrich(lead, "email")}
                               disabled={revealingEmailId === lead.id || revealingId === lead.id || revealingPhoneId === lead.id} title="Email only — uses Apollo credits">
                               {revealingEmailId === lead.id ? <span className="spinner spinner-dark" /> : "Email"}
                             </button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => setPhoneConfirm(lead)}
+                            <button className="btn btn-ghost btn-sm" onClick={() => startEnrich(lead, "phone")}
                               disabled={revealingPhoneId === lead.id || revealingId === lead.id || revealingEmailId === lead.id} title="Phone only — uses Apollo credits">
                               {revealingPhoneId === lead.id ? <span className="spinner spinner-dark" /> : "Phone"}
                             </button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => setEnrichConfirm(lead)}
+                            <button className="btn btn-ghost btn-sm" onClick={() => startEnrich(lead, "all")}
                               disabled={revealingId === lead.id || revealingEmailId === lead.id || revealingPhoneId === lead.id} title="Email + phone — uses Apollo credits">
                               {revealingId === lead.id ? <span className="spinner spinner-dark" /> : "Enrich"}
                             </button>
