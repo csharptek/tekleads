@@ -50,6 +50,8 @@ export const api = {
     call<T>(path, { method: "POST", body: JSON.stringify(body) }, 180000),
   put:    <T = any>(path: string, body: unknown) =>
     call<T>(path, { method: "PUT", body: JSON.stringify(body) }),
+  patch:  <T = any>(path: string, body: unknown) =>
+    call<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: <T = any>(path: string) =>
     call<T>(path, { method: "DELETE" }),
   del:    <T = any>(path: string, body: unknown) =>

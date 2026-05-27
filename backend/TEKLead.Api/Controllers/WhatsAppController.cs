@@ -115,8 +115,28 @@ public class WhatsAppController : ControllerBase
         => Ok(await _svc.ListRecent(limit));
 
     [HttpGet("inbox")]
-    public async Task<IActionResult> Inbox([FromQuery] string inbox = "sales")
-        => Ok(await _svc.GetInbox(inbox));
+    public async Task<IActionResult> Inbox(
+        [FromQuery] string inbox = "sales",
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+        => Ok(await _svc.GetInbox(inbox, page, pageSize));
+
+    [HttpPatch("conversations/{phone}/hot-lead")]
+    public async Task<IActionResult> ToggleHotLead(string phone, [FromBody] ToggleHotLeadRequest req)
+    {
+        var ok = await _svc.ToggleHotLead(phone, req.IsHot);
+        return Ok(new { ok });
+    }
+
+    [HttpGet("conversations/search")]
+    public async Task<IActionResult> SearchConversations(
+        [FromQuery] string q,
+        [FromQuery] string inbox = "sales")
+    {
+        if (string.IsNullOrWhiteSpace(q)) return Ok(new List<object>());
+        var results = await _svc.SearchConversations(q, inbox);
+        return Ok(results);
+    }
 
     [HttpGet("conversation/{phone}")]
     public async Task<IActionResult> Conversation(string phone)
@@ -161,6 +181,11 @@ public class WhatsAppController : ControllerBase
         // Always 200 to Meta to avoid retries unless server error
         return Ok(new { ok, note });
     }
+}
+
+public class ToggleHotLeadRequest
+{
+    public bool IsHot { get; set; }
 }
 
 public class SendTemplateRequest

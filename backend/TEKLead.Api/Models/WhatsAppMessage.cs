@@ -33,4 +33,16 @@ public class WhatsAppInboxThread
     public int MessageCount { get; set; }
     public int UnreadCount { get; set; }
     public string InboxType { get; set; } = "sales";
+    public bool IsHotLead { get; set; } = false;
+    public bool HasInbound { get; set; } = false;
+    public string? LastOutboundStatus { get; set; }
+}
+
+public class WhatsAppInboxPage
+{
+    public List<WhatsAppInboxThread> Items { get; set; } = new();
+    public int Total { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public bool HasMore { get; set; }
 }

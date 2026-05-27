@@ -97,6 +97,17 @@ public class WhatsAppCloudService
                     ALTER TABLE whatsapp_messages ADD COLUMN media_caption TEXT NULL;
                 END IF;
             END$$");
+        // Migration: add is_hot_lead to whatsapp_messages if missing
+        await c.ExecuteAsync(@"
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='whatsapp_messages' AND column_name='is_hot_lead'
+                ) THEN
+                    ALTER TABLE whatsapp_messages ADD COLUMN is_hot_lead BOOLEAN NOT NULL DEFAULT FALSE;
+                END IF;
+            END$$");
         _log.LogInformation("WhatsAppCloud schema OK.");
     }
 
@@ -617,10 +628,101 @@ Login to TEKLead AI to respond.";
     // ─────────────────────────────────────────────────────────────
     // Inbox — scoped by inbox type
     // ─────────────────────────────────────────────────────────────
-    public async Task<List<WhatsAppInboxThread>> GetInbox(string inboxType = "sales")
+    public async Task<WhatsAppInboxPage> GetInbox(string inboxType = "sales", int page = 1, int pageSize = 50)
     {
         var cs = _settings.ConnectionString;
         if (string.IsNullOrEmpty(cs)) return new();
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var offset = (page - 1) * pageSize;
+
+        var rows = await c.QueryAsync<WhatsAppInboxThread>(@"
+            SELECT
+                w.Phone,
+                COALESCE(sl.name, ct.name) AS ContactName,
+                w.LastMessage,
+                w.LastTemplate,
+                w.LastAt,
+                w.MessageCount,
+                w.UnreadCount,
+                w.InboxType,
+                w.IsHotLead,
+                w.HasInbound,
+                w.LastOutboundStatus
+            FROM (
+                SELECT
+                    COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
+                    MAX(body) AS LastMessage,
+                    MAX(template_name) AS LastTemplate,
+                    MAX(created_at) AS LastAt,
+                    COUNT(*) AS MessageCount,
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount,
+                    MAX(inbox_type) AS InboxType,
+                    BOOL_OR(COALESCE(is_hot_lead, FALSE)) AS IsHotLead,
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound,
+                    (SELECT status FROM whatsapp_messages m2
+                     WHERE m2.direction='outbound'
+                       AND (m2.to_phone = COALESCE(NULLIF(wm.from_phone,''), wm.to_phone)
+                            OR m2.from_phone = COALESCE(NULLIF(wm.from_phone,''), wm.to_phone))
+                     ORDER BY m2.created_at DESC LIMIT 1) AS LastOutboundStatus
+                FROM whatsapp_messages wm
+                WHERE inbox_type = @InboxType
+                GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
+            ) w
+            LEFT JOIN saved_leads sl
+                ON EXISTS (
+                    SELECT 1 FROM unnest(sl.phones) AS p
+                    WHERE regexp_replace(p, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+                )
+            LEFT JOIN contacts ct
+                ON regexp_replace(ct.phone, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+            ORDER BY w.IsHotLead DESC, w.LastAt DESC
+            LIMIT @PageSize OFFSET @Offset",
+            new { InboxType = inboxType, PageSize = pageSize, Offset = offset });
+
+        var total = await c.ExecuteScalarAsync<int>(@"
+            SELECT COUNT(DISTINCT COALESCE(NULLIF(from_phone,''), to_phone))
+            FROM whatsapp_messages WHERE inbox_type = @InboxType",
+            new { InboxType = inboxType });
+
+        var list = rows.ToList();
+        return new WhatsAppInboxPage
+        {
+            Items = list,
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            HasMore = (offset + list.Count) < total
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Hot lead toggle — sets/unsets is_hot_lead on all messages for phone
+    // ─────────────────────────────────────────────────────────────
+    public async Task<bool> ToggleHotLead(string phone, bool isHot)
+    {
+        var cs = _settings.ConnectionString;
+        if (string.IsNullOrEmpty(cs)) return false;
+        var clean = new string((phone ?? "").Where(char.IsDigit).ToArray());
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+        await c.ExecuteAsync(@"
+            UPDATE whatsapp_messages
+            SET is_hot_lead = @IsHot, updated_at = NOW()
+            WHERE regexp_replace(COALESCE(NULLIF(from_phone,''), to_phone), '[^0-9]', '', 'g') = @Phone",
+            new { IsHot = isHot, Phone = clean });
+        return true;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // DB-wide search by name or phone
+    // ─────────────────────────────────────────────────────────────
+    public async Task<List<WhatsAppInboxThread>> SearchConversations(string query, string inboxType = "sales")
+    {
+        var cs = _settings.ConnectionString;
+        if (string.IsNullOrEmpty(cs)) return new();
+        var search = "%" + query.Trim().ToLower() + "%";
         await using var c = new NpgsqlConnection(cs);
         await c.OpenAsync();
         var rows = await c.QueryAsync<WhatsAppInboxThread>(@"
@@ -632,7 +734,10 @@ Login to TEKLead AI to respond.";
                 w.LastAt,
                 w.MessageCount,
                 w.UnreadCount,
-                w.InboxType
+                w.InboxType,
+                BOOL_OR(COALESCE(w.IsHotLead, FALSE)) AS IsHotLead,
+                w.HasInbound,
+                w.LastOutboundStatus
             FROM (
                 SELECT
                     COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
@@ -641,7 +746,10 @@ Login to TEKLead AI to respond.";
                     MAX(created_at) AS LastAt,
                     COUNT(*) AS MessageCount,
                     SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount,
-                    MAX(inbox_type) AS InboxType
+                    MAX(inbox_type) AS InboxType,
+                    BOOL_OR(COALESCE(is_hot_lead, FALSE)) AS IsHotLead,
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound,
+                    NULL::TEXT AS LastOutboundStatus
                 FROM whatsapp_messages
                 WHERE inbox_type = @InboxType
                 GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
@@ -653,7 +761,11 @@ Login to TEKLead AI to respond.";
                 )
             LEFT JOIN contacts ct
                 ON regexp_replace(ct.phone, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
-            ORDER BY w.LastAt DESC", new { InboxType = inboxType });
+            WHERE LOWER(w.Phone) LIKE @Search
+               OR LOWER(COALESCE(sl.name, ct.name, '')) LIKE @Search
+            ORDER BY w.LastAt DESC
+            LIMIT 50",
+            new { InboxType = inboxType, Search = search });
         return rows.ToList();
     }
 

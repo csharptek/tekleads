@@ -112,9 +112,17 @@ export default function NewProposalView({
         company: lead.company,
         linkedinUrl: lead.linkedinUrl,
       });
-      setEnrichModal({ lead, resultIdx, matches: res.matches || [], enrichType });
+      if (res.matches && res.matches.length > 0) {
+        // Only show modal when there is a duplicate warning
+        setEnrichModal({ lead, resultIdx, matches: res.matches, enrichType });
+      } else {
+        // No duplicate — go straight
+        if (enrichType === "email") handleEnrichEmail(lead, resultIdx);
+        else handleEnrich(lead, resultIdx);
+      }
     } catch {
-      setEnrichModal({ lead, resultIdx, matches: [], enrichType });
+      if (enrichType === "email") handleEnrichEmail(lead, resultIdx);
+      else handleEnrich(lead, resultIdx);
     }
   };
 
@@ -476,37 +484,28 @@ export default function NewProposalView({
   return (
     <div className="page" style={{ paddingBottom: 80 }}>
 
-      {/* ── Enrich Modal (duplicate check + credit info) ── */}
+      {/* ── Enrich Modal (duplicate warning only) ── */}
       {enrichModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div className="card" style={{ maxWidth: 500, margin: 0, width: "100%" }}>
-            <div className="card-title">
-              {enrichModal.matches.length > 0 ? "⚠ Duplicate Found" : "⚠ Confirm Enrich"}
+            <div className="card-title">⚠ Duplicate Found</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
+              <strong>{enrichModal.lead.name}</strong> may already exist in Prospects:
             </div>
-            {enrichModal.matches.length > 0 && (
-              <>
-                <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
-                  <strong>{enrichModal.lead.name}</strong> may already exist in Prospects:
+            {enrichModal.matches.map((m, i) => (
+              <div key={i} style={{ background: "var(--surface2)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13 }}>
+                <div style={{ fontWeight: 600 }}>{m.name}</div>
+                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>
+                  {[m.title, m.company].filter(Boolean).join(" @ ")}
+                  {m.emails?.[0] && <span style={{ marginLeft: 8 }}>{m.emails[0]}</span>}
                 </div>
-                {enrichModal.matches.map((m, i) => (
-                  <div key={i} style={{ background: "var(--surface2)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13 }}>
-                    <div style={{ fontWeight: 600 }}>{m.name}</div>
-                    <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>
-                      {[m.title, m.company].filter(Boolean).join(" @ ")}
-                      {m.emails?.[0] && <span style={{ marginLeft: 8 }}>{m.emails[0]}</span>}
-                    </div>
-                  </div>
-                ))}
-                <div style={{ borderTop: "1px solid var(--border)", margin: "12px 0" }} />
-              </>
-            )}
-            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, marginBottom: 20 }}>
-              ⚡ {CREDIT_INFO[enrichModal.enrichType]}
-            </div>
+              </div>
+            ))}
+            <div style={{ borderTop: "1px solid var(--border)", margin: "12px 0" }} />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost" onClick={() => setEnrichModal(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={confirmEnrich}>
-                {enrichModal.enrichType === "email" ? "Get Email" : "Enrich"}
+                {enrichModal.enrichType === "email" ? "Get Email" : "Enrich anyway"}
               </button>
             </div>
           </div>
