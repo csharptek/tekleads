@@ -263,6 +263,8 @@ public class NameCheckRequest
 {
     public string? Name { get; set; }
 }
+
+public class LeadSearchRequest
 {
     public string? Name { get; set; }
     public string? Title { get; set; }
