@@ -13,6 +13,7 @@ type Contact = {
   id: string; listId: string; name: string; title: string; company: string;
   location: string; email: string; phone: string; linkedinUrl: string;
   apolloId: string; enrichStatus: "pending" | "enriched" | "failed"; enrichedAt?: string;
+  waOutreachStatus?: string; // wa_failed | wa_delivered | ""
 };
 
 type Template = {
@@ -45,9 +46,13 @@ function StatusBadge({ status }: { status: string }) {
     enriched: "#22c55e", pending: "#f59e0b", failed: "#ef4444",
     sent: "#22c55e", skipped: "#94a3b8", opened: "#22c55e",
     "whatsapp-template": "#128C7E", "whatsapp-text": "#25D366",
-    sending: "#f59e0b",
+    sending: "#f59e0b", wa_failed: "#f97316", wa_delivered: "#22c55e",
   };
-  const label = status === "whatsapp-template" ? "wa-sent" : status === "whatsapp-text" ? "wa-sent" : status;
+  const label = status === "whatsapp-template" ? "wa-sent"
+    : status === "whatsapp-text" ? "wa-sent"
+    : status === "wa_failed" ? "WA Failed"
+    : status === "wa_delivered" ? "WA OK"
+    : status;
   return (
     <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 12,
       background: `${colors[status] || "#94a3b8"}22`, color: colors[status] || "#94a3b8",
@@ -543,6 +548,7 @@ function ContactsTab({ list }: { list: ContactList }) {
           <option value="pending">Pending</option>
           <option value="enriched">Enriched</option>
           <option value="failed">Failed</option>
+          <option value="wa_failed">WA Undelivered</option>
         </select>
         {selected.size > 0 && (
           <button className="btn btn-primary btn-sm" onClick={enrich} disabled={enriching}>
@@ -779,7 +785,7 @@ function ContactsTab({ list }: { list: ContactList }) {
                     <td style={{ padding: "10px 12px" }}>
                       {alreadySent
                         ? <StatusBadge status={alreadySent} />
-                        : <StatusBadge status={c.enrichStatus} />}
+                        : <><StatusBadge status={c.enrichStatus} />{c.waOutreachStatus === 'wa_failed' && <span style={{ marginLeft: 4 }}><StatusBadge status="wa_failed" /></span>}</>}
                     </td>
                     <td style={{ padding: "10px 12px" }}><LinkedInIcon url={c.linkedinUrl} /></td>
                   </tr>

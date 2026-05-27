@@ -72,9 +72,31 @@ public class ContactListService
                 sent_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
         ");
+
+        // Add wa_outreach_status if missing (idempotent migration)
+        await c.ExecuteAsync(@"
+            ALTER TABLE contacts ADD COLUMN IF NOT EXISTS wa_outreach_status TEXT NOT NULL DEFAULT '';
+        ");
     }
 
     // ── Contact Lists CRUD ───────────────────────────────────────────────────
+
+
+    // ── WA Outreach Status ───────────────────────────────────────────────────
+    public async Task UpdateWaOutreachStatus(string phone, string waStatus)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return;
+        var clean = new string(phone.Where(char.IsDigit).ToArray());
+        if (clean.Length < 7) return;
+        await using var c = Conn();
+        await c.OpenAsync();
+        await c.ExecuteAsync(@"
+            UPDATE contacts
+            SET wa_outreach_status = @WaStatus
+            WHERE regexp_replace(phone, '[^0-9]', '', 'g') = @Clean
+              AND (wa_outreach_status = '' OR wa_outreach_status != 'wa_delivered')",
+            new { WaStatus = waStatus, Clean = clean });
+    }
 
     public async Task<List<ContactList>> GetLists()
     {
@@ -132,7 +154,12 @@ public class ContactListService
         if (!string.IsNullOrEmpty(search))
             where += " AND (name ILIKE @search OR email ILIKE @search OR company ILIKE @search)";
         if (!string.IsNullOrEmpty(status))
-            where += " AND enrich_status=@status";
+        {
+            if (status == "wa_failed")
+                where += " AND wa_outreach_status='wa_failed'";
+            else
+                where += " AND enrich_status=@status";
+        }
 
         var searchPat = $"%{search}%";
         var total = await c.ExecuteScalarAsync<int>(
@@ -141,7 +168,8 @@ public class ContactListService
 
         var items = await c.QueryAsync<Contact>(
             $@"SELECT id, list_id, name, title, company, location, email, phone,
-                      linkedin_url, apollo_id, enrich_status, enriched_at, created_at
+                      linkedin_url, apollo_id, enrich_status, enriched_at, created_at,
+                      wa_outreach_status AS WaOutreachStatus
                FROM contacts {where}
                ORDER BY created_at ASC
                LIMIT @pageSize OFFSET @offset",

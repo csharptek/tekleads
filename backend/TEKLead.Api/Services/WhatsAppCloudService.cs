@@ -13,15 +13,17 @@ public class WhatsAppCloudService
     private readonly HttpClient _http;
     private readonly SettingsService _settings;
     private readonly ILogger<WhatsAppCloudService> _log;
+    private readonly ContactListService _contactListSvc;
     private readonly GraphEmailService _email;
 
     private const string DefaultApiVersion = "v22.0";
 
-    public WhatsAppCloudService(HttpClient http, SettingsService settings, ILogger<WhatsAppCloudService> log, GraphEmailService email)
+    public WhatsAppCloudService(HttpClient http, SettingsService settings, ILogger<WhatsAppCloudService> log, GraphEmailService email, ContactListService contactListSvc)
     {
         _http = http;
         _settings = settings;
         _log = log;
+        _contactListSvc = contactListSvc;
         _email = email;
     }
 
@@ -460,6 +462,17 @@ public class WhatsAppCloudService
                                     WHERE wamid = @Wamid",
                                     new { Wamid = wamid, Status = status, ErrCode = errCode, ErrMsg = errMsg });
                                 statusUpdates++;
+
+                                // Auto-flag contact as wa_failed / wa_delivered
+                                if (status == "failed" || status == "delivered" || status == "read")
+                                {
+                                    var waContactStatus = status == "failed" ? "wa_failed" : "wa_delivered";
+                                    var toPhone = await c.ExecuteScalarAsync<string>(
+                                        "SELECT to_phone FROM whatsapp_messages WHERE wamid = @Wamid LIMIT 1",
+                                        new { Wamid = wamid }) ?? "";
+                                    if (!string.IsNullOrEmpty(toPhone))
+                                        await _contactListSvc.UpdateWaOutreachStatus(toPhone, waContactStatus);
+                                }
                             }
                         }
                     }

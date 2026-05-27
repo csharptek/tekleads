@@ -25,6 +25,8 @@ public class Contact
     public string ApolloId    { get; set; } = "";
     // pending | enriched | failed
     public string EnrichStatus { get; set; } = "pending";
+    public string WaOutreachStatus { get; set; } = ""; // wa_failed | wa_delivered | ""
+
     public DateTime? EnrichedAt { get; set; }
     public DateTime  CreatedAt  { get; set; }
 }
