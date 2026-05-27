@@ -37,7 +37,7 @@ function WaLink({ phone, message, name }: { phone: string; message: string; name
 }
 
 export default function LeadSearchView() {
-  const [form, setForm] = useState({ name: "", title: "", company: "", industry: "", location: "", linkedinUrl: "" });
+  const [form, setForm] = useState({ name: "", title: "", company: "", industry: "", location: "", domain: "", linkedinUrl: "" });
   const [results, setResults] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -76,7 +76,7 @@ export default function LeadSearchView() {
   const doSearch = async (p: number) => {
     setSearching(true); setBanner(null); setSelected(new Set());
     try {
-      if (form.linkedinUrl.trim() && !form.name && !form.title && !form.company && !form.industry && !form.location) {
+      if (form.linkedinUrl.trim() && !form.name && !form.title && !form.company && !form.industry && !form.location && !form.domain) {
         const res = await api.post<{ lead: Lead }>("/api/leads/search-by-linkedin", { linkedinUrl: form.linkedinUrl.trim() });
         setResults(res.lead ? [res.lead] : []);
         setTotal(res.lead ? 1 : 0);
@@ -345,6 +345,7 @@ export default function LeadSearchView() {
             ["company",  "Company",      "e.g. Acme Corp"],
             ["industry", "Industry",     "e.g. Software"],
             ["location", "Location",     "e.g. London"],
+            ["domain",   "Website Domain", "e.g. acmecorp.com"],
           ] as [keyof typeof form, string, string][]).map(([k, label, ph]) => (
             <div key={k}>
               <div className="field-label">{label}</div>

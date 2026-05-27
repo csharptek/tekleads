@@ -35,7 +35,7 @@ public class LeadsController : ControllerBase
         try
         {
             var (leads, total) = await _apollo.Search(
-                req.Name, req.Title, req.Company, req.Industry, req.Location,
+                req.Name, req.Title, req.Company, req.Industry, req.Location, req.Domain,
                 req.Page, req.PerPage);
             return Ok(new { leads, total });
         }
@@ -271,6 +271,7 @@ public class LeadSearchRequest
     public string? Company { get; set; }
     public string? Industry { get; set; }
     public string? Location { get; set; }
+    public string? Domain { get; set; }
     public int Page { get; set; } = 1;
     public int PerPage { get; set; } = 25;
 }

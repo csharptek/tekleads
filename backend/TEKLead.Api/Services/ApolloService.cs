@@ -36,7 +36,7 @@ public class ApolloService
 
     public async Task<(List<Lead> Leads, int Total)> Search(
         string? name, string? title, string? company,
-        string? industry, string? location,
+        string? industry, string? location, string? domain,
         int page = 1, int perPage = 25)
     {
         var key = await GetKey();
@@ -55,6 +55,8 @@ public class ApolloService
             payload["person_titles"] = new[] { title };
         if (!string.IsNullOrEmpty(location))
             payload["person_locations"] = new[] { location };
+        if (!string.IsNullOrEmpty(domain))
+            payload["q_organization_domains_list"] = new[] { domain.Trim().ToLower().Replace("https://", "").Replace("http://", "").TrimEnd('/') };
 
         var url = "https://api.apollo.io/api/v1/mixed_people/api_search";
         _log.LogInformation("Apollo search: {0}", url);
