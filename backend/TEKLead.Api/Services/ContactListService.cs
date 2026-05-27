@@ -371,7 +371,7 @@ public class ContactListService
                         try
                         {
                             var (leads, _) = await _apollo.Search(
-                                contact.Name, null, contact.Company, null, null, 1, 1);
+                                contact.Name, null, contact.Company, null, null, null, 1, 1);
                             matched = leads.FirstOrDefault();
                         }
                         catch (Exception ex) { _log.LogWarning("Apollo search failed for {0}: {1}", cid, ex.Message); }
