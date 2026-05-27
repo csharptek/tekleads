@@ -92,6 +92,40 @@ export default function NewProposalView({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // Duplicate check modal
+  type DupMatch = { id: string; name: string; title: string; company: string; emails: string[]; phones: string[] };
+  type EnrichType = "email" | "phone" | "all";
+  type EnrichModal = { lead: Lead; resultIdx: number; matches: DupMatch[]; enrichType: EnrichType } | null;
+  const CREDIT_INFO: Record<EnrichType, string> = {
+    email: "Reveals email only · uses Apollo credits · phone will not be revealed.",
+    phone: "Reveals phone only · uses Apollo credits · reveal is async.",
+    all:   "Reveals email + phone · uses Apollo credits · phone reveal is async.",
+  };
+  const [enrichModal, setEnrichModal] = useState<EnrichModal>(null);
+
+  const startEnrich = async (lead: Lead, resultIdx: number, enrichType: EnrichType) => {
+    if (!lead.apolloId) return;
+    try {
+      const res: any = await api.post("/api/leads/check-duplicate", {
+        apolloId: lead.apolloId,
+        name: lead.name,
+        company: lead.company,
+        linkedinUrl: lead.linkedinUrl,
+      });
+      setEnrichModal({ lead, resultIdx, matches: res.matches || [], enrichType });
+    } catch {
+      setEnrichModal({ lead, resultIdx, matches: [], enrichType });
+    }
+  };
+
+  const confirmEnrich = () => {
+    if (!enrichModal) return;
+    const { lead, resultIdx, enrichType } = enrichModal;
+    setEnrichModal(null);
+    if (enrichType === "email") handleEnrichEmail(lead, resultIdx);
+    else handleEnrich(lead, resultIdx);
+  };
+
   const sf = (k: keyof typeof searchForm, v: string) => setSearchForm(p => ({ ...p, [k]: v }));
   const set = (k: keyof Proposal, v: any) => setForm(f => ({ ...f, [k]: v }));
 
@@ -441,6 +475,43 @@ export default function NewProposalView({
 
   return (
     <div className="page" style={{ paddingBottom: 80 }}>
+
+      {/* ── Enrich Modal (duplicate check + credit info) ── */}
+      {enrichModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ maxWidth: 500, margin: 0, width: "100%" }}>
+            <div className="card-title">
+              {enrichModal.matches.length > 0 ? "⚠ Duplicate Found" : "⚠ Confirm Enrich"}
+            </div>
+            {enrichModal.matches.length > 0 && (
+              <>
+                <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
+                  <strong>{enrichModal.lead.name}</strong> may already exist in Prospects:
+                </div>
+                {enrichModal.matches.map((m, i) => (
+                  <div key={i} style={{ background: "var(--surface2)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13 }}>
+                    <div style={{ fontWeight: 600 }}>{m.name}</div>
+                    <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>
+                      {[m.title, m.company].filter(Boolean).join(" @ ")}
+                      {m.emails?.[0] && <span style={{ marginLeft: 8 }}>{m.emails[0]}</span>}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ borderTop: "1px solid var(--border)", margin: "12px 0" }} />
+              </>
+            )}
+            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, marginBottom: 20 }}>
+              ⚡ {CREDIT_INFO[enrichModal.enrichType]}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost" onClick={() => setEnrichModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmEnrich}>
+                {enrichModal.enrichType === "email" ? "Get Email" : "Enrich"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="page-header">
         <div>
           <div className="page-title">New Proposal (New)</div>
@@ -571,10 +642,10 @@ export default function NewProposalView({
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 4 }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => handleEnrichEmail(lead, i)} disabled={enriching || enriched} title="Email only">
+                          <button className="btn btn-ghost btn-sm" onClick={() => startEnrich(lead, i, "email")} disabled={enriching || enriched} title="Email only">
                             {enriching ? <span className="spinner spinner-dark" /> : enriched ? "✓" : "Email"}
                           </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => handleEnrich(lead, i)} disabled={enriching || enriched} title="Email + phone">
+                          <button className="btn btn-ghost btn-sm" onClick={() => startEnrich(lead, i, "all")} disabled={enriching || enriched} title="Email + phone">
                             {enriching ? <span className="spinner spinner-dark" /> : enriched ? "✓ Enriched" : "Enrich"}
                           </button>
                         </div>
