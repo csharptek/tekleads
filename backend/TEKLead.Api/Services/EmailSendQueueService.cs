@@ -61,7 +61,7 @@ public class EmailSendQueueService
         await c.OpenAsync();
 
         await c.ExecuteAsync(
-            "DELETE FROM email_send_jobs WHERE proposal_id=@pid AND status='pending'",
+            "DELETE FROM email_send_jobs WHERE proposal_id=@pid AND status IN ('pending','cancelled','failed')",
             new { pid = proposalId });
 
         var now = DateTime.UtcNow;
@@ -111,7 +111,7 @@ public class EmailSendQueueService
         await using var c = new NpgsqlConnection(_settings.ConnectionString);
         await c.OpenAsync();
         var rows = await c.QueryAsync<dynamic>(
-            "SELECT * FROM email_send_jobs WHERE proposal_id=@pid ORDER BY scheduled_at",
+            "SELECT * FROM email_send_jobs WHERE proposal_id=@pid AND status != 'cancelled' ORDER BY follow_up_stage, scheduled_at",
             new { pid = proposalId });
         return rows.Select(MapJob).ToList();
     }
