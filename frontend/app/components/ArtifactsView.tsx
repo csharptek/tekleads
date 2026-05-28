@@ -502,13 +502,13 @@ export default function ArtifactsView({
         loading={generating.whatsapp}
         actions={<>
           <PromptBtn onClick={() => openPromptModal("whatsapp")} />
+          <button className="btn btn-sm" onClick={() => sendWhatsappCloud("template")} disabled={cloudSending} style={{ background: "#128C7E", color: "white", border: "none" }} title="Send approved template via Meta Cloud API (works for cold outreach)">
+            {cloudSending ? "Sending…" : "Send Template (API)"}
+          </button>
           {artifacts.whatsappMessage && <>
             <CopyBtn text={artifacts.whatsappMessage} />
             <button className="btn btn-sm" onClick={() => sendWhatsapp()} style={{ background: "#25D366", color: "white", border: "none" }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> Send (wa.me)
-            </button>
-            <button className="btn btn-sm" onClick={() => sendWhatsappCloud("template")} disabled={cloudSending} style={{ background: "#128C7E", color: "white", border: "none" }} title="Send approved template via Meta Cloud API (works for cold outreach)">
-              {cloudSending ? "Sending…" : "Send Template (API)"}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => sendWhatsappCloud("text")} disabled={cloudSending} title="Send free-form text via Cloud API (only works within 24hr reply window)">
               Send Text (API)
@@ -645,7 +645,7 @@ export default function ArtifactsView({
       )}
 
       {/* Multi-contact Send Panel */}
-      {((allEmails && allEmails.length > 0) || (allPhones && allPhones.length > 0)) && (artifacts.emailSubject || artifacts.whatsappMessage) && (
+      {((allEmails && allEmails.length > 0 && artifacts.emailSubject) || (allPhones && allPhones.length > 0)) && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
             <div>
@@ -811,7 +811,7 @@ export default function ArtifactsView({
               </div>
             </div>
           )}
-          {allPhones && allPhones.length > 0 && artifacts.whatsappMessage && (
+          {allPhones && allPhones.length > 0 && (
             <div>
               <div className="field-label" style={{ marginBottom: 6 }}>WhatsApp</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -823,18 +823,20 @@ export default function ArtifactsView({
                         {name && <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{name}</div>}
                         <span className="chip chip-green" style={{ fontSize: 12 }}>💬 {phone}</span>
                       </div>
-                      <button className="btn btn-sm" style={{ background: "#25D366", color: "white", border: "none" }}
-                        onClick={() => sendWhatsapp(phone, name)}>
-                        Send (wa.me)
-                      </button>
                       <button className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} disabled={cloudSending}
                         onClick={() => sendWhatsappCloud("template", phone, name)} title="Send approved template via Meta Cloud API">
                         Template (API)
                       </button>
-                      <button className="btn btn-ghost btn-sm" disabled={cloudSending}
-                        onClick={() => sendWhatsappCloud("text", phone, name)} title="Send free-form text (24hr reply window only)">
-                        Text (API)
-                      </button>
+                      {artifacts.whatsappMessage && <>
+                        <button className="btn btn-sm" style={{ background: "#25D366", color: "white", border: "none" }}
+                          onClick={() => sendWhatsapp(phone, name)}>
+                          Send (wa.me)
+                        </button>
+                        <button className="btn btn-ghost btn-sm" disabled={cloudSending}
+                          onClick={() => sendWhatsappCloud("text", phone, name)} title="Send free-form text (24hr reply window only)">
+                          Text (API)
+                        </button>
+                      </>}
                     </div>
                   );
                 })}
