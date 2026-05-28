@@ -324,8 +324,13 @@ export default function ArtifactsView({
 
   const openEmail = (email?: string, name?: string) => {
     const to = email || clientEmail || "";
-    const firstName = (name || clientName || "").split(/[\s-]+/)[0];
-    const body = buildMailtoBody((artifacts.emailBody || "").replace(/^Hi\s+[^,\n]+,?/i, `Hi ${firstName},`));
+    const resolvedName = (name || "").trim() || "";
+    const firstName = resolvedName.split(/[\s-]+/)[0];
+    const body = buildMailtoBody(
+      firstName
+        ? (artifacts.emailBody || "").replace(/^Hi\s+[^,\n]+,?/i, `Hi ${firstName},`)
+        : (artifacts.emailBody || "")
+    );
     const subject = encodeURIComponent(artifacts.emailSubject || "");
     const bodyEnc = encodeURIComponent(body);
     window.open(`mailto:${to}?subject=${subject}&body=${bodyEnc}`, "_blank");

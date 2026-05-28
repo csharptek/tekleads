@@ -142,6 +142,24 @@ export default function ProposalList({
     setFinalPrice(p.finalPrice?.toString() || ""); setLostReason(p.lostReason || ""); setNotes(p.notes || "");
     try { setContacts(p.contactsJson ? JSON.parse(p.contactsJson) : []); } catch { setContacts([]); }
   };
+
+  // Build artifacts context from primary contact fields + contacts list
+  const buildArtifactsCtx = (p: Proposal, cx: Contact[]) => {
+    const emailMap = new Map<string, string>();
+    const phoneMap = new Map<string, string>();
+    // Primary contact first
+    if (p.clientEmail) emailMap.set(p.clientEmail, p.clientName || "");
+    // Enriched contacts override/supplement
+    cx.forEach(c => {
+      if (c.email) emailMap.set(c.email, c.name || emailMap.get(c.email) || "");
+      if (c.phone) phoneMap.set(c.phone, c.name || phoneMap.get(c.phone) || "");
+    });
+    const allEmails = Array.from(emailMap.keys()).filter(Boolean);
+    const allEmailNames = allEmails.map(e => emailMap.get(e) || "");
+    const allPhones = Array.from(phoneMap.keys()).filter(Boolean);
+    const allPhoneNames = allPhones.map(ph => phoneMap.get(ph) || "");
+    return { proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientEmail: allEmails[0] || p.clientEmail, clientPhone: allPhones[0] || "", allEmails, allPhones, allEmailNames, allPhoneNames, autoGenerate: false };
+  };
   const closeDrawer = () => { setDrawer(null); setDrawerError(""); setDrawerSuccess(""); };
 
   const saveDrawer = async () => {
@@ -365,34 +383,9 @@ export default function ProposalList({
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {onEdit && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => onEdit(p.id)}>Edit</button>}
                       {onGenerateArtifacts && <button className="btn btn-sm" style={{ fontSize: 11, background: "#0f172a", color: "white", border: "none" }} onClick={() => {
-                          let allEmails: string[] = p.clientEmail ? [p.clientEmail] : [];
-                          let allEmailNames: string[] = p.clientEmail ? [p.clientName || ""] : [];
-                          let allPhones: string[] = [];
-                          let allPhoneNames: string[] = [];
-                          // Pull enriched contacts from contactsJson first
-                          try {
-                            const cx: Contact[] = p.contactsJson ? JSON.parse(p.contactsJson) : [];
-                            if (cx.length > 0) {
-                              cx.forEach(c => {
-                                if (c.email) { allEmails.push(c.email); allEmailNames.push(c.name || ""); }
-                                if (c.phone) { allPhones.push(c.phone); allPhoneNames.push(c.name || ""); }
-                              });
-                              allEmails = Array.from(new Set(allEmails)).filter(Boolean);
-                            }
-                          } catch {}
-                          // Also pull from apolloContactJson
-                          try {
-                            const ap = p.apolloContactJson ? JSON.parse(p.apolloContactJson) : null;
-                            if (ap) {
-                              const apEmails: string[] = ap.emails || [];
-                              const apPhones: string[] = ap.phones || [];
-                              apEmails.forEach(e => { if (!allEmails.includes(e)) { allEmails.push(e); allEmailNames.push(ap.name || p.clientName || ""); } });
-                              apPhones.forEach(ph => { if (!allPhones.includes(ph)) { allPhones.push(ph); allPhoneNames.push(ap.name || p.clientName || ""); } });
-                            }
-                          } catch {}
-                          allEmails = allEmails.filter(Boolean);
-                          allPhones = allPhones.filter(Boolean);
-                          onGenerateArtifacts({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientEmail: allEmails[0] || p.clientEmail, clientPhone: allPhones[0] || "", allEmails, allPhones, allEmailNames, allPhoneNames, autoGenerate: false });
+                          let cx: Contact[] = [];
+                          try { cx = p.contactsJson ? JSON.parse(p.contactsJson) : []; } catch {}
+                          onGenerateArtifacts(buildArtifactsCtx(p, cx));
                         }}>✦ Artifacts</button>}
                       {onGenerateProposal && <button className="btn btn-sm" style={{ fontSize: 11, background: "#1e293b", color: "white", border: "none" }} onClick={() => onGenerateProposal({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientCompany: p.clientCompany })}>Generate</button>}
                       {p.status !== "sent" && <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => changeStatus(p, "sent")} disabled={statusChanging}>Sent</button>}
@@ -607,6 +600,12 @@ export default function ProposalList({
                   style={{ background: "#0f172a", color: "white", border: "none" }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                   Generate Proposal
+                </button>
+              )}
+              {onGenerateArtifacts && (
+                <button className="btn btn-sm" onClick={() => onGenerateArtifacts(buildArtifactsCtx(drawer, contacts))}
+                  style={{ background: "#0f172a", color: "white", border: "none" }}>
+                  ✦ Artifacts
                 </button>
               )}
             </div>
