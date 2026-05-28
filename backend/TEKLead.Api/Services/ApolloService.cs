@@ -93,6 +93,9 @@ public class ApolloService
                     orgIndustry = Str(org, "industry");
                 }
 
+                var locParts = new[] { Str(p, "city"), Str(p, "state"), Str(p, "country") }
+                    .Where(s => !string.IsNullOrEmpty(s));
+
                 leads.Add(new Lead
                 {
                     Id          = Guid.NewGuid(),
@@ -101,7 +104,7 @@ public class ApolloService
                     Title       = Str(p, "title"),
                     Company     = orgName,
                     Industry    = orgIndustry,
-                    Location    = "",
+                    Location    = string.Join(", ", locParts),
                     Emails      = Array.Empty<string>(),
                     Phones      = Array.Empty<string>(),
                     LinkedinUrl = Str(p, "linkedin_url"),

@@ -125,6 +125,15 @@ export default function ProposalView({
         linkedLeadId: p.linkedLeadId,
         apolloContactJson: p.apolloContactJson,
       });
+      // Restore linked contact from stored apolloContactJson
+      if (p.apolloContactJson) {
+        try {
+          const stored = JSON.parse(p.apolloContactJson);
+          setLinkedContact(stored);
+        } catch { /* ignore */ }
+      } else {
+        setLinkedContact(null);
+      }
       onEditDone?.();
     }).catch(() => {});
   }, [editProposalId]);
