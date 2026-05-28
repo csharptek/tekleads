@@ -104,19 +104,27 @@ export default function ProposalList({
     .filter(p => activeTab === "all" || p.status === activeTab)
     .filter(p => {
       if (!search.trim()) return true;
-      const s = search.toLowerCase();
+      const s = search.trim().toLowerCase();
       const sDigits = s.replace(/\D/g, "");
-      // text fields
-      if (p.clientName?.toLowerCase().includes(s) || p.clientCompany?.toLowerCase().includes(s) ||
-        p.jobPostHeadline?.toLowerCase().includes(s) || p.tags?.toLowerCase().includes(s)) return true;
-      // phone search — check contactsJson
-      if (sDigits.length >= 4) {
-        try {
-          const contacts: Contact[] = JSON.parse(p.contactsJson || "[]");
-          if (contacts.some(c => c.phone && c.phone.replace(/\D/g, "").includes(sDigits))) return true;
-        } catch { }
-        if (p.clientEmail && p.clientEmail.replace(/\D/g, "").includes(sDigits)) return true;
-      }
+      // all text fields — case insensitive
+      const textFields = [
+        p.clientName, p.clientCompany, p.clientEmail, p.clientCity, p.clientCountry,
+        p.jobPostHeadline, p.jobPostBody, p.tags, p.notes, p.status,
+      ];
+      if (textFields.some(f => f?.toLowerCase().includes(s))) return true;
+      // contacts (name, email, role)
+      try {
+        const cx: Contact[] = JSON.parse(p.contactsJson || "[]");
+        if (cx.some(c =>
+          c.name?.toLowerCase().includes(s) ||
+          c.email?.toLowerCase().includes(s) ||
+          c.role?.toLowerCase().includes(s)
+        )) return true;
+        // phone digits
+        if (sDigits.length >= 4 && cx.some(c => c.phone?.replace(/\D/g, "").includes(sDigits))) return true;
+      } catch { }
+      // primary email digits
+      if (sDigits.length >= 4 && p.clientEmail?.replace(/\D/g, "").includes(sDigits)) return true;
       return false;
     })
     .sort((a, b) => {
