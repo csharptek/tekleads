@@ -96,11 +96,11 @@ public class EmailSendWorker : BackgroundService
                     .Replace("{{first_name}}", firstName, StringComparison.OrdinalIgnoreCase)
                     .Replace("{{email}}", job.ToEmail ?? "", StringComparison.OrdinalIgnoreCase);
 
-                // Existing "Hi <name>," replacement (initial email pattern)
-                if (job.FollowUpStage == 0)
+                // Replace "Hi <name>," greeting for every stage with the correct per-recipient first name
+                if (!string.IsNullOrWhiteSpace(firstName))
                 {
                     var match = System.Text.RegularExpressions.Regex.Match(bodyText, @"^Hi\s+[^,\n]+,?", System.Text.RegularExpressions.RegexOptions.Multiline);
-                    if (match.Success && !string.IsNullOrWhiteSpace(firstName))
+                    if (match.Success)
                         bodyText = bodyText[..match.Index] + $"Hi {firstName}," + bodyText[(match.Index + match.Length)..];
                 }
 

@@ -741,7 +741,13 @@ export default function ArtifactsView({
                     <span style={{ background: stageColor, color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 42, textAlign: "center" }}>{stageLabel}</span>
                     <span
                       style={{ color: "var(--text)", cursor: job.subject ? "help" : "default", position: "relative" }}
-                      title={job.subject ? `Subject: ${job.subject}\n\n${(job.body || "").slice(0, 300)}${(job.body || "").length > 300 ? "…" : ""}` : undefined}
+                      title={job.subject ? (() => {
+                        const fn = (job.toName || "").split(/[\s-]+/)[0];
+                        const preview = fn
+                          ? (job.body || "").replace(/^Hi\s+[^,\n]+,?/im, `Hi ${fn},`)
+                          : (job.body || "");
+                        return `Subject: ${job.subject}\n\n${preview.slice(0, 300)}${preview.length > 300 ? "…" : ""}`;
+                      })() : undefined}
                     >{job.toName || job.toEmail}</span>
                     <span style={{ color: "var(--muted)", fontSize: 11 }}>{job.toEmail}</span>
                     {job.status === "pending" && (
