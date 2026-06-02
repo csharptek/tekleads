@@ -152,6 +152,42 @@ public class EmailSendQueueService
             new { pid = proposalId });
     }
 
+    /// <summary>Cancels a single pending job by id.</summary>
+    public async Task<bool> CancelJob(Guid jobId)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+        var rows = await c.ExecuteAsync(
+            "UPDATE email_send_jobs SET status='cancelled' WHERE id=@id AND status='pending'",
+            new { id = jobId });
+        return rows > 0;
+    }
+
+    /// <summary>
+    /// Cancels pending follow-up jobs for a proposal.
+    /// If contactEmail is provided, only for that contact.
+    /// If stage is provided (1 or 2), only that stage; otherwise stages 1+2.
+    /// </summary>
+    public async Task<int> CancelFollowUps(Guid proposalId, string? contactEmail = null, int? stage = null)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+
+        var sql = new System.Text.StringBuilder(
+            "UPDATE email_send_jobs SET status='cancelled' WHERE proposal_id=@pid AND status='pending'");
+
+        if (stage.HasValue)
+            sql.Append(" AND follow_up_stage=@stage");
+        else
+            sql.Append(" AND follow_up_stage > 0");
+
+        if (!string.IsNullOrWhiteSpace(contactEmail))
+            sql.Append(" AND to_email=@email");
+
+        return await c.ExecuteAsync(sql.ToString(),
+            new { pid = proposalId, stage, email = contactEmail });
+    }
+
     /// <summary>
     /// Advances ScheduledAt to NOW for a specific pending job so the worker picks it up immediately.
     /// </summary>

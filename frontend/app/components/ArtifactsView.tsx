@@ -375,6 +375,19 @@ export default function ArtifactsView({
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   };
 
+  const cancelJob = async (jobId: string) => {
+    await api.post(`/api/artifacts/send-job/${jobId}/cancel`, {});
+    pollStatus();
+  };
+
+  const cancelFollowUps = async (contactEmail?: string, stage?: number) => {
+    await api.post(`/api/artifacts/${proposalId}/send-bulk/cancel-followups`, {
+      contactEmail: contactEmail ?? null,
+      stage: stage ?? null,
+    });
+    pollStatus();
+  };
+
   const sendJobNow = async (jobId: string) => {
     await api.post(`/api/artifacts/send-job/${jobId}/send-now`, {});
     pollStatus();
@@ -705,72 +718,198 @@ export default function ArtifactsView({
               </div>
             )}
           </div>
-          {sendAllQueued && sendAllJobs.length > 0 && (
-            <div style={{ marginBottom: 16, padding: "12px 14px", background: "var(--surface)", borderRadius: 8, border: "1px solid var(--border)" }}>
-              <div style={{ marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
-                  {sendAllJobs.every(j => j.status === "sent" || j.status === "failed" || j.status === "cancelled")
-                    ? "✓ Queue complete"
-                    : `Queued — backend sending (initial + follow-ups)`}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: 8 }}>
-                  {sendAllJobs.filter(j => j.status === "sent").length}/{sendAllJobs.length} sent
-                  {(() => {
-                    const initial = sendAllJobs.filter(j => (j.followUpStage ?? 0) === 0);
-                    const fu1 = sendAllJobs.filter(j => j.followUpStage === 1);
-                    const fu2 = sendAllJobs.filter(j => j.followUpStage === 2);
-                    const parts: string[] = [];
-                    if (initial.length) parts.push(`Initial ${initial.filter(j => j.status === "sent").length}/${initial.length}`);
-                    if (fu1.length) parts.push(`FU1 ${fu1.filter(j => j.status === "sent").length}/${fu1.length}`);
-                    if (fu2.length) parts.push(`FU2 ${fu2.filter(j => j.status === "sent").length}/${fu2.length}`);
-                    return parts.length ? ` · ${parts.join(" · ")}` : "";
-                  })()}
-                </span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {sendAllJobs.map((job, i) => {
-                  const stage = job.followUpStage ?? 0;
-                  const stageLabel = stage === 0 ? "Initial" : stage === 1 ? "FU1" : "FU2";
-                  const stageColor = stage === 0 ? "#0078d4" : stage === 1 ? "#a855f7" : "#ec4899";
-                  return (
-                  <div key={job.id || i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                    {job.status === "pending" && <span style={{ color: "var(--muted)" }}>○</span>}
-                    {job.status === "sent" && <span style={{ color: "#22c55e" }}>✓</span>}
-                    {job.status === "failed" && <span style={{ color: "#ef4444" }}>✕</span>}
-                    {job.status === "cancelled" && <span style={{ color: "var(--muted)" }}>–</span>}
-                    <span style={{ background: stageColor, color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 42, textAlign: "center" }}>{stageLabel}</span>
-                    <span
-                      style={{ color: "var(--text)", cursor: job.subject ? "help" : "default", position: "relative" }}
-                      title={job.subject ? (() => {
-                        const fn = (job.toName || "").split(/[\s-]+/)[0];
-                        const preview = fn
-                          ? (job.body || "").replace(/^Hi\s+[^,\n]+,?/im, `Hi ${fn},`)
-                          : (job.body || "");
-                        return `Subject: ${job.subject}\n\n${preview.slice(0, 300)}${preview.length > 300 ? "…" : ""}`;
-                      })() : undefined}
-                    >{job.toName || job.toEmail}</span>
-                    <span style={{ color: "var(--muted)", fontSize: 11 }}>{job.toEmail}</span>
-                    {job.status === "pending" && (
-                      <span style={{ color: "var(--muted)", fontSize: 11 }}>
-                        due {new Date(job.scheduledAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    )}
-                    {job.status === "pending" && (
+          {sendAllQueued && sendAllJobs.length > 0 && (() => {
+            // Group jobs by contact email
+            const contactEmails = Array.from(new Set(sendAllJobs.map(j => j.toEmail)));
+            const grouped = contactEmails.map(email => ({
+              email,
+              name: sendAllJobs.find(j => j.toEmail === email)?.toName || email,
+              initial: sendAllJobs.find(j => j.toEmail === email && (j.followUpStage ?? 0) === 0),
+              fu1:     sendAllJobs.find(j => j.toEmail === email && j.followUpStage === 1),
+              fu2:     sendAllJobs.find(j => j.toEmail === email && j.followUpStage === 2),
+            }));
+
+            const totalSent    = sendAllJobs.filter(j => j.status === "sent").length;
+            const totalJobs    = sendAllJobs.length;
+            const anyPending   = sendAllJobs.some(j => j.status === "pending");
+            const anyFuPending = sendAllJobs.some(j => j.status === "pending" && (j.followUpStage ?? 0) > 0);
+            const allDone      = sendAllJobs.every(j => j.status === "sent" || j.status === "failed" || j.status === "cancelled");
+
+            const statusIcon = (status: string) => {
+              if (status === "sent")      return <span style={{ color: "#22c55e", fontSize: 13 }}>✓</span>;
+              if (status === "failed")    return <span style={{ color: "#ef4444", fontSize: 13 }}>✕</span>;
+              if (status === "cancelled") return <span style={{ color: "var(--muted)", fontSize: 13 }}>–</span>;
+              return <span style={{ color: "#f59e0b", fontSize: 13 }}>⏳</span>;
+            };
+
+            const stageChip = (label: string, color: string) => (
+              <span style={{ background: color, color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 40, textAlign: "center" as const, display: "inline-block" }}>{label}</span>
+            );
+
+            const scheduledLabel = (job?: { scheduledAt: string; status: string }) =>
+              job && job.status === "pending"
+                ? <span style={{ color: "var(--muted)", fontSize: 10 }}>due {new Date(job.scheduledAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                : null;
+
+            return (
+              <div style={{ marginBottom: 16, padding: "12px 14px", background: "var(--surface)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                      {allDone ? "✓ Queue complete" : "📤 Outreach queue"}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                      {totalSent}/{totalJobs} sent
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {anyFuPending && (
                       <button
                         className="btn btn-sm"
-                        style={{ background: "#0078d4", color: "white", border: "none", padding: "2px 8px", fontSize: 11, marginLeft: "auto" }}
-                        onClick={() => sendJobNow(job.id)}
+                        style={{ background: "#f59e0b", color: "white", border: "none", fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => cancelFollowUps()}
+                        title="Stop all pending FU1 and FU2 for all contacts"
                       >
-                        Send Now
+                        ⏹ Stop All Follow-ups
                       </button>
                     )}
-                    {job.status === "failed" && job.error && <span style={{ color: "#ef4444", fontSize: 11 }}>{job.error}</span>}
+                    {anyPending && (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: "#dc3545", color: "white", border: "none", fontSize: 11, padding: "3px 8px" }}
+                        onClick={cancelSendAll}
+                        title="Cancel everything including initial emails"
+                      >
+                        ✕ Cancel All
+                      </button>
+                    )}
                   </div>
-                  );
-                })}
+                </div>
+
+                {/* Per-contact rows */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {grouped.map(({ email, name, initial, fu1, fu2 }) => {
+                    const hasPendingFu = (fu1 && fu1.status === "pending") || (fu2 && fu2.status === "pending");
+                    return (
+                      <div key={email} style={{ background: "var(--surface2, var(--surface))", borderRadius: 6, border: "1px solid var(--border)", padding: "8px 10px" }}>
+                        {/* Contact name row */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{name}</span>
+                            <span style={{ fontSize: 11, color: "var(--muted)" }}>{email}</span>
+                          </div>
+                          {hasPendingFu && (
+                            <button
+                              className="btn btn-sm"
+                              style={{ background: "#f59e0b", color: "white", border: "none", fontSize: 10, padding: "2px 6px" }}
+                              onClick={() => cancelFollowUps(email)}
+                              title="Stop FU1 + FU2 for this contact"
+                            >
+                              ⏹ Stop FU
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Stage rows */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {/* Initial */}
+                          {initial && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                              {statusIcon(initial.status)}
+                              {stageChip("Initial", "#0078d4")}
+                              {scheduledLabel(initial)}
+                              {initial.status === "pending" && (
+                                <button
+                                  className="btn btn-sm"
+                                  style={{ background: "#0078d4", color: "white", border: "none", fontSize: 10, padding: "2px 6px", marginLeft: "auto" }}
+                                  onClick={() => sendJobNow(initial.id)}
+                                >Send Now</button>
+                              )}
+                              {initial.status === "sent" && initial.sentAt && (
+                                <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
+                                  sent {new Date(initial.sentAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              )}
+                              {initial.status === "failed" && initial.error && (
+                                <span style={{ color: "#ef4444", fontSize: 10, marginLeft: 4 }}>{initial.error}</span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* FU1 */}
+                          {fu1 && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                              {statusIcon(fu1.status)}
+                              {stageChip("FU1", "#a855f7")}
+                              {scheduledLabel(fu1)}
+                              {fu1.status === "pending" && (
+                                <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                                  <button
+                                    className="btn btn-sm"
+                                    style={{ background: "#0078d4", color: "white", border: "none", fontSize: 10, padding: "2px 6px" }}
+                                    onClick={() => sendJobNow(fu1!.id)}
+                                  >Send Now</button>
+                                  <button
+                                    className="btn btn-sm"
+                                    style={{ background: "#dc3545", color: "white", border: "none", fontSize: 10, padding: "2px 6px" }}
+                                    onClick={() => cancelJob(fu1!.id)}
+                                    title="Stop this follow-up"
+                                  >⏹ Stop</button>
+                                </div>
+                              )}
+                              {fu1.status === "sent" && fu1.sentAt && (
+                                <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
+                                  sent {new Date(fu1.sentAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              )}
+                              {fu1.status === "cancelled" && <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>stopped</span>}
+                              {fu1.status === "failed" && fu1.error && (
+                                <span style={{ color: "#ef4444", fontSize: 10, marginLeft: 4 }}>{fu1.error}</span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* FU2 */}
+                          {fu2 && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                              {statusIcon(fu2.status)}
+                              {stageChip("FU2", "#ec4899")}
+                              {scheduledLabel(fu2)}
+                              {fu2.status === "pending" && (
+                                <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                                  <button
+                                    className="btn btn-sm"
+                                    style={{ background: "#0078d4", color: "white", border: "none", fontSize: 10, padding: "2px 6px" }}
+                                    onClick={() => sendJobNow(fu2!.id)}
+                                  >Send Now</button>
+                                  <button
+                                    className="btn btn-sm"
+                                    style={{ background: "#dc3545", color: "white", border: "none", fontSize: 10, padding: "2px 6px" }}
+                                    onClick={() => cancelJob(fu2!.id)}
+                                    title="Stop this follow-up"
+                                  >⏹ Stop</button>
+                                </div>
+                              )}
+                              {fu2.status === "sent" && fu2.sentAt && (
+                                <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
+                                  sent {new Date(fu2.sentAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              )}
+                              {fu2.status === "cancelled" && <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>stopped</span>}
+                              {fu2.status === "failed" && fu2.error && (
+                                <span style={{ color: "#ef4444", fontSize: 10, marginLeft: 4 }}>{fu2.error}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           {instantlyResult && (
             <div style={{
               marginBottom: 12,

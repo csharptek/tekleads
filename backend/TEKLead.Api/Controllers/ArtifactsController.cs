@@ -145,6 +145,25 @@ public class ArtifactsController : ControllerBase
         return Ok(new { cancelled = true });
     }
 
+    // ── Cancel a single job ─────────────────────────────────────────────────
+
+    [HttpPost("send-job/{jobId}/cancel")]
+    public async Task<IActionResult> CancelJob(Guid jobId)
+    {
+        var ok = await _queue.CancelJob(jobId);
+        if (!ok) return BadRequest(new { error = "Job not found or not pending." });
+        return Ok(new { cancelled = true });
+    }
+
+    // ── Cancel follow-ups (all or by stage, optionally per-contact) ─────────
+
+    [HttpPost("{proposalId}/send-bulk/cancel-followups")]
+    public async Task<IActionResult> CancelFollowUps(Guid proposalId, [FromBody] CancelFollowUpsRequest req)
+    {
+        var count = await _queue.CancelFollowUps(proposalId, req.ContactEmail, req.Stage);
+        return Ok(new { cancelled = count });
+    }
+
     // ── Send Now for a specific job ──────────────────────────────────────────
 
     [HttpPost("send-job/{jobId}/send-now")]
@@ -159,6 +178,7 @@ public class ArtifactsController : ControllerBase
 public class CustomPromptRequest  { public string? CustomPrompt { get; set; } }
 public class SendEmailRequest     { public string ToEmail { get; set; } = ""; public string? ToName { get; set; } public string? Signature { get; set; } }
 public class BulkSendRecipient    { public string Email { get; set; } = ""; public string? Name { get; set; } }
+public class CancelFollowUpsRequest { public string? ContactEmail { get; set; } public int? Stage { get; set; } }
 
 public class FollowUpRequest
 {
