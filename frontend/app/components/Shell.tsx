@@ -7,6 +7,7 @@ import PortfolioView from "./PortfolioView";
 import ProposalView from "./ProposalView";
 import ProposalList from "./ProposalList";
 import LogsView from "./LogsView";
+import PhoneWebhookLogsView from "./PhoneWebhookLogsView";
 import ProposalEditor from "./ProposalEditor";
 import ProposalSettings from "./ProposalSettings";
 import ArtifactsView from "./ArtifactsView";
@@ -16,7 +17,7 @@ import ProductsView from "./ProductsView";
 import WhatsAppInboxView from "./WhatsAppInboxView";
 import HRWhatsAppInboxView from "./HRWhatsAppInboxView";
 
-type Page = "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "contact-lists" | "wa-inbox" | "hr-inbox";
+type Page = "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "wa-inbox" | "hr-inbox";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
 type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; };
@@ -58,6 +59,7 @@ const CATEGORIES: NavCategory[] = [
     label: "System",
     items: [
       { id: "logs", label: "API Logs", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+      { id: "phone-logs", label: "Phone WH Logs", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.6 3.45 2 2 0 0 1 3.57 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.61a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 16z"/></svg> },
       { id: "settings", label: "Settings", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
     ],
   },
@@ -178,6 +180,7 @@ export default function Shell() {
         {page === "artifacts"         && artifactsCtx && <ArtifactsView {...artifactsCtx} onBack={() => navigate("proposal-list")} />}
         {page === "settings"          && <SettingsView />}
         {page === "logs"              && <LogsView />}
+        {page === "phone-logs"         && <PhoneWebhookLogsView />}
         {page === "contact-lists"     && <ContactListsView />}
         {page === "wa-inbox"          && <WhatsAppInboxView />}
         {page === "hr-inbox"          && <HRWhatsAppInboxView />}

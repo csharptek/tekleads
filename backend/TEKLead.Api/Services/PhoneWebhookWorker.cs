@@ -56,10 +56,14 @@ public class PhoneWebhookWorker : BackgroundService
                 phones       TEXT[]      NOT NULL,
                 wa_sent      BOOLEAN     NOT NULL DEFAULT FALSE,
                 wa_result    TEXT,
+                wa_picked_at TIMESTAMPTZ,
                 processed_at TIMESTAMPTZ,
+                contact_name TEXT,
                 created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS idx_pwe_processed ON phone_webhook_events (processed_at) WHERE processed_at IS NULL;
+            ALTER TABLE phone_webhook_events ADD COLUMN IF NOT EXISTS wa_picked_at TIMESTAMPTZ;
+            ALTER TABLE phone_webhook_events ADD COLUMN IF NOT EXISTS contact_name TEXT;
         ");
         _log.LogInformation("PhoneWebhookWorker schema OK.");
     }
@@ -104,6 +108,11 @@ public class PhoneWebhookWorker : BackgroundService
             _log.LogInformation("PhoneWebhookWorker processing {Source} {EntityId} phones={Phones}",
                 evt.Source, evt.EntityId, string.Join(",", evt.Phones));
 
+            // Stamp when we picked this event up
+            await c.ExecuteAsync(
+                "UPDATE phone_webhook_events SET wa_picked_at = NOW() WHERE id = @id",
+                new { evt.Id });
+
             string? whatsappTarget = null;
 
             if (evt.Source == "lead")
@@ -137,11 +146,22 @@ public class PhoneWebhookWorker : BackgroundService
                 _log.LogInformation("PhoneWebhookWorker WA send to {Phone} → {Result}", whatsappTarget, waResult);
             }
 
+            // Resolve contact name for the log
+            string contactName = "";
+            try {
+                contactName = await c.QuerySingleOrDefaultAsync<string>(
+                    @"SELECT COALESCE(name, '') FROM leads WHERE id = @id
+                      UNION ALL
+                      SELECT COALESCE(name, '') FROM contacts WHERE id = @id
+                      LIMIT 1",
+                    new { id = evt.EntityId }) ?? "";
+            } catch { }
+
             await c.ExecuteAsync(
                 @"UPDATE phone_webhook_events
-                  SET processed_at = NOW(), wa_sent = @waSent, wa_result = @waResult
+                  SET processed_at = NOW(), wa_sent = @waSent, wa_result = @waResult, contact_name = @contactName
                   WHERE id = @id",
-                new { evt.Id, waSent, waResult });
+                new { evt.Id, waSent, waResult, contactName });
         }
         catch (Exception ex)
         {
