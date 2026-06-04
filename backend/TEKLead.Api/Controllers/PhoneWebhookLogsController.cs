@@ -23,7 +23,9 @@ public class PhoneWebhookLogsController : ControllerBase
         [FromQuery] string? source = null,
         [FromQuery] string? waResult = null,
         [FromQuery] string? from = null,
-        [FromQuery] string? to = null)
+        [FromQuery] string? to = null,
+        [FromQuery] string? sortBy = "created_at",
+        [FromQuery] string? sortDir = "desc")
     {
         try
         {
@@ -39,6 +41,9 @@ public class PhoneWebhookLogsController : ControllerBase
             if (!string.IsNullOrWhiteSpace(to)   && DateTime.TryParse(to,   out var toDt))   { where.Add("e.created_at <= @to");   p.Add("to",   toDt.AddDays(1)); }
 
             var whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+            var allowed = new HashSet<string> { "created_at", "wa_picked_at", "processed_at", "wa_result", "source" };
+            var col = allowed.Contains(sortBy ?? "") ? sortBy : "created_at";
+            var dir = sortDir?.ToLower() == "asc" ? "ASC" : "DESC";
             var offset = (page - 1) * pageSize;
 
             // Join with leads table to get contact name
@@ -57,7 +62,7 @@ public class PhoneWebhookLogsController : ControllerBase
                 FROM phone_webhook_events e
                 LEFT JOIN leads l ON l.id = e.entity_id
                 {whereClause}
-                ORDER BY e.created_at DESC
+                ORDER BY e." + col + " " + dir + @"
                 LIMIT @pageSize OFFSET @offset";
 
             var countSql = $@"

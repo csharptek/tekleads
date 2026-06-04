@@ -52,6 +52,8 @@ export default function PhoneWebhookLogsView() {
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [sortBy, setSortBy] = useState("created_at");
+  const [sortDir, setSortDir] = useState<"asc"|"desc">("desc");
 
   // Filters
   const [source, setSource] = useState("");
@@ -67,14 +69,16 @@ export default function PhoneWebhookLogsView() {
       if (waFilter) params.set("waResult", waFilter);
       if (from)     params.set("from", from);
       if (to)       params.set("to", to);
+      params.set("sortBy", sortBy);
+      params.set("sortDir", sortDir);
       const res: any = await api.get(`/api/phone-webhook-logs?${params}`);
       setData(res);
       setError("");
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
-  }, [source, waFilter, from, to, page]);
+  }, [source, waFilter, from, to, page, sortBy, sortDir]);
 
-  useEffect(() => { load(1); setPage(1); }, [source, waFilter, from, to]);
+  useEffect(() => { load(1); setPage(1); }, [source, waFilter, from, to, sortBy, sortDir]);
   useEffect(() => { load(page); }, [page]);
 
   useEffect(() => {
@@ -82,6 +86,16 @@ export default function PhoneWebhookLogsView() {
     const t = setInterval(() => load(1), 10_000);
     return () => clearInterval(t);
   }, [autoRefresh, load]);
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === "desc" ? "asc" : "desc");
+    else { setSortBy(col); setSortDir("desc"); }
+  };
+
+  const SortIcon = ({ col }: { col: string }) => {
+    if (sortBy !== col) return <span style={{ color: "var(--muted)", marginLeft: 3 }}>⇅</span>;
+    return <span style={{ marginLeft: 3 }}>{sortDir === "desc" ? "↓" : "↑"}</span>;
+  };
 
   return (
     <div className="page">
@@ -153,13 +167,12 @@ export default function PhoneWebhookLogsView() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
-                  <th style={th}>Contact</th>
-                  <th style={th}>Phone Received</th>
-                  <th style={th}>Phone Number(s)</th>
-                  <th style={th}>Picked for WA</th>
-                  <th style={th}>WA Sent At</th>
-                  <th style={th}>WA Status</th>
-                  <th style={th}>Source</th>
+                  <th style={thSort} onClick={() => toggleSort("created_at")}>Contact &amp; Phone Received <SortIcon col="created_at" /></th>
+                  <th style={thSort}>Phone Number(s)</th>
+                  <th style={thSort} onClick={() => toggleSort("wa_picked_at")}>Picked for WA <SortIcon col="wa_picked_at" /></th>
+                  <th style={thSort} onClick={() => toggleSort("processed_at")}>WA Sent At <SortIcon col="processed_at" /></th>
+                  <th style={thSort} onClick={() => toggleSort("wa_result")}>WA Status <SortIcon col="wa_result" /></th>
+                  <th style={thSort} onClick={() => toggleSort("source")}>Source <SortIcon col="source" /></th>
                 </tr>
               </thead>
               <tbody>
@@ -171,20 +184,16 @@ export default function PhoneWebhookLogsView() {
                       background: i % 2 === 0 ? "white" : "#fafafa",
                     }}
                   >
-                    {/* Contact */}
+                    {/* Contact + Phone Received */}
                     <td style={td}>
                       <div style={{ fontWeight: 600, color: "var(--fg)" }}>
                         {log.contactName || <span style={{ color: "var(--muted)" }}>Unknown</span>}
                       </div>
                       {log.contactCompany && (
-                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{log.contactCompany}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{log.contactCompany}</div>
                       )}
-                    </td>
-
-                    {/* Phone received timestamp */}
-                    <td style={td}>
-                      <div style={{ color: "var(--fg)" }}>{fmt(log.createdAt)}</div>
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>webhook arrived</div>
+                      <div style={{ fontSize: 11, color: "var(--fg)", marginTop: 4 }}>{fmt(log.createdAt)}</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)" }}>webhook arrived</div>
                     </td>
 
                     {/* Phone numbers */}
@@ -246,7 +255,7 @@ export default function PhoneWebhookLogsView() {
                 ))}
                 {data?.items.length === 0 && (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+                    <td colSpan={6} style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
                       No phone webhook events yet.
                     </td>
                   </tr>
@@ -272,4 +281,5 @@ export default function PhoneWebhookLogsView() {
 }
 
 const th: React.CSSProperties = { padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.4px", whiteSpace: "nowrap" };
+const thSort: React.CSSProperties = { ...th, cursor: "pointer", userSelect: "none" };
 const td: React.CSSProperties = { padding: "10px 14px", verticalAlign: "middle" };
