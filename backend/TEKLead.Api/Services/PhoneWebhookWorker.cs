@@ -6,10 +6,13 @@ using TEKLead.Api.Models;
 namespace TEKLead.Api.Services;
 
 /// <summary>
-/// Background worker that processes phone_webhook_events table.
-/// When Apollo delivers a phone number via webhook, the endpoint writes
-/// a row here. This worker picks it up, merges into the lead / saved_lead
-/// and its matching saved-prospect contacts, then fires a WhatsApp message.
+/// Flow per event:
+/// 1. Pick event from phone_webhook_events
+/// 2. Check if phone already exists on the contact/lead — if yes, skip WA (do nothing)
+/// 3. If phone is new → save phone to lead, saved_leads, proposal contacts_json
+/// 4. Find which proposal(s) this contact belongs to
+/// 5. Update proposal contacts with new phone
+/// 6. Send WhatsApp: {{1}} = first name, {{2}} = proposal job_post_headline
 /// </summary>
 public class PhoneWebhookWorker : BackgroundService
 {
@@ -25,16 +28,13 @@ public class PhoneWebhookWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        // Give the app time to finish startup
         await Task.Delay(3_000, ct);
-
         await EnsureSchema();
 
         while (!ct.IsCancellationRequested)
         {
             try { await ProcessBatch(ct); }
             catch (Exception ex) { _log.LogError(ex, "PhoneWebhookWorker batch error"); }
-
             await Task.Delay(PollMs, ct);
         }
     }
@@ -46,14 +46,13 @@ public class PhoneWebhookWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var settings = scope.ServiceProvider.GetRequiredService<SettingsService>();
-
         await using var c = new NpgsqlConnection(settings.ConnectionString);
         await c.OpenAsync();
         await c.ExecuteAsync(@"
             CREATE TABLE IF NOT EXISTS phone_webhook_events (
                 id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-                source       TEXT        NOT NULL,   -- 'lead' | 'contact'
-                entity_id    UUID        NOT NULL,   -- lead.id or contacts.id
+                source       TEXT        NOT NULL,
+                entity_id    UUID        NOT NULL,
                 phones       TEXT[]      NOT NULL,
                 wa_sent      BOOLEAN     NOT NULL DEFAULT FALSE,
                 wa_result    TEXT,
@@ -70,7 +69,7 @@ public class PhoneWebhookWorker : BackgroundService
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Main processing loop
+    // Batch
     // ──────────────────────────────────────────────────────────────────────
     private async Task ProcessBatch(CancellationToken ct)
     {
@@ -82,7 +81,6 @@ public class PhoneWebhookWorker : BackgroundService
         await using var c = new NpgsqlConnection(settings.ConnectionString);
         await c.OpenAsync();
 
-        // Claim up to 10 unprocessed events
         var events = (await c.QueryAsync<PhoneWebhookEvent>(
             @"SELECT id, source, entity_id AS EntityId, phones, wa_sent AS WaSent
               FROM phone_webhook_events
@@ -93,88 +91,69 @@ public class PhoneWebhookWorker : BackgroundService
         foreach (var evt in events)
         {
             if (ct.IsCancellationRequested) break;
-            await HandleEvent(evt, c, leads, wa, ct);
+            await HandleEvent(evt, c, leads, wa);
         }
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // Handle single event
+    // ──────────────────────────────────────────────────────────────────────
     private async Task HandleEvent(
         PhoneWebhookEvent evt,
         NpgsqlConnection c,
         LeadService leads,
-        WhatsAppCloudService wa,
-        CancellationToken ct)
+        WhatsAppCloudService wa)
     {
         try
         {
             _log.LogInformation("PhoneWebhookWorker processing {Source} {EntityId} phones={Phones}",
                 evt.Source, evt.EntityId, string.Join(",", evt.Phones));
 
-            // Stamp when we picked this event up
             await c.ExecuteAsync(
                 "UPDATE phone_webhook_events SET wa_picked_at = NOW() WHERE id = @id",
                 new { evt.Id });
 
-            string? whatsappTarget = null;
-            string firstName = "";
-            string company   = "";
+            // ── Step 2 & 3: check if phone already exists, merge if new ──
+            var mergeResult = await MergePhone(evt, c, leads);
 
-            if (evt.Source == "lead")
+            string waResult    = "skipped_existing_phone";
+            bool   waSent      = false;
+            string contactName = mergeResult.ContactName;
+
+            if (!mergeResult.PhoneIsNew)
             {
-                var r = await MergeIntoLead(evt.EntityId, evt.Phones, c, leads);
-                whatsappTarget = r.Phone;
-                firstName      = r.FirstName;
-                company        = r.Company;
+                // Phone already existed — nothing to do
+                _log.LogInformation("PhoneWebhookWorker phone already exists for {EntityId}, skipping WA", evt.EntityId);
+                waResult = "skipped_existing_phone";
             }
-            else if (evt.Source == "contact")
+            else if (string.IsNullOrEmpty(mergeResult.Phone))
             {
-                var r = await MergeIntoContact(evt.EntityId, evt.Phones, c);
-                whatsappTarget = r.Phone;
-                firstName      = r.FirstName;
-                company        = r.Company;
+                waResult = "no_phone";
             }
-
-            // Also update saved_leads + proposal contacts if apollo_id matches
-            if (!string.IsNullOrEmpty(whatsappTarget))
+            else
             {
-                await PushToSavedLeads(evt.EntityId, evt.Phones, c);
-                await PushToProposalContacts(evt.EntityId, evt.Phones, c);
-            }
+                // ── Step 4 & 5: find proposal for this contact, update contacts_json ──
+                var proposalHeadline = await PushToProposalContacts(evt.EntityId, mergeResult.ApolloId, mergeResult.Phone, c);
 
-            // Send WhatsApp
-            string waResult = "no_phone";
-            bool waSent = false;
+                // Also update saved_leads
+                await PushToSavedLeads(mergeResult.ApolloId, evt.Phones, c);
 
-            if (!string.IsNullOrEmpty(whatsappTarget))
-            {
-                var bodyVars = new List<string>
-                {
-                    string.IsNullOrWhiteSpace(firstName) ? "there" : firstName,
-                    string.IsNullOrWhiteSpace(company)   ? "your business" : company,
-                };
+                // ── Step 6: send WhatsApp with first name + proposal headline ──
+                var firstName = string.IsNullOrWhiteSpace(mergeResult.FirstName) ? "there" : mergeResult.FirstName;
+                var headline  = string.IsNullOrWhiteSpace(proposalHeadline)      ? "your project" : proposalHeadline;
 
                 var (ok, _, err, _) = await wa.SendTemplate(
-                    whatsappTarget,
+                    mergeResult.Phone,
                     templateName:  "csharptek_intro_v2_util_2",
                     langCode:      null,
-                    bodyVariables: bodyVars,
+                    bodyVariables: new List<string> { firstName, headline },
                     leadId:        evt.EntityId.ToString());
 
                 waSent   = ok;
                 waResult = ok ? "sent" : $"failed:{err}";
-                _log.LogInformation("PhoneWebhookWorker WA send to {Phone} vars=[{V1},{V2}] → {Result}",
-                    whatsappTarget, bodyVars[0], bodyVars[1], waResult);
+                _log.LogInformation("PhoneWebhookWorker WA to {Phone} [{Name}][{Headline}] → {Result}",
+                    mergeResult.Phone, firstName, headline, waResult);
             }
-
-            // Resolve contact name for the log
-            string contactName = "";
-            try {
-                contactName = await c.QuerySingleOrDefaultAsync<string>(
-                    @"SELECT COALESCE(name, '') FROM leads WHERE id = @id
-                      UNION ALL
-                      SELECT COALESCE(name, '') FROM contacts WHERE id = @id
-                      LIMIT 1",
-                    new { id = evt.EntityId }) ?? "";
-            } catch { }
 
             await c.ExecuteAsync(
                 @"UPDATE phone_webhook_events
@@ -184,120 +163,100 @@ public class PhoneWebhookWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "PhoneWebhookWorker failed to process event {Id}", evt.Id);
+            _log.LogError(ex, "PhoneWebhookWorker failed event {Id}", evt.Id);
             await c.ExecuteAsync(
-                @"UPDATE phone_webhook_events
-                  SET processed_at = NOW(), wa_result = @err
-                  WHERE id = @id",
+                "UPDATE phone_webhook_events SET processed_at = NOW(), wa_result = @err WHERE id = @id",
                 new { evt.Id, err = ex.Message });
         }
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Merge into leads table
+    // Step 2 & 3: check existing phone, merge if new
     // ──────────────────────────────────────────────────────────────────────
-    private async Task<(string? Phone, string FirstName, string Company)> MergeIntoLead(
-        Guid leadId, string[] phones,
-        NpgsqlConnection c, LeadService leads)
+    private async Task<MergeResult> MergePhone(PhoneWebhookEvent evt, NpgsqlConnection c, LeadService leads)
     {
-        var lead = await leads.GetById(leadId);
-        if (lead == null) return (null, "", "");
-
-        var existing = lead.Phones ?? Array.Empty<string>();
-        var merged   = existing.Union(phones, StringComparer.OrdinalIgnoreCase).ToArray();
-
-        if (merged.Length != existing.Length)
+        if (evt.Source == "lead")
         {
-            lead.Phones = merged;
-            await leads.Upsert(lead);
-            _log.LogInformation("PhoneWebhookWorker merged {Count} phones into lead {Id}", merged.Length, leadId);
+            var lead = await leads.GetById(evt.EntityId);
+            if (lead == null) return new MergeResult();
+
+            var existing  = lead.Phones ?? Array.Empty<string>();
+            var newPhones = evt.Phones.Except(existing, StringComparer.OrdinalIgnoreCase).ToArray();
+            var phoneIsNew = newPhones.Length > 0;
+
+            if (phoneIsNew)
+            {
+                lead.Phones = existing.Union(evt.Phones, StringComparer.OrdinalIgnoreCase).ToArray();
+                await leads.Upsert(lead);
+                _log.LogInformation("PhoneWebhookWorker merged phones into lead {Id}", evt.EntityId);
+            }
+
+            return new MergeResult
+            {
+                Phone       = (lead.Phones ?? Array.Empty<string>()).FirstOrDefault(),
+                FirstName   = (lead.Name ?? "").Split(' ')[0],
+                ContactName = lead.Name ?? "",
+                ApolloId    = lead.ApolloId ?? "",
+                PhoneIsNew  = phoneIsNew,
+            };
         }
+        else // contact
+        {
+            var row = await c.QuerySingleOrDefaultAsync<dynamic>(
+                "SELECT id, phone, name, company, apollo_id FROM contacts WHERE id = @id",
+                new { id = evt.EntityId });
+            if (row == null) return new MergeResult();
 
-        var firstName = (lead.Name ?? "").Split(' ')[0];
-        var company   = lead.Company ?? "";
-        return (merged.FirstOrDefault(), firstName, company);
+            string existingPhone = (string?)row.phone ?? "";
+            bool   phoneIsNew    = string.IsNullOrWhiteSpace(existingPhone);
+            string phone         = existingPhone;
+
+            if (phoneIsNew)
+            {
+                phone = evt.Phones[0];
+                await c.ExecuteAsync(
+                    "UPDATE contacts SET phone = @phone WHERE id = @id AND (phone IS NULL OR phone = '')",
+                    new { phone, id = evt.EntityId });
+            }
+
+            return new MergeResult
+            {
+                Phone       = phone,
+                FirstName   = ((string?)row.name ?? "").Split(' ')[0],
+                ContactName = (string?)row.name ?? "",
+                ApolloId    = (string?)row.apollo_id ?? "",
+                PhoneIsNew  = phoneIsNew,
+            };
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Merge into contacts table
+    // Step 4 & 5: find proposals for this contact, update phone, return headline
     // ──────────────────────────────────────────────────────────────────────
-    private async Task<(string? Phone, string FirstName, string Company)> MergeIntoContact(
-        Guid contactId, string[] phones,
-        NpgsqlConnection c)
+    private async Task<string> PushToProposalContacts(Guid leadId, string apolloId, string phone, NpgsqlConnection c)
     {
-        if (phones.Length == 0) return (null, "", "");
-        var first = phones[0];
+        var headline = "";
 
-        await c.ExecuteAsync(
-            "UPDATE contacts SET phone = @phone WHERE id = @contactId AND (phone IS NULL OR phone = '')",
-            new { phone = first, contactId });
-
-        var row = await c.QuerySingleOrDefaultAsync<dynamic>(
-            "SELECT phone, name, company FROM contacts WHERE id = @contactId", new { contactId });
-
-        var phone     = row != null ? ((string?)row.phone ?? first) : first;
-        var firstName = row != null ? ((string?)row.name ?? "").Split(' ')[0] : "";
-        var company   = row != null ? ((string?)row.company ?? "") : "";
-        return (string.IsNullOrWhiteSpace(phone) ? first : phone, firstName, company);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Also push phones to saved_leads by matching apollo_id from the lead
-    // ──────────────────────────────────────────────────────────────────────
-    private async Task PushToSavedLeads(Guid leadId, string[] phones, NpgsqlConnection c)
-    {
-        if (phones.Length == 0) return;
-
-        // Get apollo_id from leads table
-        var apolloId = await c.QuerySingleOrDefaultAsync<string?>(
-            "SELECT apollo_id FROM leads WHERE id = @leadId", new { leadId });
-        if (string.IsNullOrEmpty(apolloId)) return;
-
-        // Merge phones array in saved_leads
-        await c.ExecuteAsync(@"
-            UPDATE saved_leads
-            SET phones = (
-                SELECT array_agg(DISTINCT p)
-                FROM (
-                    SELECT unnest(COALESCE(phones, ARRAY[]::TEXT[])) AS p
-                    UNION
-                    SELECT unnest(@phones::TEXT[]) AS p
-                ) sub
-            )
-            WHERE apollo_id = @apolloId",
-            new { apolloId, phones });
-
-        _log.LogInformation("PhoneWebhookWorker updated saved_leads for apollo_id {Id}", apolloId);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Update contacts_json + apollo_contact_json in proposals matching apollo_id
-    // ──────────────────────────────────────────────────────────────────────
-    private async Task PushToProposalContacts(Guid leadId, string[] phones, NpgsqlConnection c)
-    {
-        if (phones.Length == 0) return;
-        var phone = phones[0];
-
-        // Get apollo_id for this lead
-        var apolloId = await c.QuerySingleOrDefaultAsync<string?>(
-            "SELECT apollo_id FROM leads WHERE id = @leadId", new { leadId });
-        if (string.IsNullOrEmpty(apolloId)) return;
-
-        // Find proposals that reference this apollo_id in apollo_contact_json or contacts_json
+        // Find proposals linked to this lead directly OR via apollo_id in apollo_contact_json
         var proposals = (await c.QueryAsync<dynamic>(
-            @"SELECT id, contacts_json, apollo_contact_json
+            @"SELECT id, contacts_json, apollo_contact_json, job_post_headline
               FROM proposals
-              WHERE apollo_contact_json::text ILIKE @apolloPattern
-                 OR contacts_json IS NOT NULL",
-            new { apolloPattern = $"%{apolloId}%" })).ToList();
+              WHERE linked_lead_id = @leadId
+                 OR (apollo_contact_json IS NOT NULL AND apollo_contact_json::text LIKE @apolloPattern)",
+            new { leadId, apolloPattern = string.IsNullOrEmpty(apolloId) ? "NO_MATCH" : $"%{apolloId}%" }
+        )).ToList();
 
         foreach (var row in proposals)
         {
-            bool updated = false;
-            string? newContactsJson = row.contacts_json;
-            string? newApolloJson   = row.apollo_contact_json;
+            // Capture headline from first matched proposal
+            if (string.IsNullOrEmpty(headline))
+                headline = (string?)row.job_post_headline ?? "";
 
-            // Patch contacts_json — array of {name, email, phone, role, linkedin}
+            bool updated = false;
+            string? newContactsJson = (string?)row.contacts_json;
+            string? newApolloJson   = (string?)row.apollo_contact_json;
+
+            // Patch contacts_json — only fill empty phone fields
             if (!string.IsNullOrWhiteSpace(newContactsJson))
             {
                 try
@@ -309,7 +268,6 @@ public class PhoneWebhookWorker : BackgroundService
                         foreach (var el in arr)
                         {
                             var obj = System.Text.Json.Nodes.JsonObject.Create(el)!;
-                            // Only patch if phone is empty
                             var existing = obj["phone"]?.GetValue<string>() ?? "";
                             if (string.IsNullOrWhiteSpace(existing))
                             {
@@ -321,11 +279,11 @@ public class PhoneWebhookWorker : BackgroundService
                         if (updated) newContactsJson = patched.ToJsonString();
                     }
                 }
-                catch (Exception ex) { _log.LogWarning("PushToProposalContacts contacts_json parse error: {0}", ex.Message); }
+                catch (Exception ex) { _log.LogWarning("PushToProposalContacts contacts_json error: {0}", ex.Message); }
             }
 
-            // Patch apollo_contact_json — full lead object with phones array
-            if (!string.IsNullOrWhiteSpace(newApolloJson) && newApolloJson.Contains(apolloId))
+            // Patch apollo_contact_json phones array
+            if (!string.IsNullOrWhiteSpace(newApolloJson))
             {
                 try
                 {
@@ -343,21 +301,54 @@ public class PhoneWebhookWorker : BackgroundService
                         if (updated) newApolloJson = obj.ToJsonString();
                     }
                 }
-                catch (Exception ex) { _log.LogWarning("PushToProposalContacts apollo_contact_json parse error: {0}", ex.Message); }
+                catch (Exception ex) { _log.LogWarning("PushToProposalContacts apollo_contact_json error: {0}", ex.Message); }
             }
 
             if (updated)
             {
                 await c.ExecuteAsync(
                     @"UPDATE proposals
-                      SET contacts_json = @newContactsJson,
-                          apollo_contact_json = @newApolloJson
+                      SET contacts_json = @newContactsJson, apollo_contact_json = @newApolloJson
                       WHERE id = @id",
                     new { newContactsJson, newApolloJson, id = (Guid)row.id });
-                _log.LogInformation("PushToProposalContacts updated proposal {Id} for apollo_id {ApolloId}", (Guid)row.id, apolloId);
+                _log.LogInformation("PushToProposalContacts updated proposal {Id}", (Guid)row.id);
             }
         }
+
+        return headline;
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Push phones to saved_leads
+    // ──────────────────────────────────────────────────────────────────────
+    private async Task PushToSavedLeads(string apolloId, string[] phones, NpgsqlConnection c)
+    {
+        if (string.IsNullOrEmpty(apolloId) || phones.Length == 0) return;
+        await c.ExecuteAsync(@"
+            UPDATE saved_leads
+            SET phones = (
+                SELECT array_agg(DISTINCT p)
+                FROM (
+                    SELECT unnest(COALESCE(phones, ARRAY[]::TEXT[])) AS p
+                    UNION
+                    SELECT unnest(@phones::TEXT[]) AS p
+                ) sub
+            )
+            WHERE apollo_id = @apolloId",
+            new { apolloId, phones });
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Internal result DTO
+// ──────────────────────────────────────────────────────────────────────────
+public class MergeResult
+{
+    public string? Phone       { get; set; }
+    public string  FirstName   { get; set; } = "";
+    public string  ContactName { get; set; } = "";
+    public string  ApolloId    { get; set; } = "";
+    public bool    PhoneIsNew  { get; set; }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
