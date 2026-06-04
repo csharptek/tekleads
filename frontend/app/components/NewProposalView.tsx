@@ -274,16 +274,25 @@ export default function NewProposalView({
 
       if (res.phoneWebhookPending) {
         setPhonePending(p => new Set([...p, realId]));
+        let attempts = 0;
         const timer = setInterval(async () => {
+          attempts++;
           try {
-            const updated: any = await api.get(`/api/leads/${realId}`);
-            if (updated.phones?.length > 0) {
+            // Re-ask Apollo each poll — webhook may not arrive
+            const polled: any = await api.post(`/api/leads/${realId}/reveal-phone-only`, {});
+            const phones = polled.phones?.length ? polled.phones : polled.lead?.phones;
+            if (phones?.length > 0) {
               clearInterval(timer);
               setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
               setContacts(prev => prev.map(c => c.lead.id === realId ? {
-                ...c, lead: { ...c.lead, phones: updated.phones },
-                checkedPhones: updated.phones,
+                ...c, lead: { ...c.lead, phones },
+                checkedPhones: phones,
               } : c));
+              setSearchResults(prev => prev.map(l => l.id === realId ? { ...l, phones } : l));
+            } else if (attempts >= 8) {
+              // After 8 attempts (40s) give up
+              clearInterval(timer);
+              setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
             }
           } catch { }
         }, 5000);
