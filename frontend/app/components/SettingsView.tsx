@@ -32,6 +32,7 @@ const KEYS = {
   AzureSearchKey: "azure_search_key",
   AzureSearchIndex: "azure_search_index",
   InstantlyApiKey: "instantly_api_key",
+  AppUrl: "app_url",
 };
 
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
@@ -54,6 +55,7 @@ const TECH_GROUPS: Group[] = [
     subtitle: "Lead data provider",
     fields: [
       { key: KEYS.ApolloApiKey, label: "API Key", placeholder: "Enter to set / replace", secret: true, full: true },
+      { key: KEYS.AppUrl, label: "App Public URL", placeholder: "https://tekleads-production.up.railway.app", full: true },
     ],
   },
   {
