@@ -82,7 +82,10 @@ public class ContactListsController : ControllerBase
         if (req.ContactIds == null || req.ContactIds.Count == 0)
             return BadRequest(new { error = "No contacts selected." });
 
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var settings = HttpContext.RequestServices.GetRequiredService<TEKLead.Api.Services.SettingsService>();
+        var all = await settings.GetAll();
+        var appUrl = all.GetValueOrDefault("app_url", "").TrimEnd('/');
+        var baseUrl = !string.IsNullOrEmpty(appUrl) ? appUrl : $"{Request.Scheme}://{Request.Host}";
         var (ok, failed) = await _svc.EnrichContacts(req.ContactIds, baseUrl);
         return Ok(new { enriched = ok, failed });
     }

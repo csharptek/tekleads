@@ -55,6 +55,9 @@ public static class SettingKeys
 
     public const string EmailSignature              = "email_signature";
 
+    // App
+    public const string AppUrl                      = "app_url";
+
     // Instantly
     public const string InstantlyApiKey             = "instantly_api_key";
 
@@ -76,7 +79,7 @@ public static class SettingKeys
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,
         ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt,
-        EmailSignature, InstantlyApiKey,
+        AppUrl, EmailSignature, InstantlyApiKey,
         ArtifactCoverLetterPrompt, ArtifactWhatsappPrompt, ArtifactEmailPrompt,
         ArtifactFollowUp1Prompt, ArtifactFollowUp2Prompt,
     };

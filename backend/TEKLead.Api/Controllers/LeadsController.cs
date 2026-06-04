@@ -10,13 +10,24 @@ public class LeadsController : ControllerBase
 {
     private readonly ApolloService _apollo;
     private readonly LeadService _leads;
+    private readonly SettingsService _settings;
     private readonly ILogger<LeadsController> _log;
 
-    public LeadsController(ApolloService apollo, LeadService leads, ILogger<LeadsController> log)
+    public LeadsController(ApolloService apollo, LeadService leads, SettingsService settings, ILogger<LeadsController> log)
     {
         _apollo = apollo;
         _leads = leads;
+        _settings = settings;
         _log = log;
+    }
+
+    private async Task<string> BuildWebhookUrl(string path)
+    {
+        var all = await _settings.GetAll();
+        var appUrl = all.GetValueOrDefault("app_url", "").TrimEnd('/');
+        if (!string.IsNullOrEmpty(appUrl))
+            return $"{appUrl}{path}";
+        return $"https://{HttpContext.Request.Host}{path}";
     }
 
     [HttpGet]
@@ -102,7 +113,7 @@ public class LeadsController : ControllerBase
 
         try
         {
-            var webhookUrl = $"https://{HttpContext.Request.Host}/api/leads/phone-webhook/{id}";
+            var webhookUrl = await BuildWebhookUrl($"/api/leads/phone-webhook/{id}");
             var result = await _apollo.EnrichFull(lead.ApolloId, webhookUrl);
             var updated = MergeEnrichResult(lead, result, mergePhones: true);
             if (updated) await _leads.Upsert(lead);
@@ -167,7 +178,7 @@ public class LeadsController : ControllerBase
 
         try
         {
-            var webhookUrl = $"https://{HttpContext.Request.Host}/api/leads/phone-webhook/{id}";
+            var webhookUrl = await BuildWebhookUrl($"/api/leads/phone-webhook/{id}");
             var result = await _apollo.EnrichPhoneOnly(lead.ApolloId, webhookUrl);
             var updated = MergeEnrichResult(lead, result, mergePhones: true);
             if (updated) await _leads.Upsert(lead);
