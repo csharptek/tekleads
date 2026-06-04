@@ -56,7 +56,6 @@ const TECH_GROUPS: Group[] = [
     subtitle: "Lead data provider",
     fields: [
       { key: KEYS.ApolloApiKey, label: "API Key", placeholder: "Enter to set / replace", secret: true, full: true },
-      { key: KEYS.ApolloMasterKey, label: "Master API Key", placeholder: "Enter master key for usage stats", secret: true, full: true },
       { key: KEYS.AppUrl, label: "App Public URL", placeholder: "https://tekleads-production.up.railway.app", full: true },
     ],
   },
@@ -349,7 +348,7 @@ export default function SettingsView() {
 
       {/* Apollo Usage Stats */}
       <div className="card">
-        <button onClick={() => { setApolloOpen(p => !p); if (!apolloOpen && !apolloStats) loadApolloStats(); }}
+        <button onClick={() => { const opening = !apolloOpen; setApolloOpen(opening); if (opening && !apolloStats) loadApolloStats(); }}
           style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, textAlign: "left" }}>📊 Apollo Usage Stats</div>

@@ -86,9 +86,12 @@ public class SettingsController : ControllerBase
         try
         {
             var all = await _svc.GetAll();
+            // Try master key first, fall back to regular API key
             var masterKey = all.GetValueOrDefault(TEKLead.Api.Models.SettingKeys.ApolloMasterKey, "");
             if (string.IsNullOrEmpty(masterKey))
-                return Ok(new { error = "Apollo Master API Key not configured. Add it in Settings → Apollo.io." });
+                masterKey = all.GetValueOrDefault(TEKLead.Api.Models.SettingKeys.ApolloApiKey, "");
+            if (string.IsNullOrEmpty(masterKey))
+                return Ok(new { error = "Apollo API Key not configured." });
 
             var http = _http.CreateClient();
             http.DefaultRequestHeaders.Add("X-Api-Key", masterKey);
