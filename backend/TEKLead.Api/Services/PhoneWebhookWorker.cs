@@ -114,14 +114,22 @@ public class PhoneWebhookWorker : BackgroundService
                 new { evt.Id });
 
             string? whatsappTarget = null;
+            string firstName = "";
+            string company   = "";
 
             if (evt.Source == "lead")
             {
-                whatsappTarget = await MergeIntoLead(evt.EntityId, evt.Phones, c, leads);
+                var r = await MergeIntoLead(evt.EntityId, evt.Phones, c, leads);
+                whatsappTarget = r.Phone;
+                firstName      = r.FirstName;
+                company        = r.Company;
             }
             else if (evt.Source == "contact")
             {
-                whatsappTarget = await MergeIntoContact(evt.EntityId, evt.Phones, c);
+                var r = await MergeIntoContact(evt.EntityId, evt.Phones, c);
+                whatsappTarget = r.Phone;
+                firstName      = r.FirstName;
+                company        = r.Company;
             }
 
             // Also update saved_leads row if apollo_id matches
@@ -134,16 +142,23 @@ public class PhoneWebhookWorker : BackgroundService
 
             if (!string.IsNullOrEmpty(whatsappTarget))
             {
+                var bodyVars = new List<string>
+                {
+                    string.IsNullOrWhiteSpace(firstName) ? "there" : firstName,
+                    string.IsNullOrWhiteSpace(company)   ? "your business" : company,
+                };
+
                 var (ok, _, err, _) = await wa.SendTemplate(
                     whatsappTarget,
-                    templateName: "csharptek_intro_v2_util_2",
-                    langCode:     null,
-                    bodyVariables: null,
-                    leadId: evt.EntityId.ToString());
+                    templateName:  "csharptek_intro_v2_util_2",
+                    langCode:      null,
+                    bodyVariables: bodyVars,
+                    leadId:        evt.EntityId.ToString());
 
                 waSent   = ok;
                 waResult = ok ? "sent" : $"failed:{err}";
-                _log.LogInformation("PhoneWebhookWorker WA send to {Phone} → {Result}", whatsappTarget, waResult);
+                _log.LogInformation("PhoneWebhookWorker WA send to {Phone} vars=[{V1},{V2}] → {Result}",
+                    whatsappTarget, bodyVars[0], bodyVars[1], waResult);
             }
 
             // Resolve contact name for the log
@@ -177,12 +192,12 @@ public class PhoneWebhookWorker : BackgroundService
     // ──────────────────────────────────────────────────────────────────────
     // Merge into leads table
     // ──────────────────────────────────────────────────────────────────────
-    private async Task<string?> MergeIntoLead(
+    private async Task<(string? Phone, string FirstName, string Company)> MergeIntoLead(
         Guid leadId, string[] phones,
         NpgsqlConnection c, LeadService leads)
     {
         var lead = await leads.GetById(leadId);
-        if (lead == null) return null;
+        if (lead == null) return (null, "", "");
 
         var existing = lead.Phones ?? Array.Empty<string>();
         var merged   = existing.Union(phones, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -194,28 +209,32 @@ public class PhoneWebhookWorker : BackgroundService
             _log.LogInformation("PhoneWebhookWorker merged {Count} phones into lead {Id}", merged.Length, leadId);
         }
 
-        return merged.FirstOrDefault();
+        var firstName = (lead.Name ?? "").Split(' ')[0];
+        var company   = lead.Company ?? "";
+        return (merged.FirstOrDefault(), firstName, company);
     }
 
     // ──────────────────────────────────────────────────────────────────────
     // Merge into contacts table
     // ──────────────────────────────────────────────────────────────────────
-    private async Task<string?> MergeIntoContact(
+    private async Task<(string? Phone, string FirstName, string Company)> MergeIntoContact(
         Guid contactId, string[] phones,
         NpgsqlConnection c)
     {
-        if (phones.Length == 0) return null;
+        if (phones.Length == 0) return (null, "", "");
         var first = phones[0];
 
         await c.ExecuteAsync(
             "UPDATE contacts SET phone = @phone WHERE id = @contactId AND (phone IS NULL OR phone = '')",
             new { phone = first, contactId });
 
-        // Return whatever the current phone is
-        var existing = await c.QuerySingleOrDefaultAsync<string?>(
-            "SELECT phone FROM contacts WHERE id = @contactId", new { contactId });
+        var row = await c.QuerySingleOrDefaultAsync<dynamic>(
+            "SELECT phone, name, company FROM contacts WHERE id = @contactId", new { contactId });
 
-        return string.IsNullOrWhiteSpace(existing) ? first : existing;
+        var phone     = row != null ? ((string?)row.phone ?? first) : first;
+        var firstName = row != null ? ((string?)row.name ?? "").Split(' ')[0] : "";
+        var company   = row != null ? ((string?)row.company ?? "") : "";
+        return (string.IsNullOrWhiteSpace(phone) ? first : phone, firstName, company);
     }
 
     // ──────────────────────────────────────────────────────────────────────
