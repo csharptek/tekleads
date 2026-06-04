@@ -23,6 +23,7 @@ public class Lead
     public string? Seniority { get; set; }
     public string? EmailStatus { get; set; }
     public string[] Departments { get; set; } = Array.Empty<string>();
+    public long? ApolloRequestId { get; set; }
     public DateTime SavedAt { get; set; } = DateTime.UtcNow;
     public LeadOrgDetails? OrgDetails { get; set; }
     public List<LeadEmploymentHistory> EmploymentHistory { get; set; } = new();

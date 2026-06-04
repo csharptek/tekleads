@@ -202,6 +202,42 @@ public class LeadsController : ControllerBase
         }
     }
 
+    [HttpPost("{id}/poll-phone")]
+    public async Task<IActionResult> PollPhone(Guid id)
+    {
+        var lead = await _leads.GetById(id);
+        if (lead == null) return NotFound(new { error = "Lead not found." });
+
+        // If no request_id stored, try enriching again to get one
+        if (!lead.ApolloRequestId.HasValue || lead.ApolloRequestId == 0)
+        {
+            if (string.IsNullOrEmpty(lead.ApolloId))
+                return BadRequest(new { error = "No Apollo ID or request ID on this lead." });
+            var webhookUrl = await BuildWebhookUrl($"/api/leads/phone-webhook/{id}");
+            _log.LogInformation("poll-phone: no request_id, re-enriching lead {0}", id);
+            var freshResult = await _apollo.EnrichPhoneOnly(lead.ApolloId, webhookUrl);
+            MergeEnrichResult(lead, freshResult, mergePhones: true);
+            await _leads.Upsert(lead);
+            if (freshResult.Phones.Count > 0)
+                return Ok(new { phones = freshResult.Phones, source = "enrich", saved = true });
+            if (!lead.ApolloRequestId.HasValue)
+                return Ok(new { phones = Array.Empty<string>(), source = "enrich", pending = true });
+        }
+
+        // Poll Apollo for webhook result
+        _log.LogInformation("poll-phone: polling request_id={0} for lead {1}", lead.ApolloRequestId, id);
+        var phones = await _apollo.PollWebhookResult(lead.ApolloRequestId!.Value);
+        if (phones.Length > 0)
+        {
+            lead.Phones = MergeStrings(lead.Phones, phones);
+            await _leads.Upsert(lead);
+            _log.LogInformation("poll-phone: found {0} phones for lead {1}", phones.Length, id);
+            return Ok(new { phones, source = "poll", saved = true });
+        }
+
+        return Ok(new { phones = Array.Empty<string>(), source = "poll", pending = true });
+    }
+
     [HttpPost("phone-webhook/{leadId}")]
     public async Task<IActionResult> PhoneWebhook(Guid leadId)
     {
@@ -261,6 +297,11 @@ public class LeadsController : ControllerBase
         {
             var merged = MergeStrings(lead.Phones, result.Phones.ToArray());
             if (!Same(lead.Phones, merged)) { lead.Phones = merged; updated = true; }
+        }
+        if (result.RequestId.HasValue && result.RequestId != 0)
+        {
+            lead.ApolloRequestId = result.RequestId;
+            updated = true;
         }
         if (result.OrgDetails != null)
         {

@@ -274,27 +274,41 @@ export default function NewProposalView({
 
       if (res.phoneWebhookPending) {
         setPhonePending(p => new Set([...p, realId]));
-        // Poll DB only — Apollo will POST to webhook when ready (can take 2-5 mins)
+        let elapsed = 0;
+        const INTERVAL = 10000; // 10s
+        const SWITCH_TO_POLL = 30000; // after 30s use Apollo pull
+        const MAX_TIME = 600000; // 10 mins total
+
         const timer = setInterval(async () => {
+          elapsed += INTERVAL;
           try {
-            const polled: any = await api.get(`/api/leads/${realId}`);
-            const phones = polled.phones?.length ? polled.phones : null;
-            if (phones?.length > 0) {
-              clearInterval(timer);
-              setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
-              setContacts(prev => prev.map(c => c.lead.id === realId ? {
-                ...c, lead: { ...c.lead, phones },
-                checkedPhones: phones,
-              } : c));
-              setSearchResults(prev => prev.map(l => l.id === realId ? { ...l, phones } : l));
+            if (elapsed <= SWITCH_TO_POLL) {
+              // Phase 1: check DB (webhook may have arrived)
+              const polled: any = await api.get(`/api/leads/${realId}`);
+              const phones = polled.phones?.length ? polled.phones : null;
+              if (phones?.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
+                setContacts(prev => prev.map(c => c.lead.id === realId ? { ...c, lead: { ...c.lead, phones }, checkedPhones: phones } : c));
+                setSearchResults(prev => prev.map(l => l.id === realId ? { ...l, phones } : l));
+              }
+            } else {
+              // Phase 2: actively pull from Apollo
+              const polled: any = await api.post(`/api/leads/${realId}/poll-phone`, {});
+              const phones = polled.phones?.length ? polled.phones : null;
+              if (phones?.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
+                setContacts(prev => prev.map(c => c.lead.id === realId ? { ...c, lead: { ...c.lead, phones }, checkedPhones: phones } : c));
+                setSearchResults(prev => prev.map(l => l.id === realId ? { ...l, phones } : l));
+              }
             }
           } catch { }
-        }, 10000);
-        // Stop polling after 10 mins
-        setTimeout(() => {
-          clearInterval(timer);
-          setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
-        }, 600000);
+          if (elapsed >= MAX_TIME) {
+            clearInterval(timer);
+            setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
+          }
+        }, INTERVAL);
       }
     } catch (e: any) {
       setError(e.message);

@@ -62,6 +62,7 @@ public class LeadService
             ("seniority",    "TEXT"),
             ("email_status", "TEXT"),
             ("departments",  "TEXT[] NOT NULL DEFAULT '{}'"),
+            ("apollo_request_id", "BIGINT"),
         };
         foreach (var (col, def) in newCols)
             await c.ExecuteAsync($"ALTER TABLE saved_leads ADD COLUMN IF NOT EXISTS {col} {def}");
@@ -144,11 +145,11 @@ public class LeadService
                 INSERT INTO saved_leads (
                     id, apollo_id, name, title, company, industry, location, city, state, country,
                     emails, phones, linkedin_url, twitter_url, github_url, facebook_url, photo_url,
-                    headline, seniority, email_status, departments, saved_at)
+                    headline, seniority, email_status, departments, apollo_request_id, saved_at)
                 VALUES (
                     @Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @City, @State, @Country,
                     @Emails, @Phones, @LinkedinUrl, @TwitterUrl, @GithubUrl, @FacebookUrl, @PhotoUrl,
-                    @Headline, @Seniority, @EmailStatus, @Departments, @SavedAt)
+                    @Headline, @Seniority, @EmailStatus, @Departments, @ApolloRequestId, @SavedAt)
                 ON CONFLICT (id) DO UPDATE SET
                     name=EXCLUDED.name, title=EXCLUDED.title, company=EXCLUDED.company,
                     industry=EXCLUDED.industry, location=EXCLUDED.location,
@@ -158,7 +159,7 @@ public class LeadService
                     github_url=EXCLUDED.github_url, facebook_url=EXCLUDED.facebook_url,
                     photo_url=EXCLUDED.photo_url, headline=EXCLUDED.headline,
                     seniority=EXCLUDED.seniority, email_status=EXCLUDED.email_status,
-                    departments=EXCLUDED.departments, saved_at=EXCLUDED.saved_at",
+                    departments=EXCLUDED.departments, apollo_request_id=EXCLUDED.apollo_request_id, saved_at=EXCLUDED.saved_at",
                 BuildParams(lead));
         }
 
@@ -180,7 +181,7 @@ public class LeadService
                     emails=@Emails, phones=@Phones, linkedin_url=@LinkedinUrl,
                     twitter_url=@TwitterUrl, github_url=@GithubUrl, facebook_url=@FacebookUrl,
                     photo_url=@PhotoUrl, headline=@Headline, seniority=@Seniority,
-                    email_status=@EmailStatus, departments=@Departments, saved_at=@SavedAt
+                    email_status=@EmailStatus, departments=@Departments, apollo_request_id=@ApolloRequestId, saved_at=@SavedAt
                 WHERE apollo_id=@ApolloId", BuildParams(lead));
         }
         else
@@ -189,11 +190,11 @@ public class LeadService
                 INSERT INTO saved_leads (
                     id, apollo_id, name, title, company, industry, location, city, state, country,
                     emails, phones, linkedin_url, twitter_url, github_url, facebook_url, photo_url,
-                    headline, seniority, email_status, departments, saved_at)
+                    headline, seniority, email_status, departments, apollo_request_id, saved_at)
                 VALUES (
                     @Id, @ApolloId, @Name, @Title, @Company, @Industry, @Location, @City, @State, @Country,
                     @Emails, @Phones, @LinkedinUrl, @TwitterUrl, @GithubUrl, @FacebookUrl, @PhotoUrl,
-                    @Headline, @Seniority, @EmailStatus, @Departments, @SavedAt)",
+                    @Headline, @Seniority, @EmailStatus, @Departments, @ApolloRequestId, @SavedAt)",
                 BuildParams(lead));
         }
     }
@@ -204,7 +205,7 @@ public class LeadService
         lead.Location, lead.City, lead.State, lead.Country,
         lead.Emails, lead.Phones, lead.LinkedinUrl, lead.TwitterUrl, lead.GithubUrl,
         lead.FacebookUrl, lead.PhotoUrl, lead.Headline, lead.Seniority, lead.EmailStatus,
-        lead.Departments, lead.SavedAt,
+        lead.Departments, lead.ApolloRequestId, lead.SavedAt,
     };
 
     private static async Task UpsertOrgDetails(NpgsqlConnection c, Lead lead)
@@ -326,6 +327,7 @@ public class LeadService
         Seniority   = r.seniority,
         EmailStatus = r.email_status,
         Departments = r.departments ?? Array.Empty<string>(),
+        ApolloRequestId = r.apollo_request_id,
         SavedAt     = r.saved_at,
     };
 

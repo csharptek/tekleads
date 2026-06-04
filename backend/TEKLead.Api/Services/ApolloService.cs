@@ -186,6 +186,10 @@ public class ApolloService
     private static EnrichResult ParsePersonFull(JsonElement root, bool includePhones)
     {
         var result = new EnrichResult();
+        // Capture request_id from root level
+        if (root.TryGetProperty("request_id", out var reqId) && reqId.ValueKind == JsonValueKind.Number)
+            result.RequestId = reqId.GetInt64();
+
         if (!root.TryGetProperty("person", out var person) || person.ValueKind == JsonValueKind.Null)
             return result;
 
@@ -306,6 +310,38 @@ public class ApolloService
         }
     }
 
+    // Poll Apollo for webhook result using request_id — fallback when webhook doesn't arrive
+    public async Task<string[]> PollWebhookResult(long requestId)
+    {
+        var key = await GetKey();
+        var client = MakeClient(key);
+        var res = await client.GetAsync($"https://api.apollo.io/api/v1/webhook_result/{requestId}");
+        var body = await res.Content.ReadAsStringAsync();
+        _log.LogInformation("Apollo poll webhook_result {0}: {1}", res.StatusCode, body[..Math.Min(2000, body.Length)]);
+
+        if (!res.IsSuccessStatusCode) return Array.Empty<string>();
+
+        var phones = new List<string>();
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            // Shape: { "people": [ { "phone_numbers": [...] } ] }
+            if (root.TryGetProperty("people", out var people) && people.ValueKind == JsonValueKind.Array)
+                foreach (var person in people.EnumerateArray())
+                    ExtractPhones(person, phones);
+            // Shape: { "person": { "phone_numbers": [...] } }
+            if (phones.Count == 0 && root.TryGetProperty("person", out var person2))
+                ExtractPhones(person2, phones);
+            // Direct phone_numbers at root
+            if (phones.Count == 0)
+                ExtractPhones(root, phones);
+        }
+        catch { }
+
+        return phones.ToArray();
+    }
+
     public async Task<Lead?> SearchByLinkedIn(string linkedinUrl)
     {
         var key = await GetKey();
@@ -357,6 +393,7 @@ public class ApolloService
 
 public class EnrichResult
 {
+    public long? RequestId    { get; set; }
     public string FullName    { get; set; } = "";
     public string Title       { get; set; } = "";
     public string Company     { get; set; } = "";
