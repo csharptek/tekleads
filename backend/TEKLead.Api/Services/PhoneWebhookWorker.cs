@@ -127,7 +127,7 @@ public class PhoneWebhookWorker : BackgroundService
             {
                 var (ok, _, err, _) = await wa.SendTemplate(
                     whatsappTarget,
-                    templateName: null,   // uses default from settings
+                    templateName: "csharptek_intro_v2_util_2",
                     langCode:     null,
                     bodyVariables: null,
                     leadId: evt.EntityId.ToString());
