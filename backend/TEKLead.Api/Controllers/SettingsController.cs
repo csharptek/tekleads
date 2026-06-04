@@ -104,8 +104,7 @@ public class SettingsController : ControllerBase
             if (!res.IsSuccessStatusCode)
                 return Ok(new { error = $"Apollo returned {(int)res.StatusCode}: {body}" });
 
-            using var doc = System.Text.Json.JsonDocument.Parse(body);
-            return Ok(doc.RootElement);
+            return Content(body, "application/json");
         }
         catch (Exception ex)
         {
