@@ -114,6 +114,7 @@ public class LeadsController : ControllerBase
         try
         {
             var webhookUrl = await BuildWebhookUrl($"/api/leads/phone-webhook/{id}");
+            _log.LogInformation("Enrich webhookUrl={0}", webhookUrl);
             var result = await _apollo.EnrichFull(lead.ApolloId, webhookUrl);
             var updated = MergeEnrichResult(lead, result, mergePhones: true);
             if (updated) await _leads.Upsert(lead);
@@ -208,7 +209,8 @@ public class LeadsController : ControllerBase
         {
             using var sr = new StreamReader(Request.Body);
             var body = await sr.ReadToEndAsync();
-            _log.LogInformation("Phone webhook for lead {0}: {1}", leadId, body);
+            ApolloService.LogWebhookReceived(_log, body);
+            _log.LogInformation("Phone webhook for lead {0}: {1}", leadId, body[..Math.Min(2000, body.Length)]);
 
             var phones = ApolloService.ParsePhonesFromWebhook(body);
             if (phones.Length == 0) return Ok(new { received = true, phonesFound = 0 });
