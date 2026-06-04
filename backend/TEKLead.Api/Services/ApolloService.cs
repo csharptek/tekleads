@@ -137,11 +137,20 @@ public class ApolloService
         _log.LogInformation("Apollo EnrichFull webhookUrl={0}", webhookUrl);
         var res = await MakeClient(key).PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
         var body = await res.Content.ReadAsStringAsync();
-        _log.LogInformation("Apollo enrich {0}: {1}", res.StatusCode, body[..Math.Min(3000, body.Length)]);
         if (!res.IsSuccessStatusCode)
             throw new Exception($"Apollo enrich error {(int)res.StatusCode}: {body}");
 
         using var doc = JsonDocument.Parse(body);
+        // Log phone_numbers and request_id specifically
+        var phoneSection = "";
+        var requestId = "";
+        if (doc.RootElement.TryGetProperty("person", out var personEl))
+        {
+            if (personEl.TryGetProperty("phone_numbers", out var pnEl)) phoneSection = pnEl.GetRawText();
+            if (personEl.TryGetProperty("request_id", out var rid)) requestId = rid.GetRawText();
+        }
+        if (doc.RootElement.TryGetProperty("request_id", out var rootRid)) requestId = rootRid.GetRawText();
+        _log.LogInformation("Apollo enrich phone_numbers={0} request_id={1}", phoneSection, requestId);
         var enrichResult = ParsePersonFull(doc.RootElement, includePhones: true);
         _log.LogInformation("Apollo enrich parsed: emails={0} phones={1}", enrichResult.Emails.Count, enrichResult.Phones.Count);
         return enrichResult;
