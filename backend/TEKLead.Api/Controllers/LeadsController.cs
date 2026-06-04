@@ -226,16 +226,17 @@ public class LeadsController : ControllerBase
 
         // Poll Apollo for webhook result
         _log.LogInformation("poll-phone: polling request_id={0} for lead {1}", lead.ApolloRequestId, id);
-        var phones = await _apollo.PollWebhookResult(lead.ApolloRequestId!.Value);
+        var (phones, isReady) = await _apollo.PollWebhookResult(lead.ApolloRequestId!.Value);
         if (phones.Length > 0)
         {
             lead.Phones = MergeStrings(lead.Phones, phones);
             await _leads.Upsert(lead);
             _log.LogInformation("poll-phone: found {0} phones for lead {1}", phones.Length, id);
-            return Ok(new { phones, source = "poll", saved = true });
+            return Ok(new { phones, source = "poll", saved = true, pending = false });
         }
 
-        return Ok(new { phones = Array.Empty<string>(), source = "poll", pending = true });
+        // isReady=false means Apollo is still processing — tell frontend to keep waiting
+        return Ok(new { phones = Array.Empty<string>(), source = "poll", pending = !isReady, notReady = !isReady });
     }
 
     [HttpPost("phone-webhook/{leadId}")]

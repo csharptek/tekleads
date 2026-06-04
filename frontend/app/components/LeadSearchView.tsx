@@ -201,6 +201,7 @@ export default function LeadSearchView() {
                 setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, phones) } : l));
                 setBanner({ kind: "success", text: `Phone: ${phones[0]} — saved.` });
               }
+              // notReady=true means Apollo still processing — keep polling
             }
           } catch { }
           if (elapsed >= MAX_TIME) {
@@ -298,6 +299,7 @@ export default function LeadSearchView() {
                 setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, phones) } : l));
                 setBanner({ kind: "success", text: `Phone: ${phones[0]} — saved.` });
               }
+              // notReady=true means Apollo still processing — keep polling
             }
           } catch { }
           if (elapsed >= MAX_TIME) {

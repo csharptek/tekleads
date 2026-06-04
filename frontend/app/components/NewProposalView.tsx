@@ -302,6 +302,7 @@ export default function NewProposalView({
                 setContacts(prev => prev.map(c => c.lead.id === realId ? { ...c, lead: { ...c.lead, phones }, checkedPhones: phones } : c));
                 setSearchResults(prev => prev.map(l => l.id === realId ? { ...l, phones } : l));
               }
+              // notReady=true means Apollo still processing — keep polling
             }
           } catch { }
           if (elapsed >= MAX_TIME) {

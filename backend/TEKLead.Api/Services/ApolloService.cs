@@ -311,7 +311,8 @@ public class ApolloService
     }
 
     // Poll Apollo for webhook result using request_id — fallback when webhook doesn't arrive
-    public async Task<string[]> PollWebhookResult(long requestId)
+    // Returns (phones, isReady) — isReady=false means result not available yet, retry later
+    public async Task<(string[] Phones, bool IsReady)> PollWebhookResult(long requestId)
     {
         var key = await GetKey();
         var client = MakeClient(key);
@@ -319,7 +320,11 @@ public class ApolloService
         var body = await res.Content.ReadAsStringAsync();
         _log.LogInformation("Apollo poll webhook_result {0}: {1}", res.StatusCode, body[..Math.Min(2000, body.Length)]);
 
-        if (!res.IsSuccessStatusCode) return Array.Empty<string>();
+        // 404 = not ready yet (Apollo returns this while processing)
+        if (res.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return (Array.Empty<string>(), false);
+
+        if (!res.IsSuccessStatusCode) return (Array.Empty<string>(), true);
 
         var phones = new List<string>();
         try
@@ -339,7 +344,7 @@ public class ApolloService
         }
         catch { }
 
-        return phones.ToArray();
+        return (phones.ToArray(), true);
     }
 
     public async Task<Lead?> SearchByLinkedIn(string linkedinUrl)
