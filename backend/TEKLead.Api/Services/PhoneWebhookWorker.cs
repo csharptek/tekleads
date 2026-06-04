@@ -269,7 +269,6 @@ public class PhoneWebhookWorker : BackgroundService
 
         _log.LogInformation("PhoneWebhookWorker updated saved_leads for apollo_id {Id}", apolloId);
     }
-}
 
     // ──────────────────────────────────────────────────────────────────────
     // Update contacts_json + apollo_contact_json in proposals matching apollo_id
