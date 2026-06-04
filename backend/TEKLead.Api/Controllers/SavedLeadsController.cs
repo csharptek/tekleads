@@ -86,7 +86,7 @@ public class SavedLeadsController : ControllerBase
                 var ids = leads.Select(l => l.Id).ToArray();
 
                 var orgRows = await c.QueryAsync<dynamic>("SELECT * FROM lead_org_details WHERE lead_id = ANY(@ids)", new { ids });
-                var orgMap  = orgRows.ToDictionary(r => (Guid)r.lead_id, r => new LeadOrgDetails
+                var orgMap  = orgRows.ToDictionary(r => (Guid)r.lead_id, r => (LeadOrgDetails)new LeadOrgDetails
                 {
                     Id = r.id, LeadId = r.lead_id,
                     OrgWebsiteUrl = r.org_website_url, OrgEstimatedEmployees = r.org_estimated_employees,
@@ -98,7 +98,7 @@ public class SavedLeadsController : ControllerBase
                 var empRows = await c.QueryAsync<dynamic>(
                     "SELECT * FROM lead_employment_history WHERE lead_id = ANY(@ids) ORDER BY is_current DESC, start_date DESC", new { ids });
                 var empMap = empRows.GroupBy(r => (Guid)r.lead_id)
-                    .ToDictionary(g => g.Key, g => g.Select(r => new LeadEmploymentHistory
+                    .ToDictionary(g => g.Key, g => g.Select(r => (LeadEmploymentHistory)new LeadEmploymentHistory
                     {
                         Id = r.id, LeadId = r.lead_id, JobTitle = r.job_title, OrgName = r.org_name,
                         StartDate = r.start_date, EndDate = r.end_date, IsCurrent = r.is_current,

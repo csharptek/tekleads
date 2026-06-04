@@ -257,7 +257,7 @@ public class LeadService
         var empRows = await c.QueryAsync<dynamic>(
             "SELECT * FROM lead_employment_history WHERE lead_id = ANY(@ids) ORDER BY is_current DESC, start_date DESC", new { ids });
         var empMap = empRows.GroupBy(r => (Guid)r.lead_id)
-            .ToDictionary(g => g.Key, g => g.Select(r => MapEmp(r)).ToList());
+            .ToDictionary(g => g.Key, g => g.Select(r => (LeadEmploymentHistory)MapEmp(r)).ToList());
 
         foreach (var lead in leads)
         {
