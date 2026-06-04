@@ -1,4 +1,5 @@
 using Dapper;
+using System.Text.Json;
 using Npgsql;
 using TEKLead.Api.Models;
 
@@ -132,9 +133,12 @@ public class PhoneWebhookWorker : BackgroundService
                 company        = r.Company;
             }
 
-            // Also update saved_leads row if apollo_id matches
+            // Also update saved_leads + proposal contacts if apollo_id matches
             if (!string.IsNullOrEmpty(whatsappTarget))
+            {
                 await PushToSavedLeads(evt.EntityId, evt.Phones, c);
+                await PushToProposalContacts(evt.EntityId, evt.Phones, c);
+            }
 
             // Send WhatsApp
             string waResult = "no_phone";
@@ -264,6 +268,96 @@ public class PhoneWebhookWorker : BackgroundService
             new { apolloId, phones });
 
         _log.LogInformation("PhoneWebhookWorker updated saved_leads for apollo_id {Id}", apolloId);
+    }
+}
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Update contacts_json + apollo_contact_json in proposals matching apollo_id
+    // ──────────────────────────────────────────────────────────────────────
+    private async Task PushToProposalContacts(Guid leadId, string[] phones, NpgsqlConnection c)
+    {
+        if (phones.Length == 0) return;
+        var phone = phones[0];
+
+        // Get apollo_id for this lead
+        var apolloId = await c.QuerySingleOrDefaultAsync<string?>(
+            "SELECT apollo_id FROM leads WHERE id = @leadId", new { leadId });
+        if (string.IsNullOrEmpty(apolloId)) return;
+
+        // Find proposals that reference this apollo_id in apollo_contact_json or contacts_json
+        var proposals = (await c.QueryAsync<dynamic>(
+            @"SELECT id, contacts_json, apollo_contact_json
+              FROM proposals
+              WHERE apollo_contact_json::text ILIKE @apolloPattern
+                 OR contacts_json IS NOT NULL",
+            new { apolloPattern = $"%{apolloId}%" })).ToList();
+
+        foreach (var row in proposals)
+        {
+            bool updated = false;
+            string? newContactsJson = row.contacts_json;
+            string? newApolloJson   = row.apollo_contact_json;
+
+            // Patch contacts_json — array of {name, email, phone, role, linkedin}
+            if (!string.IsNullOrWhiteSpace(newContactsJson))
+            {
+                try
+                {
+                    var arr = JsonSerializer.Deserialize<List<JsonElement>>(newContactsJson);
+                    if (arr != null)
+                    {
+                        var patched = new System.Text.Json.Nodes.JsonArray();
+                        foreach (var el in arr)
+                        {
+                            var obj = System.Text.Json.Nodes.JsonObject.Create(el)!;
+                            // Only patch if phone is empty
+                            var existing = obj["phone"]?.GetValue<string>() ?? "";
+                            if (string.IsNullOrWhiteSpace(existing))
+                            {
+                                obj["phone"] = phone;
+                                updated = true;
+                            }
+                            patched.Add(obj);
+                        }
+                        if (updated) newContactsJson = patched.ToJsonString();
+                    }
+                }
+                catch (Exception ex) { _log.LogWarning("PushToProposalContacts contacts_json parse error: {0}", ex.Message); }
+            }
+
+            // Patch apollo_contact_json — full lead object with phones array
+            if (!string.IsNullOrWhiteSpace(newApolloJson) && newApolloJson.Contains(apolloId))
+            {
+                try
+                {
+                    var obj = System.Text.Json.Nodes.JsonNode.Parse(newApolloJson) as System.Text.Json.Nodes.JsonObject;
+                    if (obj != null)
+                    {
+                        var existingPhones = obj["phones"]?.AsArray();
+                        if (existingPhones == null || existingPhones.Count == 0)
+                        {
+                            var arr = new System.Text.Json.Nodes.JsonArray();
+                            arr.Add(phone);
+                            obj["phones"] = arr;
+                            updated = true;
+                        }
+                        if (updated) newApolloJson = obj.ToJsonString();
+                    }
+                }
+                catch (Exception ex) { _log.LogWarning("PushToProposalContacts apollo_contact_json parse error: {0}", ex.Message); }
+            }
+
+            if (updated)
+            {
+                await c.ExecuteAsync(
+                    @"UPDATE proposals
+                      SET contacts_json = @newContactsJson,
+                          apollo_contact_json = @newApolloJson
+                      WHERE id = @id",
+                    new { newContactsJson, newApolloJson, id = (Guid)row.id });
+                _log.LogInformation("PushToProposalContacts updated proposal {Id} for apollo_id {ApolloId}", (Guid)row.id, apolloId);
+            }
+        }
     }
 }
 
