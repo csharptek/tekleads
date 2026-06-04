@@ -389,8 +389,12 @@ public class ContactListService
                 }
 
                 var webhookUrl = $"{baseUrl}/api/contact-lists/phone-webhook/{cid}";
-                var (emails, phones, fullName, location, linkedinUrl) =
-                    await _apollo.Enrich(apolloId, webhookUrl);
+                var enrichResult = await _apollo.EnrichFull(apolloId, webhookUrl);
+                var emails     = enrichResult.Emails.ToArray();
+                var phones     = enrichResult.Phones.ToArray();
+                var fullName   = enrichResult.FullName;
+                var location   = enrichResult.Location;
+                var linkedinUrl = enrichResult.LinkedinUrl;
 
                 await c.ExecuteAsync(@"
                     UPDATE contacts SET
