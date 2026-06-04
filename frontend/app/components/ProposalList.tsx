@@ -43,7 +43,20 @@ type Proposal = {
   updatedAt: string;
 };
 
-type Contact = { name: string; email: string; phone?: string; role?: string; linkedin?: string; };
+type Contact = {
+  name: string;
+  email: string;
+  phone?: string;
+  role?: string;
+  linkedin?: string;
+  company?: string;
+  website?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  emails?: string[];
+  phones?: string[];
+};
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   draft:      { label: "Draft",      color: "#6b7280", bg: "#f3f4f6" },
@@ -287,16 +300,22 @@ export default function ProposalList({
         const emails: string[] = lead.emails || [];
         const phones: string[] = lead.phones || [];
         if (emails.length === 0 && phones.length === 0) continue;
-        if (emails.length === 0) {
-          toAdd.push({ name: lead.name || "", email: "", phone: phones[0] || "", role: lead.title || "", linkedin: lead.linkedinUrl || "" });
-          continue;
-        }
-        for (let i = 0; i < emails.length; i++) {
-          const email = emails[i];
-          if (existingEmails.has(email.toLowerCase())) continue;
-          existingEmails.add(email.toLowerCase());
-          toAdd.push({ name: lead.name || "", email, phone: phones[i] || phones[0] || "", role: lead.title || "", linkedin: lead.linkedinUrl || "" });
-        }
+        const primaryEmail = emails.find(e => !existingEmails.has(e.toLowerCase())) || "";
+        if (primaryEmail) existingEmails.add(primaryEmail.toLowerCase());
+        toAdd.push({
+          name: lead.name || "",
+          email: primaryEmail,
+          emails: emails,
+          phone: phones[0] || "",
+          phones: phones,
+          role: lead.title || "",
+          linkedin: lead.linkedinUrl || "",
+          company: lead.company || "",
+          website: lead.orgDetails?.orgWebsiteUrl || "",
+          city: lead.city || "",
+          state: lead.state || "",
+          country: lead.country || "",
+        });
       }
 
       if (toAdd.length === 0) {
@@ -542,17 +561,46 @@ export default function ProposalList({
                   </div>
                   {contacts.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>No contacts yet.</div>}
                   {contacts.map((c, i) => (
-                    <div key={i} style={{ marginBottom: 16, padding: "14px 16px", border: "1px solid var(--border)", borderRadius: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}><button className="btn btn-ghost btn-sm" onClick={() => removeContact(i)} style={{ color: "var(--red)", fontSize: 11 }}>Remove</button></div>
-                      <div className="grid-2" style={{ gap: 8 }}>
+                    <div key={i} style={{ marginBottom: 14, padding: "14px 16px", border: "1px solid var(--border)", borderRadius: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => removeContact(i)} style={{ color: "var(--red)", fontSize: 11 }}>Remove</button>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                         <div><div className="field-label">Name</div><input className="input" value={c.name} onChange={e => updateContact(i, "name", e.target.value)} /></div>
-                        <div><div className="field-label">Email</div><input className="input" type="email" value={c.email} onChange={e => updateContact(i, "email", e.target.value)} /></div>
-                        <div><div className="field-label">Phone</div><input className="input" value={c.phone || ""} onChange={e => updateContact(i, "phone", e.target.value)} /></div>
                         <div><div className="field-label">Role / Title</div><input className="input" value={c.role || ""} onChange={e => updateContact(i, "role", e.target.value)} /></div>
+                        <div><div className="field-label">Company</div><input className="input" value={c.company || ""} onChange={e => updateContact(i, "company", e.target.value)} /></div>
+                        <div><div className="field-label">Website</div><input className="input" value={c.website || ""} onChange={e => updateContact(i, "website", e.target.value)} /></div>
                         <div style={{ gridColumn: "1 / -1" }}>
+                          <div className="field-label">Emails</div>
+                          {/* Primary email always editable */}
+                          <input className="input" type="email" value={c.email} onChange={e => updateContact(i, "email", e.target.value)} placeholder="Primary email" style={{ marginBottom: 4 }} />
+                          {/* Additional emails read-only chips */}
+                          {c.emails && c.emails.filter(e => e !== c.email).length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                              {c.emails.filter(e => e !== c.email).map((e, ei) => (
+                                <span key={ei} className="chip chip-blue" style={{ fontSize: 11 }}>{e}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <div className="field-label">Phones</div>
+                          <input className="input" value={c.phone || ""} onChange={e => updateContact(i, "phone", e.target.value)} placeholder="Primary phone" style={{ marginBottom: 4 }} />
+                          {c.phones && c.phones.filter(p => p !== c.phone).length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                              {c.phones.filter(p => p !== c.phone).map((p, pi) => (
+                                <span key={pi} className="chip chip-green" style={{ fontSize: 11 }}>📞 {p}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div><div className="field-label">City</div><input className="input" value={c.city || ""} onChange={e => updateContact(i, "city", e.target.value)} /></div>
+                        <div><div className="field-label">State</div><input className="input" value={c.state || ""} onChange={e => updateContact(i, "state", e.target.value)} /></div>
+                        <div><div className="field-label">Country</div><input className="input" value={c.country || ""} onChange={e => updateContact(i, "country", e.target.value)} /></div>
+                        <div>
                           <div className="field-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             LinkedIn
-                            {c.linkedin && <a href={c.linkedin} target="_blank" rel="noreferrer" title="Open LinkedIn" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none" }}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}
+                            {c.linkedin && <a href={c.linkedin} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2" }}><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}
                           </div>
                           <input className="input" value={c.linkedin || ""} onChange={e => updateContact(i, "linkedin", e.target.value)} placeholder="https://linkedin.com/in/..." />
                         </div>

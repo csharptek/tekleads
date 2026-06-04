@@ -103,25 +103,20 @@ public class LeadsController : ControllerBase
         try
         {
             var webhookUrl = $"https://{HttpContext.Request.Host}/api/leads/phone-webhook/{id}";
-            var (emails, phones, fullName, location, linkedinUrl) = await _apollo.Enrich(lead.ApolloId, webhookUrl);
-
-            var updated = false;
-            if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
-            if (!string.IsNullOrEmpty(location) && string.IsNullOrEmpty(lead.Location)) { lead.Location = location; updated = true; }
-            if (emails.Length > 0) { var merged = MergeStrings(lead.Emails, emails); if (!Same(lead.Emails, merged)) { lead.Emails = merged; updated = true; } }
-            if (phones.Length > 0) { var merged = MergeStrings(lead.Phones, phones); if (!Same(lead.Phones, merged)) { lead.Phones = merged; updated = true; } }
-            if (!string.IsNullOrEmpty(linkedinUrl) && string.IsNullOrEmpty(lead.LinkedinUrl)) { lead.LinkedinUrl = linkedinUrl; updated = true; }
+            var result = await _apollo.EnrichFull(lead.ApolloId, webhookUrl);
+            var updated = MergeEnrichResult(lead, result, mergePhones: true);
             if (updated) await _leads.Upsert(lead);
 
             return Ok(new
             {
-                emails,
-                phones,
-                fullName,
-                location,
-                linkedinUrl,
+                lead,
+                emails = result.Emails,
+                phones = result.Phones,
+                fullName = result.FullName,
+                location = result.Location,
+                linkedinUrl = result.LinkedinUrl,
                 autoSaved = updated,
-                phoneWebhookPending = phones.Length == 0
+                phoneWebhookPending = result.Phones.Count == 0
             });
         }
         catch (Exception ex)
@@ -141,21 +136,17 @@ public class LeadsController : ControllerBase
 
         try
         {
-            var (emails, fullName, location, linkedinUrl) = await _apollo.EnrichEmailOnly(lead.ApolloId);
-
-            var updated = false;
-            if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
-            if (!string.IsNullOrEmpty(location) && string.IsNullOrEmpty(lead.Location)) { lead.Location = location; updated = true; }
-            if (emails.Length > 0) { var merged = MergeStrings(lead.Emails, emails); if (!Same(lead.Emails, merged)) { lead.Emails = merged; updated = true; } }
-            if (!string.IsNullOrEmpty(linkedinUrl) && string.IsNullOrEmpty(lead.LinkedinUrl)) { lead.LinkedinUrl = linkedinUrl; updated = true; }
+            var result = await _apollo.EnrichEmailOnly(lead.ApolloId);
+            var updated = MergeEnrichResult(lead, result, mergePhones: false);
             if (updated) await _leads.Upsert(lead);
 
             return Ok(new
             {
-                emails,
-                fullName,
-                location,
-                linkedinUrl,
+                lead,
+                emails = result.Emails,
+                fullName = result.FullName,
+                location = result.Location,
+                linkedinUrl = result.LinkedinUrl,
                 autoSaved = updated
             });
         }
@@ -177,23 +168,19 @@ public class LeadsController : ControllerBase
         try
         {
             var webhookUrl = $"https://{HttpContext.Request.Host}/api/leads/phone-webhook/{id}";
-            var (phones, fullName, location, linkedinUrl) = await _apollo.EnrichPhoneOnly(lead.ApolloId, webhookUrl);
-
-            var updated = false;
-            if (!string.IsNullOrEmpty(fullName)) { lead.Name = fullName; updated = true; }
-            if (!string.IsNullOrEmpty(location) && string.IsNullOrEmpty(lead.Location)) { lead.Location = location; updated = true; }
-            if (phones.Length > 0) { var merged = MergeStrings(lead.Phones, phones); if (!Same(lead.Phones, merged)) { lead.Phones = merged; updated = true; } }
-            if (!string.IsNullOrEmpty(linkedinUrl) && string.IsNullOrEmpty(lead.LinkedinUrl)) { lead.LinkedinUrl = linkedinUrl; updated = true; }
+            var result = await _apollo.EnrichPhoneOnly(lead.ApolloId, webhookUrl);
+            var updated = MergeEnrichResult(lead, result, mergePhones: true);
             if (updated) await _leads.Upsert(lead);
 
             return Ok(new
             {
-                phones,
-                fullName,
-                location,
-                linkedinUrl,
+                lead,
+                phones = result.Phones,
+                fullName = result.FullName,
+                location = result.Location,
+                linkedinUrl = result.LinkedinUrl,
                 autoSaved = updated,
-                phoneWebhookPending = phones.Length == 0
+                phoneWebhookPending = result.Phones.Count == 0
             });
         }
         catch (Exception ex)
@@ -229,6 +216,53 @@ public class LeadsController : ControllerBase
         }
     }
 
+    // Merge enrichment result into lead — merge not replace
+    private static bool MergeEnrichResult(Lead lead, EnrichResult result, bool mergePhones)
+    {
+        var updated = false;
+
+        if (!string.IsNullOrEmpty(result.FullName)) { lead.Name = result.FullName; updated = true; }
+        if (!string.IsNullOrEmpty(result.Title) && string.IsNullOrEmpty(lead.Title)) { lead.Title = result.Title; updated = true; }
+        if (!string.IsNullOrEmpty(result.Headline) && string.IsNullOrEmpty(lead.Headline)) { lead.Headline = result.Headline; updated = true; }
+        if (!string.IsNullOrEmpty(result.Seniority) && string.IsNullOrEmpty(lead.Seniority)) { lead.Seniority = result.Seniority; updated = true; }
+        if (!string.IsNullOrEmpty(result.EmailStatus)) { lead.EmailStatus = result.EmailStatus; updated = true; }
+        if (!string.IsNullOrEmpty(result.Location) && string.IsNullOrEmpty(lead.Location)) { lead.Location = result.Location; updated = true; }
+        if (!string.IsNullOrEmpty(result.City) && string.IsNullOrEmpty(lead.City)) { lead.City = result.City; updated = true; }
+        if (!string.IsNullOrEmpty(result.State) && string.IsNullOrEmpty(lead.State)) { lead.State = result.State; updated = true; }
+        if (!string.IsNullOrEmpty(result.Country) && string.IsNullOrEmpty(lead.Country)) { lead.Country = result.Country; updated = true; }
+        if (!string.IsNullOrEmpty(result.LinkedinUrl) && string.IsNullOrEmpty(lead.LinkedinUrl)) { lead.LinkedinUrl = result.LinkedinUrl; updated = true; }
+        if (!string.IsNullOrEmpty(result.TwitterUrl) && string.IsNullOrEmpty(lead.TwitterUrl)) { lead.TwitterUrl = result.TwitterUrl; updated = true; }
+        if (!string.IsNullOrEmpty(result.GithubUrl) && string.IsNullOrEmpty(lead.GithubUrl)) { lead.GithubUrl = result.GithubUrl; updated = true; }
+        if (!string.IsNullOrEmpty(result.FacebookUrl) && string.IsNullOrEmpty(lead.FacebookUrl)) { lead.FacebookUrl = result.FacebookUrl; updated = true; }
+        if (!string.IsNullOrEmpty(result.PhotoUrl) && string.IsNullOrEmpty(lead.PhotoUrl)) { lead.PhotoUrl = result.PhotoUrl; updated = true; }
+        if (result.Departments.Length > 0 && lead.Departments.Length == 0) { lead.Departments = result.Departments; updated = true; }
+        if (!string.IsNullOrEmpty(result.Company) && string.IsNullOrEmpty(lead.Company)) { lead.Company = result.Company; updated = true; }
+        if (!string.IsNullOrEmpty(result.Industry) && string.IsNullOrEmpty(lead.Industry)) { lead.Industry = result.Industry; updated = true; }
+
+        if (result.Emails.Count > 0)
+        {
+            var merged = MergeStrings(lead.Emails, result.Emails.ToArray());
+            if (!Same(lead.Emails, merged)) { lead.Emails = merged; updated = true; }
+        }
+        if (mergePhones && result.Phones.Count > 0)
+        {
+            var merged = MergeStrings(lead.Phones, result.Phones.ToArray());
+            if (!Same(lead.Phones, merged)) { lead.Phones = merged; updated = true; }
+        }
+        if (result.OrgDetails != null)
+        {
+            lead.OrgDetails = result.OrgDetails;
+            updated = true;
+        }
+        if (result.EmploymentHistory.Count > 0)
+        {
+            lead.EmploymentHistory = result.EmploymentHistory;
+            updated = true;
+        }
+
+        return updated;
+    }
+
     private static string[] MergeStrings(string[]? existing, string[]? incoming)
     {
         var set = new List<string>();
@@ -259,10 +293,7 @@ public class DuplicateCheckRequest
     public string? LinkedinUrl { get; set; }
 }
 
-public class NameCheckRequest
-{
-    public string? Name { get; set; }
-}
+public class NameCheckRequest { public string? Name { get; set; } }
 
 public class LeadSearchRequest
 {
@@ -276,7 +307,4 @@ public class LeadSearchRequest
     public int PerPage { get; set; } = 25;
 }
 
-public class LinkedInSearchRequest
-{
-    public string? LinkedinUrl { get; set; }
-}
+public class LinkedInSearchRequest { public string? LinkedinUrl { get; set; } }

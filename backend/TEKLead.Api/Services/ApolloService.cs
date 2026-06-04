@@ -80,21 +80,22 @@ public class ApolloService
         {
             foreach (var p in people.EnumerateArray())
             {
-                var firstName   = Str(p, "first_name");
-                var lastName = Str(p, "last_name");
+                var firstName = Str(p, "first_name");
+                var lastName  = Str(p, "last_name");
                 if (string.IsNullOrEmpty(lastName)) lastName = Str(p, "last_name_obfuscated");
                 var fullName = $"{firstName} {lastName}".Trim();
 
-                var orgName = "";
-                var orgIndustry = "";
+                var orgName = ""; var orgIndustry = "";
                 if (p.TryGetProperty("organization", out var org) && org.ValueKind == JsonValueKind.Object)
                 {
                     orgName     = Str(org, "name");
                     orgIndustry = Str(org, "industry");
                 }
 
-                var locParts = new[] { Str(p, "city"), Str(p, "state"), Str(p, "country") }
-                    .Where(s => !string.IsNullOrEmpty(s));
+                var city    = Str(p, "city");
+                var state   = Str(p, "state");
+                var country = Str(p, "country");
+                var locParts = new[] { city, state, country }.Where(s => !string.IsNullOrEmpty(s));
 
                 leads.Add(new Lead
                 {
@@ -105,9 +106,14 @@ public class ApolloService
                     Company     = orgName,
                     Industry    = orgIndustry,
                     Location    = string.Join(", ", locParts),
+                    City        = city,
+                    State       = state,
+                    Country     = country,
                     Emails      = Array.Empty<string>(),
                     Phones      = Array.Empty<string>(),
                     LinkedinUrl = Str(p, "linkedin_url"),
+                    Headline    = Str(p, "headline"),
+                    Seniority   = Str(p, "seniority"),
                 });
             }
         }
@@ -115,12 +121,10 @@ public class ApolloService
         return (leads, total);
     }
 
-    // Returns full name, location, emails, phones, linkedinUrl after enrichment
-    public async Task<(string[] Emails, string[] Phones, string FullName, string Location, string LinkedinUrl)> Enrich(
-        string apolloPersonId, string webhookUrl)
+    // Full enrich — returns complete Lead with all fields populated
+    public async Task<EnrichResult> EnrichFull(string apolloPersonId, string webhookUrl)
     {
         var key = await GetKey();
-
         var payload = new
         {
             id = apolloPersonId,
@@ -129,147 +133,126 @@ public class ApolloService
             webhook_url = webhookUrl
         };
 
-        var client = MakeClient(key);
-        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
+        var res = await MakeClient(key).PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
         var body = await res.Content.ReadAsStringAsync();
-
         _log.LogInformation("Apollo enrich {0}: {1}", res.StatusCode, body[..Math.Min(1000, body.Length)]);
-
         if (!res.IsSuccessStatusCode)
             throw new Exception($"Apollo enrich error {(int)res.StatusCode}: {body}");
 
         using var doc = JsonDocument.Parse(body);
-        var emails   = new List<string>();
-        var phones     = new List<string>();
-        var fullName   = "";
-        var location   = "";
-        var linkedinUrl = "";
-
-        if (doc.RootElement.TryGetProperty("person", out var person))
-        {
-            var email = Str(person, "email");
-            if (!string.IsNullOrEmpty(email)) emails.Add(email);
-
-            // Full unmasked name from enrichment
-            var fn = Str(person, "first_name");
-            var ln = Str(person, "last_name");
-            fullName = $"{fn} {ln}".Trim();
-
-            // Real location from enrichment
-            var locParts = new[] { Str(person, "city"), Str(person, "state"), Str(person, "country") }
-                .Where(s => !string.IsNullOrEmpty(s));
-            location = string.Join(", ", locParts);
-
-            // LinkedIn URL
-            linkedinUrl = Str(person, "linkedin_url");
-
-            if (person.TryGetProperty("phone_numbers", out var pns) && pns.ValueKind == JsonValueKind.Array)
-                foreach (var pn in pns.EnumerateArray())
-                {
-                    var num = Str(pn, "sanitized_number") is { Length: > 0 } s ? s : Str(pn, "raw_number");
-                    if (!string.IsNullOrEmpty(num)) phones.Add(num);
-                }
-        }
-
-        return (emails.ToArray(), phones.ToArray(), fullName, location, linkedinUrl);
+        return ParsePersonFull(doc.RootElement, includePhones: true);
     }
 
-    // Email-only enrichment: no phone reveal, no webhook, returns synchronously.
-    public async Task<(string[] Emails, string FullName, string Location, string LinkedinUrl)> EnrichEmailOnly(string apolloPersonId)
+    public async Task<EnrichResult> EnrichEmailOnly(string apolloPersonId)
     {
         var key = await GetKey();
-
-        var payload = new
-        {
-            id = apolloPersonId,
-            reveal_personal_emails = false,
-            reveal_phone_number = false
-        };
-
-        var client = MakeClient(key);
-        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
+        var payload = new { id = apolloPersonId, reveal_personal_emails = false, reveal_phone_number = false };
+        var res = await MakeClient(key).PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
         var body = await res.Content.ReadAsStringAsync();
-
         _log.LogInformation("Apollo enrich-email {0}: {1}", res.StatusCode, body[..Math.Min(1000, body.Length)]);
-
         if (!res.IsSuccessStatusCode)
             throw new Exception($"Apollo enrich-email error {(int)res.StatusCode}: {body}");
 
         using var doc = JsonDocument.Parse(body);
-        var emails = new List<string>();
-        var fullName = "";
-        var location = "";
-        var linkedinUrl = "";
-
-        if (doc.RootElement.TryGetProperty("person", out var person))
-        {
-            var email = Str(person, "email");
-            if (!string.IsNullOrEmpty(email)) emails.Add(email);
-
-            var fn = Str(person, "first_name");
-            var ln = Str(person, "last_name");
-            fullName = $"{fn} {ln}".Trim();
-
-            var locParts = new[] { Str(person, "city"), Str(person, "state"), Str(person, "country") }
-                .Where(s => !string.IsNullOrEmpty(s));
-            location = string.Join(", ", locParts);
-
-            linkedinUrl = Str(person, "linkedin_url");
-        }
-
-        return (emails.ToArray(), fullName, location, linkedinUrl);
+        return ParsePersonFull(doc.RootElement, includePhones: false);
     }
 
-    // Phone-only enrichment: triggers async phone reveal via webhook, no email reveal.
-    public async Task<(string[] Phones, string FullName, string Location, string LinkedinUrl)> EnrichPhoneOnly(
-        string apolloPersonId, string webhookUrl)
+    public async Task<EnrichResult> EnrichPhoneOnly(string apolloPersonId, string webhookUrl)
     {
         var key = await GetKey();
-
-        var payload = new
-        {
-            id = apolloPersonId,
-            reveal_personal_emails = false,
-            reveal_phone_number = true,
-            webhook_url = webhookUrl
-        };
-
-        var client = MakeClient(key);
-        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
+        var payload = new { id = apolloPersonId, reveal_personal_emails = false, reveal_phone_number = true, webhook_url = webhookUrl };
+        var res = await MakeClient(key).PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
         var body = await res.Content.ReadAsStringAsync();
-
         _log.LogInformation("Apollo enrich-phone {0}: {1}", res.StatusCode, body[..Math.Min(1000, body.Length)]);
-
         if (!res.IsSuccessStatusCode)
             throw new Exception($"Apollo enrich-phone error {(int)res.StatusCode}: {body}");
 
         using var doc = JsonDocument.Parse(body);
-        var phones = new List<string>();
-        var fullName = "";
-        var location = "";
-        var linkedinUrl = "";
+        return ParsePersonFull(doc.RootElement, includePhones: true);
+    }
 
-        if (doc.RootElement.TryGetProperty("person", out var person))
-        {
-            var fn = Str(person, "first_name");
-            var ln = Str(person, "last_name");
-            fullName = $"{fn} {ln}".Trim();
+    private static EnrichResult ParsePersonFull(JsonElement root, bool includePhones)
+    {
+        var result = new EnrichResult();
+        if (!root.TryGetProperty("person", out var person) || person.ValueKind == JsonValueKind.Null)
+            return result;
 
-            var locParts = new[] { Str(person, "city"), Str(person, "state"), Str(person, "country") }
-                .Where(s => !string.IsNullOrEmpty(s));
-            location = string.Join(", ", locParts);
+        var fn = Str(person, "first_name");
+        var ln = Str(person, "last_name");
+        result.FullName    = $"{fn} {ln}".Trim();
+        result.Title       = Str(person, "title");
+        result.Headline    = Str(person, "headline");
+        result.Seniority   = Str(person, "seniority");
+        result.EmailStatus = Str(person, "email_status");
+        result.LinkedinUrl = Str(person, "linkedin_url");
+        result.TwitterUrl  = Str(person, "twitter_url");
+        result.GithubUrl   = Str(person, "github_url");
+        result.FacebookUrl = Str(person, "facebook_url");
+        result.PhotoUrl    = Str(person, "photo_url");
+        result.City        = Str(person, "city");
+        result.State       = Str(person, "state");
+        result.Country     = Str(person, "country");
+        result.Location    = string.Join(", ", new[] { result.City, result.State, result.Country }.Where(s => !string.IsNullOrEmpty(s)));
 
-            linkedinUrl = Str(person, "linkedin_url");
+        // Departments
+        if (person.TryGetProperty("departments", out var depts) && depts.ValueKind == JsonValueKind.Array)
+            result.Departments = depts.EnumerateArray().Select(d => d.GetString() ?? "").Where(s => s.Length > 0).ToArray();
 
-            if (person.TryGetProperty("phone_numbers", out var pns) && pns.ValueKind == JsonValueKind.Array)
-                foreach (var pn in pns.EnumerateArray())
+        // Primary email
+        var email = Str(person, "email");
+        if (!string.IsNullOrEmpty(email)) result.Emails.Add(email);
+
+        // All email addresses
+        if (person.TryGetProperty("email_addresses", out var eas) && eas.ValueKind == JsonValueKind.Array)
+            foreach (var ea in eas.EnumerateArray())
+            {
+                var e = Str(ea, "email");
+                if (!string.IsNullOrEmpty(e) && !result.Emails.Contains(e, StringComparer.OrdinalIgnoreCase))
+                    result.Emails.Add(e);
+            }
+
+        // Phones
+        if (includePhones && person.TryGetProperty("phone_numbers", out var pns) && pns.ValueKind == JsonValueKind.Array)
+            foreach (var pn in pns.EnumerateArray())
+            {
+                var num = Str(pn, "sanitized_number") is { Length: > 0 } s ? s : Str(pn, "raw_number");
+                if (!string.IsNullOrEmpty(num)) result.Phones.Add(num);
+            }
+
+        // Employment history
+        if (person.TryGetProperty("employment_history", out var empHistory) && empHistory.ValueKind == JsonValueKind.Array)
+            foreach (var e in empHistory.EnumerateArray())
+                result.EmploymentHistory.Add(new LeadEmploymentHistory
                 {
-                    var num = Str(pn, "sanitized_number") is { Length: > 0 } s ? s : Str(pn, "raw_number");
-                    if (!string.IsNullOrEmpty(num)) phones.Add(num);
-                }
+                    JobTitle  = Str(e, "title"),
+                    OrgName   = Str(e, "organization_name"),
+                    StartDate = Str(e, "start_date"),
+                    EndDate   = Str(e, "end_date"),
+                    IsCurrent = e.TryGetProperty("current", out var cur) && cur.ValueKind == JsonValueKind.True,
+                });
+
+        // Org details
+        if (person.TryGetProperty("organization", out var org) && org.ValueKind == JsonValueKind.Object)
+        {
+            result.OrgDetails = new LeadOrgDetails
+            {
+                OrgWebsiteUrl         = Str(org, "website_url"),
+                OrgLinkedinUrl        = Str(org, "linkedin_url"),
+                OrgAddress            = Str(org, "raw_address"),
+                OrgLogoUrl            = Str(org, "logo_url"),
+                OrgFoundedYear        = org.TryGetProperty("founded_year", out var fy) && fy.ValueKind != JsonValueKind.Null ? fy.ToString() : null,
+                OrgEstimatedEmployees = org.TryGetProperty("estimated_num_employees", out var emp) && emp.ValueKind != JsonValueKind.Null ? emp.ToString() : null,
+                OrgAnnualRevenue      = Str(org, "annual_revenue_printed"),
+                OrgPhone              = org.TryGetProperty("primary_phone", out var pp) && pp.ValueKind == JsonValueKind.Object ? Str(pp, "number") : null,
+            };
+            // Company name from org if not on person
+            if (string.IsNullOrEmpty(result.Company))
+                result.Company = Str(org, "name");
+            if (string.IsNullOrEmpty(result.Industry))
+                result.Industry = Str(org, "industry");
         }
 
-        return (phones.ToArray(), fullName, location, linkedinUrl);
+        return result;
     }
 
     public static string[] ParsePhonesFromWebhook(string json)
@@ -281,16 +264,13 @@ public class ApolloService
             var phones = new List<string>();
             var root = doc.RootElement;
 
-            // Shape: { "people": [ { "phone_numbers": [...] } ] }
             if (root.TryGetProperty("people", out var people) && people.ValueKind == JsonValueKind.Array)
                 foreach (var person in people.EnumerateArray())
                     ExtractPhones(person, phones);
 
-            // Shape: { "person": { "phone_numbers": [...] } }
             if (phones.Count == 0 && root.TryGetProperty("person", out var personEl))
                 ExtractPhones(personEl, phones);
 
-            // Shape: { "phone_numbers": [...] }
             if (phones.Count == 0)
                 ExtractPhones(root, phones);
 
@@ -320,29 +300,65 @@ public class ApolloService
         if (!res.IsSuccessStatusCode) throw new Exception($"Apollo API error {(int)res.StatusCode}: {body}");
 
         using var doc = JsonDocument.Parse(body);
-        if (!doc.RootElement.TryGetProperty("person", out var p) || p.ValueKind == JsonValueKind.Null)
-            return null;
+        var result = ParsePersonFull(doc.RootElement, includePhones: false);
+        if (string.IsNullOrEmpty(result.FullName)) return null;
 
-        var fn = Str(p, "first_name"); var ln = Str(p, "last_name");
-        var org = p.TryGetProperty("organization", out var o) && o.ValueKind != JsonValueKind.Null ? Str(o, "name") : "";
-        var title = Str(p, "title");
-        var locParts = new[] { Str(p, "city"), Str(p, "state"), Str(p, "country") }.Where(s => !string.IsNullOrEmpty(s));
-        var email = Str(p, "email");
         return new Lead
         {
-            Id = Guid.NewGuid(),
-            ApolloId = Str(p, "id"),
-            Name = $"{fn} {ln}".Trim(),
-            Title = title,
-            Company = org,
-            Industry = p.TryGetProperty("organization", out var org2) && org2.ValueKind != JsonValueKind.Null && org2.TryGetProperty("industry", out var ind) ? ind.GetString() ?? "" : "",
-            Location = string.Join(", ", locParts),
-            Emails = string.IsNullOrEmpty(email) ? Array.Empty<string>() : new[] { email },
-            Phones = Array.Empty<string>(),
-            LinkedinUrl = Str(p, "linkedin_url"),
+            Id              = Guid.NewGuid(),
+            ApolloId        = ExtractApolloId(doc.RootElement),
+            Name            = result.FullName,
+            Title           = result.Title,
+            Company         = result.Company,
+            Industry        = result.Industry,
+            Location        = result.Location,
+            City            = result.City,
+            State           = result.State,
+            Country         = result.Country,
+            Emails          = result.Emails.ToArray(),
+            Phones          = Array.Empty<string>(),
+            LinkedinUrl     = result.LinkedinUrl,
+            Headline        = result.Headline,
+            Seniority       = result.Seniority,
+            EmailStatus     = result.EmailStatus,
+            Departments     = result.Departments,
+            OrgDetails      = result.OrgDetails,
+            EmploymentHistory = result.EmploymentHistory,
         };
+    }
+
+    private static string ExtractApolloId(JsonElement root)
+    {
+        if (root.TryGetProperty("person", out var p) && p.ValueKind != JsonValueKind.Null)
+            return Str(p, "id");
+        return "";
     }
 
     private static string Str(JsonElement el, string key) =>
         el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+}
+
+public class EnrichResult
+{
+    public string FullName    { get; set; } = "";
+    public string Title       { get; set; } = "";
+    public string Company     { get; set; } = "";
+    public string Industry    { get; set; } = "";
+    public string Location    { get; set; } = "";
+    public string City        { get; set; } = "";
+    public string State       { get; set; } = "";
+    public string Country     { get; set; } = "";
+    public string Headline    { get; set; } = "";
+    public string Seniority   { get; set; } = "";
+    public string EmailStatus { get; set; } = "";
+    public string LinkedinUrl { get; set; } = "";
+    public string TwitterUrl  { get; set; } = "";
+    public string GithubUrl   { get; set; } = "";
+    public string FacebookUrl { get; set; } = "";
+    public string PhotoUrl    { get; set; } = "";
+    public string[] Departments { get; set; } = Array.Empty<string>();
+    public List<string> Emails { get; set; } = new();
+    public List<string> Phones { get; set; } = new();
+    public LeadOrgDetails? OrgDetails { get; set; }
+    public List<LeadEmploymentHistory> EmploymentHistory { get; set; } = new();
 }

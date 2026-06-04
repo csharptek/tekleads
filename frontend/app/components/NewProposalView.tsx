@@ -2,6 +2,24 @@
 import { useState, useRef, useEffect } from "react";
 import { api } from "../../lib/api";
 
+interface LeadOrgDetails {
+  orgWebsiteUrl?: string;
+  orgEstimatedEmployees?: string;
+  orgAnnualRevenue?: string;
+  orgFoundedYear?: string;
+  orgLinkedinUrl?: string;
+  orgPhone?: string;
+  orgAddress?: string;
+}
+
+interface LeadEmploymentHistory {
+  jobTitle?: string;
+  orgName?: string;
+  startDate?: string;
+  endDate?: string;
+  isCurrent: boolean;
+}
+
 type Lead = {
   id?: string;
   apolloId?: string;
@@ -10,9 +28,21 @@ type Lead = {
   company: string;
   industry: string;
   location: string;
+  city: string;
+  state: string;
+  country: string;
   emails: string[];
   phones: string[];
   linkedinUrl?: string;
+  twitterUrl?: string;
+  githubUrl?: string;
+  headline?: string;
+  seniority?: string;
+  emailStatus?: string;
+  departments?: string[];
+  photoUrl?: string;
+  orgDetails?: LeadOrgDetails;
+  employmentHistory?: LeadEmploymentHistory[];
 };
 
 type EnrichedContact = {
@@ -206,14 +236,24 @@ export default function NewProposalView({
       const realId = savedLead.id || lead.id;
       const res: any = await api.post(`/api/leads/${realId}/reveal-phone`, {});
 
+      const enrichedLead2 = res.lead || {};
       const updatedLead: Lead = {
         ...lead,
         id: realId,
-        name: res.fullName?.trim() ? res.fullName : lead.name,
-        location: res.location?.trim() ? res.location : lead.location,
+        name: res.fullName?.trim() ? res.fullName : (enrichedLead2.name || lead.name),
+        title: enrichedLead2.title || lead.title,
+        company: enrichedLead2.company || lead.company,
+        location: res.location?.trim() ? res.location : (enrichedLead2.location || lead.location),
+        city: enrichedLead2.city || lead.city || "",
+        state: enrichedLead2.state || lead.state || "",
+        country: enrichedLead2.country || lead.country || "",
         emails: res.emails?.length ? res.emails : lead.emails,
         phones: res.phones?.length ? res.phones : lead.phones,
         linkedinUrl: res.linkedinUrl?.trim() ? res.linkedinUrl : lead.linkedinUrl,
+        headline: enrichedLead2.headline || lead.headline,
+        seniority: enrichedLead2.seniority || lead.seniority,
+        orgDetails: enrichedLead2.orgDetails || lead.orgDetails,
+        employmentHistory: enrichedLead2.employmentHistory || lead.employmentHistory,
       };
 
       setContacts(prev => {
@@ -273,13 +313,23 @@ export default function NewProposalView({
       const realId = savedLead.id || lead.id;
       const res: any = await api.post(`/api/leads/${realId}/reveal-email`, {});
 
+      const enrichedLeadEmail = res.lead || {};
       const updatedLead: Lead = {
         ...lead,
         id: realId,
-        name: res.fullName?.trim() ? res.fullName : lead.name,
-        location: res.location?.trim() ? res.location : lead.location,
+        name: res.fullName?.trim() ? res.fullName : (enrichedLeadEmail.name || lead.name),
+        title: enrichedLeadEmail.title || lead.title,
+        company: enrichedLeadEmail.company || lead.company,
+        location: res.location?.trim() ? res.location : (enrichedLeadEmail.location || lead.location),
+        city: enrichedLeadEmail.city || lead.city || "",
+        state: enrichedLeadEmail.state || lead.state || "",
+        country: enrichedLeadEmail.country || lead.country || "",
         emails: res.emails?.length ? res.emails : lead.emails,
         linkedinUrl: res.linkedinUrl?.trim() ? res.linkedinUrl : lead.linkedinUrl,
+        headline: enrichedLeadEmail.headline || lead.headline,
+        seniority: enrichedLeadEmail.seniority || lead.seniority,
+        orgDetails: enrichedLeadEmail.orgDetails || lead.orgDetails,
+        employmentHistory: enrichedLeadEmail.employmentHistory || lead.employmentHistory,
       };
 
       setContacts(prev => {
@@ -306,11 +356,15 @@ export default function NewProposalView({
     setContacts(prev => prev.map(c => ({ ...c, isPrimary: c.lead.apolloId === apolloId })));
     const contact = contacts.find(c => c.lead.apolloId === apolloId);
     if (contact) {
+      const l = contact.lead;
       setForm(f => ({
         ...f,
-        clientName: contact.lead.name || f.clientName,
-        clientCompany: contact.lead.company || f.clientCompany,
-        clientEmail: f.clientEmail || contact.checkedEmails[0] || "",
+        clientName:    l.name    || f.clientName,
+        clientCompany: l.company || f.clientCompany,
+        clientEmail:   f.clientEmail || contact.checkedEmails[0] || l.emails?.[0] || "",
+        clientLinkedin: f.clientLinkedin || l.linkedinUrl || "",
+        clientCountry: f.clientCountry || l.country || "",
+        clientCity:    f.clientCity    || l.city    || l.state || "",
       }));
     }
   };
@@ -677,17 +731,45 @@ export default function NewProposalView({
         {contacts.filter(c => c.enriched).length > 0 && (
           <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
             <div className="field-label" style={{ marginBottom: 6 }}>Enriched contacts for this proposal</div>
-            {contacts.filter(c => c.enriched).map((c, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: c.isPrimary ? "var(--green-light)" : "var(--surface)", borderRadius: 6, marginBottom: 4, border: `1px solid ${c.isPrimary ? "var(--green)" : "var(--border)"}` }}>
-                <input type="radio" name="primary-contact" checked={c.isPrimary}
-                  onChange={() => setPrimary(c.lead.apolloId || "")} />
-                <div style={{ flex: 1, fontSize: 13 }}>
-                  <strong>{c.lead.name}</strong>
-                  <span style={{ color: "var(--muted)", marginLeft: 6 }}>{c.lead.title} · {c.lead.company}</span>
+            {contacts.filter(c => c.enriched).map((c, i) => {
+              const l = c.lead;
+              const org = l.orgDetails;
+              return (
+                <div key={i} style={{ padding: "10px 14px", background: c.isPrimary ? "var(--green-light)" : "var(--surface)", borderRadius: 8, marginBottom: 6, border: `1px solid ${c.isPrimary ? "var(--green)" : "var(--border)"}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <input type="radio" name="primary-contact" checked={c.isPrimary} onChange={() => setPrimary(l.apolloId || "")} />
+                    {l.photoUrl && <img src={l.photoUrl} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{l.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--muted)" }}>{[l.title, l.seniority].filter(Boolean).join(" · ")}</div>
+                    </div>
+                    {c.isPrimary && <span style={{ fontSize: 10, fontWeight: 700, background: "var(--green)", color: "white", padding: "1px 5px", borderRadius: 8 }}>PRIMARY</span>}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11 }}>
+                    {l.company && <div style={{ color: "var(--muted)" }}>🏢 <span style={{ color: "var(--text)" }}>{l.company}</span></div>}
+                    {org?.orgWebsiteUrl && <div style={{ color: "var(--muted)" }}>🌐 <a href={org.orgWebsiteUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>{org.orgWebsiteUrl.replace(/^https?:\/\//, "")}</a></div>}
+                    {(l.city || l.state || l.country) && <div style={{ color: "var(--muted)" }}>📍 <span style={{ color: "var(--text)" }}>{[l.city, l.state, l.country].filter(Boolean).join(", ")}</span></div>}
+                    {l.headline && <div style={{ color: "var(--muted)", gridColumn: "1/-1" }}>💬 <span style={{ color: "var(--text)" }}>{l.headline}</span></div>}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 6 }}>
+                    {l.emails?.map((e, ei) => (
+                      <div key={ei} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span className="chip chip-blue" style={{ fontSize: 10 }}>{e}</span>
+                      </div>
+                    ))}
+                    {l.phones?.map((ph, pi) => (
+                      <div key={pi} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span className="chip chip-green" style={{ fontSize: 10 }}>📞 {ph}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {l.linkedinUrl && <a href={l.linkedinUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#0a66c2", display: "inline-flex", alignItems: "center", gap: 3, marginTop: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                    LinkedIn
+                  </a>}
                 </div>
-                {c.isPrimary && <span style={{ fontSize: 10, fontWeight: 700, background: "var(--green)", color: "white", padding: "1px 5px", borderRadius: 8 }}>PRIMARY</span>}
-              </div>
-            ))}
+              );
+            })}
             {!primaryContact && (
               <div style={{ fontSize: 12, color: "var(--red, #ef4444)", marginTop: 4 }}>⚠ Select a primary contact to enable saving</div>
             )}
