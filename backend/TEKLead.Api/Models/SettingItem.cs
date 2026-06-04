@@ -13,6 +13,7 @@ public static class SettingKeys
     public const string AzureOpenAiDeployment      = "azure_openai_deployment";
     public const string AzureBlobConnString        = "azure_blob_conn";
     public const string ApolloApiKey               = "apollo_api_key";
+    public const string ApolloMasterKey            = "apollo_master_key";
 
     public const string GraphTenantId              = "graph_tenant_id";
     public const string GraphClientId              = "graph_client_id";
@@ -79,7 +80,7 @@ public static class SettingKeys
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,
         ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt,
-        AppUrl, EmailSignature, InstantlyApiKey,
+        AppUrl, ApolloMasterKey, EmailSignature, InstantlyApiKey,
         ArtifactCoverLetterPrompt, ArtifactWhatsappPrompt, ArtifactEmailPrompt,
         ArtifactFollowUp1Prompt, ArtifactFollowUp2Prompt,
     };
@@ -87,6 +88,6 @@ public static class SettingKeys
     public static readonly HashSet<string> Secrets = new()
     {
         AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey,
-        WhatsappCloudAccessToken, WhatsappCloudVerifyToken
+        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey
     };
 }

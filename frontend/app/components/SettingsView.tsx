@@ -33,6 +33,7 @@ const KEYS = {
   AzureSearchIndex: "azure_search_index",
   InstantlyApiKey: "instantly_api_key",
   AppUrl: "app_url",
+  ApolloMasterKey: "apollo_master_key",
 };
 
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
@@ -55,6 +56,7 @@ const TECH_GROUPS: Group[] = [
     subtitle: "Lead data provider",
     fields: [
       { key: KEYS.ApolloApiKey, label: "API Key", placeholder: "Enter to set / replace", secret: true, full: true },
+      { key: KEYS.ApolloMasterKey, label: "Master API Key", placeholder: "Enter master key for usage stats", secret: true, full: true },
       { key: KEYS.AppUrl, label: "App Public URL", placeholder: "https://tekleads-production.up.railway.app", full: true },
     ],
   },
@@ -237,6 +239,10 @@ export default function SettingsView() {
   const [diag, setDiag] = useState<Diag | null>(null);
   const [techOpen, setTechOpen] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
+  const [apolloOpen, setApolloOpen] = useState(false);
+  const [apolloStats, setApolloStats] = useState<any>(null);
+  const [apolloStatsLoading, setApolloStatsLoading] = useState(false);
+  const [apolloStatsError, setApolloStatsError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -257,6 +263,15 @@ export default function SettingsView() {
       setDiag({ connStringSet: false, connStringNormalized: false, dbReachable: false, tableExists: false, rowCount: 0, keysStored: 0, error: e.message });
     }
   }, []);
+
+  const loadApolloStats = async () => {
+    setApolloStatsLoading(true); setApolloStatsError("");
+    try {
+      const data = await api.get<any>("/api/settings/apollo-usage");
+      setApolloStats(data);
+    } catch (e: any) { setApolloStatsError(e.message); }
+    finally { setApolloStatsLoading(false); }
+  };
 
   useEffect(() => { load(); loadDiag(); }, [load, loadDiag]);
 
@@ -328,6 +343,64 @@ export default function SettingsView() {
         {techOpen && (
           <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
             {TECH_GROUPS.map(g => <FieldGroup key={g.title} group={g} {...sharedProps} />)}
+          </div>
+        )}
+      </div>
+
+      {/* Apollo Usage Stats */}
+      <div className="card">
+        <button onClick={() => { setApolloOpen(p => !p); if (!apolloOpen && !apolloStats) loadApolloStats(); }}
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, textAlign: "left" }}>📊 Apollo Usage Stats</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "left" }}>API usage and rate limits (requires Master API Key)</div>
+          </div>
+          <span style={{ fontSize: 18, color: "var(--muted)" }}>{apolloOpen ? "▲" : "▼"}</span>
+        </button>
+        {apolloOpen && (
+          <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+              <button className="btn btn-ghost btn-sm" onClick={loadApolloStats} disabled={apolloStatsLoading}>
+                {apolloStatsLoading ? <span className="spinner spinner-dark" /> : "↻ Refresh"}
+              </button>
+            </div>
+            {apolloStatsError && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{apolloStatsError}</div>}
+            {apolloStatsLoading && <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div>}
+            {apolloStats && !apolloStatsLoading && (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Endpoint</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: "var(--muted)" }}>Used (min)</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: "var(--muted)" }}>Limit (min)</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: "var(--muted)" }}>Used (hour)</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: "var(--muted)" }}>Limit (hour)</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: "var(--muted)" }}>Used (day)</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: "var(--muted)" }}>Limit (day)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.isArray(apolloStats?.usage_stats) && apolloStats.usage_stats.map((row: any, i: number) => (
+                      <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "8px 12px", fontWeight: 500 }}>{row.endpoint || row.name || "—"}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right" }}>{row.minute?.used ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--muted)" }}>{row.minute?.limit ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right" }}>{row.hour?.used ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--muted)" }}>{row.hour?.limit ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right" }}>{row.day?.used ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--muted)" }}>{row.day?.limit ?? "—"}</td>
+                      </tr>
+                    ))}
+                    {(!apolloStats?.usage_stats || apolloStats.usage_stats.length === 0) && (
+                      <tr><td colSpan={7} style={{ padding: "16px 12px", textAlign: "center", color: "var(--muted)" }}>
+                        {apolloStats?.error || "No data — add Master API Key in Apollo.io section above"}
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

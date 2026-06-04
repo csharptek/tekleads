@@ -9,11 +9,13 @@ namespace TEKLead.Api.Controllers;
 public class SettingsController : ControllerBase
 {
     private readonly SettingsService _svc;
+    private readonly IHttpClientFactory _http;
     private readonly ILogger<SettingsController> _log;
 
-    public SettingsController(SettingsService svc, ILogger<SettingsController> log)
+    public SettingsController(SettingsService svc, IHttpClientFactory http, ILogger<SettingsController> log)
     {
         _svc = svc;
+        _http = http;
         _log = log;
     }
 
@@ -76,6 +78,37 @@ public class SettingsController : ControllerBase
     {
         var info = await _svc.Diagnose();
         return Ok(info);
+    }
+
+    [HttpGet("apollo-usage")]
+    public async Task<IActionResult> ApolloUsage()
+    {
+        try
+        {
+            var all = await _svc.GetAll();
+            var masterKey = all.GetValueOrDefault(TEKLead.Api.Models.SettingKeys.ApolloMasterKey, "");
+            if (string.IsNullOrEmpty(masterKey))
+                return Ok(new { error = "Apollo Master API Key not configured. Add it in Settings → Apollo.io." });
+
+            var http = _http.CreateClient();
+            http.DefaultRequestHeaders.Add("X-Api-Key", masterKey);
+            http.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+
+            var res = await http.PostAsync("https://api.apollo.io/api/v1/usage_stats/api_usage_stats",
+                new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+            var body = await res.Content.ReadAsStringAsync();
+
+            if (!res.IsSuccessStatusCode)
+                return Ok(new { error = $"Apollo returned {(int)res.StatusCode}: {body}" });
+
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            return Ok(doc.RootElement);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Apollo usage stats failed");
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
 }
 
