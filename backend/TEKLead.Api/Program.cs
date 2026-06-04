@@ -26,6 +26,7 @@ builder.Services.AddScoped<ProductService>();
 builder.Services.AddScoped<ProductAIService>();
 builder.Services.AddScoped<ProductsDbInitializer>();
 builder.Services.AddHostedService<EmailSendWorker>();
+builder.Services.AddHostedService<PhoneWebhookWorker>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()
      .WithExposedHeaders("Access-Control-Allow-Private-Network")));

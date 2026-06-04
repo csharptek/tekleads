@@ -1,4 +1,6 @@
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
 using TEKLead.Api.Models;
 using TEKLead.Api.Services;
 
@@ -252,12 +254,24 @@ public class LeadsController : ControllerBase
             var phones = ApolloService.ParsePhonesFromWebhook(body);
             if (phones.Length == 0) return Ok(new { received = true, phonesFound = 0 });
 
-            var lead = await _leads.GetById(leadId);
-            if (lead == null) return Ok(new { received = true, phonesFound = phones.Length, saved = false });
+            // Dedup: skip if same phone already queued/processed for this lead in last 24h
+            await using var c = new NpgsqlConnection(_settings.ConnectionString);
+            await c.OpenAsync();
+            var already = await c.QuerySingleAsync<int>(
+                @"SELECT COUNT(*) FROM phone_webhook_events
+                  WHERE entity_id = @leadId
+                    AND phones && @phones::TEXT[]
+                    AND created_at > NOW() - INTERVAL '24 hours'",
+                new { leadId, phones });
+            if (already > 0)
+                return Ok(new { received = true, phonesFound = phones.Length, queued = false, skipped = true });
 
-            lead.Phones = MergeStrings(lead.Phones, phones);
-            await _leads.Upsert(lead);
-            return Ok(new { received = true, phonesFound = phones.Length, saved = true });
+            await c.ExecuteAsync(
+                @"INSERT INTO phone_webhook_events (source, entity_id, phones)
+                  VALUES ('lead', @leadId, @phones)",
+                new { leadId, phones });
+
+            return Ok(new { received = true, phonesFound = phones.Length, queued = true });
         }
         catch (Exception ex)
         {

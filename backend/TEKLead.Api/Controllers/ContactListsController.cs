@@ -1,4 +1,6 @@
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
 using TEKLead.Api.Models;
 using TEKLead.Api.Services;
 
@@ -93,11 +95,33 @@ public class ContactListsController : ControllerBase
     [HttpPost("phone-webhook/{contactId:guid}")]
     public async Task<IActionResult> PhoneWebhook(Guid contactId)
     {
-        using var sr   = new StreamReader(Request.Body);
-        var body       = await sr.ReadToEndAsync();
-        var phones     = ApolloService.ParsePhonesFromWebhook(body);
+        using var sr = new StreamReader(Request.Body);
+        var body     = await sr.ReadToEndAsync();
+        var phones   = ApolloService.ParsePhonesFromWebhook(body);
+        if (phones.Length == 0) return Ok(new { received = true, phonesFound = 0 });
+
+        // Still do the immediate DB update (fills phone column)
         await _svc.PhoneWebhook(contactId, phones);
-        return Ok(new { received = true, phonesFound = phones.Length });
+
+        // Dedup: skip if same phone already queued/processed for this contact in last 24h
+        var settings = HttpContext.RequestServices.GetRequiredService<SettingsService>();
+        await using var c = new NpgsqlConnection(settings.ConnectionString);
+        await c.OpenAsync();
+        var already = await c.QuerySingleAsync<int>(
+            @"SELECT COUNT(*) FROM phone_webhook_events
+              WHERE entity_id = @contactId
+                AND phones && @phones::TEXT[]
+                AND created_at > NOW() - INTERVAL '24 hours'",
+            new { contactId, phones });
+        if (already > 0)
+            return Ok(new { received = true, phonesFound = phones.Length, queued = false, skipped = true });
+
+        await c.ExecuteAsync(
+            @"INSERT INTO phone_webhook_events (source, entity_id, phones)
+              VALUES ('contact', @contactId, @phones)",
+            new { contactId, phones });
+
+        return Ok(new { received = true, phonesFound = phones.Length, queued = true });
     }
 
     // ── Templates ────────────────────────────────────────────────────────
