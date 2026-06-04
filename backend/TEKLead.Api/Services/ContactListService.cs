@@ -251,16 +251,16 @@ public class ContactListService
             "organization"            => "company",
             "email"                   => "email",
             "contact email"           => "email",
-            // Apollo phone columns — priority order handled below
-            "work direct phone"       => "phone1",
-            "mobile phone"            => "phone2",
+            // Apollo phone columns — Mobile is top priority (used as WhatsApp number)
+            "mobile phone"            => "phone1",
+            "mobile"                  => "phone1",
+            "work direct phone"       => "phone2",
             "corporate phone"         => "phone3",
             "home phone"              => "phone4",
             "other phone"             => "phone5",
-            "phone"                   => "phone1",
-            "mobile"                  => "phone2",
-            "work phone"              => "phone1",
-            "phone number"            => "phone1",
+            "phone"                   => "phone2",
+            "work phone"              => "phone2",
+            "phone number"            => "phone2",
             // LinkedIn
             "person linkedin url"     => "linkedin",
             "linkedin url"            => "linkedin",
