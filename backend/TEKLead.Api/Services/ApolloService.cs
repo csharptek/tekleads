@@ -125,12 +125,14 @@ public class ApolloService
     public async Task<EnrichResult> EnrichFull(string apolloPersonId, string webhookUrl)
     {
         var key = await GetKey();
+        var encodedWebhook = Uri.EscapeDataString(webhookUrl);
         var payload = new
         {
             id = apolloPersonId,
             reveal_personal_emails = false,
             reveal_phone_number = true,
-            webhook_url = webhookUrl
+            run_waterfall_phone = true,
+            webhook_url = encodedWebhook
         };
 
         _log.LogInformation("Apollo EnrichFull webhookUrl={0}", webhookUrl);
@@ -163,7 +165,8 @@ public class ApolloService
     public async Task<EnrichResult> EnrichPhoneOnly(string apolloPersonId, string webhookUrl)
     {
         var key = await GetKey();
-        var payload = new { id = apolloPersonId, reveal_personal_emails = false, reveal_phone_number = true, webhook_url = webhookUrl };
+        var encodedWebhook = Uri.EscapeDataString(webhookUrl);
+        var payload = new { id = apolloPersonId, reveal_personal_emails = false, reveal_phone_number = true, run_waterfall_phone = true, webhook_url = encodedWebhook };
         var res = await MakeClient(key).PostAsJsonAsync("https://api.apollo.io/api/v1/people/match", payload);
         var body = await res.Content.ReadAsStringAsync();
         _log.LogInformation("Apollo enrich-phone {0}: {1}", res.StatusCode, body[..Math.Min(1000, body.Length)]);
