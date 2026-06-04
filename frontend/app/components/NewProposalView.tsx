@@ -274,13 +274,11 @@ export default function NewProposalView({
 
       if (res.phoneWebhookPending) {
         setPhonePending(p => new Set([...p, realId]));
-        let attempts = 0;
+        // Poll DB only — Apollo will POST to webhook when ready (can take 2-5 mins)
         const timer = setInterval(async () => {
-          attempts++;
           try {
-            // Re-ask Apollo each poll — webhook may not arrive
-            const polled: any = await api.post(`/api/leads/${realId}/reveal-phone-only`, {});
-            const phones = polled.phones?.length ? polled.phones : polled.lead?.phones;
+            const polled: any = await api.get(`/api/leads/${realId}`);
+            const phones = polled.phones?.length ? polled.phones : null;
             if (phones?.length > 0) {
               clearInterval(timer);
               setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
@@ -289,14 +287,14 @@ export default function NewProposalView({
                 checkedPhones: phones,
               } : c));
               setSearchResults(prev => prev.map(l => l.id === realId ? { ...l, phones } : l));
-            } else if (attempts >= 8) {
-              // After 8 attempts (40s) give up
-              clearInterval(timer);
-              setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
             }
           } catch { }
-        }, 5000);
-        setTimeout(() => clearInterval(timer), 120000);
+        }, 10000);
+        // Stop polling after 10 mins
+        setTimeout(() => {
+          clearInterval(timer);
+          setPhonePending(p => { const n = new Set(p); n.delete(realId); return n; });
+        }, 600000);
       }
     } catch (e: any) {
       setError(e.message);
