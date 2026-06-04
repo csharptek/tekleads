@@ -177,20 +177,37 @@ export default function LeadSearchView() {
         setPhonePending(p => new Set([...p, realId]));
         setBanner({ kind: "info", text: `Phone request sent — polling…` });
         const leadId = realId;
-        let attempts = 0;
+        let elapsed = 0;
+        const INTERVAL = 10000;
+        const SWITCH_TO_POLL = 30000;
+        const MAX_TIME = 600000;
         const timer = setInterval(async () => {
-          attempts++;
+          elapsed += INTERVAL;
           try {
-            const updated = await api.get<Lead>(`/api/leads/${leadId}`);
-            if (updated.phones && updated.phones.length > 0) {
-              clearInterval(timer);
-              setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
-              setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, updated.phones) } : l));
-              setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
+            if (elapsed <= SWITCH_TO_POLL) {
+              const updated = await api.get<Lead>(`/api/leads/${leadId}`);
+              if (updated.phones && updated.phones.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+                setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, updated.phones) } : l));
+                setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
+              }
+            } else {
+              const polled: any = await api.post(`/api/leads/${leadId}/poll-phone`, {});
+              const phones: string[] = polled.phones?.length ? polled.phones : [];
+              if (phones.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+                setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, phones) } : l));
+                setBanner({ kind: "success", text: `Phone: ${phones[0]} — saved.` });
+              }
             }
           } catch { }
-          if (attempts >= 24) { clearInterval(timer); setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; }); }
-        }, 5000);
+          if (elapsed >= MAX_TIME) {
+            clearInterval(timer);
+            setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+          }
+        }, INTERVAL);
       } else if (res.phones.length > 0) {
         setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")} — auto-saved.` });
       } else if (res.emails.length > 0) {
@@ -257,20 +274,37 @@ export default function LeadSearchView() {
         setPhonePending(p => new Set([...p, realId]));
         setBanner({ kind: "info", text: `Phone request sent — polling…` });
         const leadId = realId;
-        let attempts = 0;
+        let elapsed = 0;
+        const INTERVAL = 10000;
+        const SWITCH_TO_POLL = 30000;
+        const MAX_TIME = 600000;
         const timer = setInterval(async () => {
-          attempts++;
+          elapsed += INTERVAL;
           try {
-            const updated = await api.get<Lead>(`/api/leads/${leadId}`);
-            if (updated.phones && updated.phones.length > 0) {
-              clearInterval(timer);
-              setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
-              setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, updated.phones) } : l));
-              setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
+            if (elapsed <= SWITCH_TO_POLL) {
+              const updated = await api.get<Lead>(`/api/leads/${leadId}`);
+              if (updated.phones && updated.phones.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+                setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, updated.phones) } : l));
+                setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
+              }
+            } else {
+              const polled: any = await api.post(`/api/leads/${leadId}/poll-phone`, {});
+              const phones: string[] = polled.phones?.length ? polled.phones : [];
+              if (phones.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+                setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, phones) } : l));
+                setBanner({ kind: "success", text: `Phone: ${phones[0]} — saved.` });
+              }
             }
           } catch { }
-          if (attempts >= 24) { clearInterval(timer); setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; }); }
-        }, 5000);
+          if (elapsed >= MAX_TIME) {
+            clearInterval(timer);
+            setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+          }
+        }, INTERVAL);
       } else if (res.phones.length > 0) {
         setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")} — saved.` });
       } else {
