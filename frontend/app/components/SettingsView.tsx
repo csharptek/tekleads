@@ -23,6 +23,7 @@ const KEYS = {
   WhatsappCloudTemplateName: "whatsapp_cloud_template_name",
   WhatsappCloudTemplateLang: "whatsapp_cloud_template_lang",
   WhatsappCloudApiVersion: "whatsapp_cloud_api_version",
+  WaSendIntervalSeconds: "wa_send_interval_seconds",
   WhatsappBlobContainer: "whatsapp_blob_container",
   EmailSignature: "email_signature",
   ArtifactCoverLetterPrompt: "artifact_cover_letter_prompt",
@@ -116,6 +117,7 @@ const USER_GROUPS: Group[] = [
       { key: KEYS.WhatsappCloudApiVersion, label: "API Version", placeholder: "v22.0" },
       { key: KEYS.WhatsappCloudTemplateName, label: "Default Template Name", placeholder: "hello_world" },
       { key: KEYS.WhatsappCloudTemplateLang, label: "Default Template Language", placeholder: "en_US" },
+      { key: KEYS.WaSendIntervalSeconds, label: "Bulk/Scheduled WA Send Interval (seconds)", placeholder: "15" },
     ],
   },
   {

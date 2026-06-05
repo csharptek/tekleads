@@ -315,13 +315,7 @@ function ContactsTab({ list }: { list: ContactList }) {
   // Bulk WA API send state
   const [waBulkMode, setWaBulkMode]       = useState<"template" | "text">("template");
   const [waInterval, setWaInterval]       = useState(15); // seconds
-  const [waBulkRunning, setWaBulkRunning] = useState(false);
-  const [waBulkJobs, setWaBulkJobs]       = useState<{
-    contactId: string; name: string; phone: string;
-    status: "pending" | "sending" | "sent" | "failed" | "skipped"; error?: string;
-  }[]>([]);
-  const waBulkRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const waBulkCancelRef = useRef(false);
+
   const [showWaPreview, setShowWaPreview] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [selectedMetaTemplate, setSelectedMetaTemplate] = useState<{ name: string; language: string; bodyText: string } | null>(null);
@@ -495,72 +489,33 @@ function ContactsTab({ list }: { list: ContactList }) {
     }
   }
 
-  function startWaBulkSend() {
-    if (!selected.size) return;
+  async function startWaBulkQueue() {
+    if (!list || !selectedMetaTemplate) return;
     const targets = contacts.filter(c => selected.has(c.id) && c.phone);
     if (!targets.length) { setEnrichMsg("No contacts with phone in selection."); return; }
 
     const jobs = targets.map(c => ({
-      contactId: c.id, name: c.name, phone: c.phone,
-      status: "pending" as const,
+      contactId: c.id,
+      contactName: c.name,
+      phone: c.phone,
+      mode: "template",
+      templateName: selectedMetaTemplate.name,
+      templateLang: selectedMetaTemplate.language,
+      bodyVariables: [] as string[],
     }));
 
-    setWaBulkJobs(jobs);
-    setWaBulkRunning(true);
-    waBulkCancelRef.current = false;
-
-    let i = 0;
-    const contact = (idx: number) => contacts.find(c => c.id === jobs[idx].contactId)!;
-
-    async function sendNext() {
-      if (waBulkCancelRef.current || i >= jobs.length) {
-        setWaBulkRunning(false);
-        if (waBulkCancelRef.current) {
-          setWaBulkJobs(prev => prev.map(j => j.status === "pending" ? { ...j, status: "skipped" } : j));
-        }
-        return;
-      }
-
-      setWaBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "sending" } : j));
-
-      const c = contact(i);
-      try {
-        const res: any = await api.post(`/api/contact-lists/${list.id}/send-whatsapp-api`, {
-          contactId: c.id,
-          phone: c.phone,
-          mode: waBulkMode,
-          body: "",
-          templateName: selectedMetaTemplate?.name ?? null,
-          templateLang: selectedMetaTemplate?.language ?? "en",
-          bodyVariables: [c.name?.split(" ")[0] || "there", c.company || "your business"],
-        });
-        if (res?.ok) {
-          setWaBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "sent" } : j));
-          setSentToday(s => ({ ...s, [c.id]: waBulkMode === "template" ? "whatsapp-template" : "whatsapp-text" }));
-          setRowWaStatus(s => ({ ...s, [c.id]: "sent" }));
-        } else {
-          setWaBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "failed", error: res?.error } : j));
-        }
-      } catch (e: any) {
-        setWaBulkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: "failed", error: e?.message } : j));
-      }
-
-      i++;
-      if (i < jobs.length && !waBulkCancelRef.current) {
-        waBulkRef.current = setTimeout(sendNext, waInterval * 1000);
-      } else {
-        setWaBulkRunning(false);
-      }
+    try {
+      const res: any = await api.post("/api/wa-schedule/send-now", {
+        listId: list.id,
+        listName: list.title,
+        jobs,
+      });
+      setShowWaPreview(false);
+      await loadScheduledJobs();
+      setShowScheduledJobs(true);
+    } catch (e: any) {
+      alert("Queue failed: " + (e?.message || "unknown error"));
     }
-
-    sendNext();
-  }
-
-  function cancelWaBulk() {
-    waBulkCancelRef.current = true;
-    if (waBulkRef.current) clearTimeout(waBulkRef.current);
-    setWaBulkRunning(false);
-    setWaBulkJobs(prev => prev.map(j => j.status === "pending" || j.status === "sending" ? { ...j, status: "skipped" } : j));
   }
 
   async function openInstantly() {
@@ -602,9 +557,7 @@ function ContactsTab({ list }: { list: ContactList }) {
     { key: "enrichStatus", label: "Status" },
   ];
 
-  const waSentCount  = waBulkJobs.filter(j => j.status === "sent").length;
-  const waFailCount  = waBulkJobs.filter(j => j.status === "failed").length;
-  const waTotalCount = waBulkJobs.length;
+
 
   return (
     <>
@@ -690,14 +643,7 @@ function ContactsTab({ list }: { list: ContactList }) {
         <div style={{ width: 1, height: 28, background: "var(--border)", flexShrink: 0, margin: "0 2px" }} />
 
         {/* Send Template (API) */}
-        {waBulkRunning ? (
-          <button onClick={cancelWaBulk}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8,
-              border: "none", background: "#dc3545", color: "white", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-            ✕ Cancel
-          </button>
-        ) : (
-          <button onClick={() => {
+        <button onClick={() => {
               if (selected.size === 0) return;
               const targets = contacts.filter(c => selected.has(c.id) && c.phone);
               if (!targets.length) { setEnrichMsg("No contacts with phone in selection."); return; }
@@ -707,57 +653,25 @@ function ContactsTab({ list }: { list: ContactList }) {
               border: "none", background: selected.size === 0 ? "#64748b" : "#128C7E",
               color: "white", cursor: selected.size === 0 ? "default" : "pointer",
               fontSize: 13, fontWeight: 600, opacity: selected.size === 0 ? 0.5 : 1 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
-            </svg>
-            Send Template (API)
-          </button>
-        )}
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          </svg>
+          Send Template (API)
+        </button>
 
         {/* Interval */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (sec):</span>
-          <input type="number" min={5} max={3600} value={waInterval} disabled={waBulkRunning}
+          <input type="number" min={5} max={3600} value={waInterval}
             onChange={e => setWaInterval(Math.max(5, Number(e.target.value)))}
             style={{ width: 60, fontSize: 12, padding: "4px 8px", borderRadius: 6,
               border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} />
         </div>
 
-        {/* Live counter */}
-        {waTotalCount > 0 && (
-          <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 4,
-            color: waSentCount === waTotalCount && !waBulkRunning ? "#22c55e" : "#f59e0b" }}>
-            {waBulkRunning && "⏳ "}Sent {waSentCount}/{waTotalCount}
-            {waFailCount > 0 && <span style={{ color: "#ef4444" }}> · {waFailCount} failed</span>}
-          </span>
-        )}
+
       </div>
 
-      {/* Bulk WA progress panel */}
-      {waBulkJobs.length > 0 && (
-        <div style={{ maxHeight: 120, overflowY: "auto", marginBottom: 10,
-          padding: "6px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>WA Bulk Progress</span>
-            {!waBulkRunning && (
-              <button onClick={() => setWaBulkJobs([])}
-                style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer" }}>Clear</button>
-            )}
-          </div>
-          {waBulkJobs.map((j, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, padding: "2px 0", alignItems: "center" }}>
-              <span style={{ width: 14, textAlign: "center",
-                color: j.status === "sent" ? "#22c55e" : j.status === "failed" ? "#ef4444" :
-                       j.status === "skipped" ? "#94a3b8" : j.status === "sending" ? "#f59e0b" : "var(--muted)" }}>
-                {j.status === "sent" ? "✓" : j.status === "failed" ? "✗" : j.status === "skipped" ? "–" : j.status === "sending" ? "⋯" : "○"}
-              </span>
-              <span style={{ flex: 1, color: "var(--text)" }}>{j.name}</span>
-              <span style={{ color: "var(--muted)" }}>{j.phone}</span>
-              {j.error && <span style={{ color: "#ef4444", fontSize: 10 }}>{j.error}</span>}
-            </div>
-          ))}
-        </div>
-      )}
+
 
       {/* ── Scheduled Jobs Panel ── */}
       {scheduledJobs.length > 0 && (
@@ -1113,7 +1027,7 @@ function ContactsTab({ list }: { list: ContactList }) {
                   Schedule Send
                 </button>
                 <button
-                  onClick={() => { setShowWaPreview(false); startWaBulkSend(); }}
+                  onClick={startWaBulkQueue}
                   disabled={targets.length === 0}
                   style={{ background: targets.length === 0 ? "#64748b" : "#128C7E", color: "white",
                     border: "none", borderRadius: 6, padding: "7px 18px", cursor: "pointer",
@@ -1122,7 +1036,7 @@ function ContactsTab({ list }: { list: ContactList }) {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
                   </svg>
-                  Confirm & Send {targets.length} messages
+                  Queue & Send {targets.length} messages
                 </button>
               </div>
 

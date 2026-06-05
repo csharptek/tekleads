@@ -70,6 +70,7 @@ public static class SettingKeys
     public const string ArtifactFollowUp2Prompt     = "artifact_followup2_prompt";
 
     public const string PhoneWebhookWorkerEnabled = "phone_webhook_worker_enabled";
+    public const string WaSendIntervalSeconds       = "wa_send_interval_seconds";
 
     public static readonly string[] AllKnown =
     {
@@ -86,6 +87,7 @@ public static class SettingKeys
         ArtifactCoverLetterPrompt, ArtifactWhatsappPrompt, ArtifactEmailPrompt,
         ArtifactFollowUp1Prompt, ArtifactFollowUp2Prompt,
         PhoneWebhookWorkerEnabled,
+        WaSendIntervalSeconds,
     };
 
     public static readonly HashSet<string> Secrets = new()

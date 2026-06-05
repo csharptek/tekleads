@@ -57,13 +57,16 @@ public class WaScheduleService
         ");
     }
 
-    public async Task<List<Guid>> EnqueueBatch(List<WaScheduledJob> jobs)
+    public async Task<List<Guid>> EnqueueBatch(List<WaScheduledJob> jobs, int intervalSeconds = 0)
     {
         await using var c = new NpgsqlConnection(_settings.ConnectionString);
         await c.OpenAsync();
         var ids = new List<Guid>();
-        foreach (var j in jobs)
+        for (int idx = 0; idx < jobs.Count; idx++)
         {
+            var j = jobs[idx];
+            if (intervalSeconds > 0 && idx > 0)
+                j.ScheduledAt = j.ScheduledAt.AddSeconds(intervalSeconds * idx);
             var id = await c.ExecuteScalarAsync<Guid>(@"
                 INSERT INTO wa_scheduled_sends
                     (list_id, list_name, contact_id, contact_name, phone, mode,

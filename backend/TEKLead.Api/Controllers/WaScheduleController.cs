@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
+using TEKLead.Api.Models;
 using TEKLead.Api.Services;
 
 namespace TEKLead.Api.Controllers;
@@ -9,12 +10,47 @@ namespace TEKLead.Api.Controllers;
 public class WaScheduleController : ControllerBase
 {
     private readonly WaScheduleService _svc;
-    public WaScheduleController(WaScheduleService svc) => _svc = svc;
+    private readonly SettingsService _settings;
+    public WaScheduleController(WaScheduleService svc, SettingsService settings)
+    { _svc = svc; _settings = settings; }
 
     // GET /api/wa-schedule?listId=...
     [HttpGet]
     public async Task<IActionResult> GetByList([FromQuery] Guid listId)
         => Ok(await _svc.GetByList(listId));
+
+    // POST /api/wa-schedule/send-now  — queue immediately with staggered times
+    [HttpPost("send-now")]
+    public async Task<IActionResult> SendNow([FromBody] WaScheduleRequest req)
+    {
+        if (req.Jobs == null || req.Jobs.Count == 0)
+            return BadRequest(new { error = "No jobs." });
+
+        var all = await _settings.GetAll();
+        var intervalSeconds = 15;
+        if (all.TryGetValue(SettingKeys.WaSendIntervalSeconds, out var ivStr)
+            && int.TryParse(ivStr, out var iv) && iv >= 5)
+            intervalSeconds = iv;
+
+        var now = DateTime.UtcNow;
+        var jobs = req.Jobs.Select(j => new WaScheduledJob
+        {
+            ListId       = req.ListId,
+            ListName     = req.ListName ?? "",
+            ContactId    = j.ContactId ?? "",
+            ContactName  = j.ContactName ?? "",
+            Phone        = j.Phone,
+            Mode         = j.Mode ?? "template",
+            TemplateName = j.TemplateName,
+            TemplateLang = j.TemplateLang ?? "en",
+            BodyJson     = j.BodyVariables != null ? JsonSerializer.Serialize(j.BodyVariables) : null,
+            Body         = j.Body,
+            ScheduledAt  = now,
+        }).ToList();
+
+        var ids = await _svc.EnqueueBatch(jobs, intervalSeconds);
+        return Ok(new { queued = ids.Count, ids, intervalSeconds });
+    }
 
     // POST /api/wa-schedule
     [HttpPost]
@@ -38,7 +74,7 @@ public class WaScheduleController : ControllerBase
             ScheduledAt  = req.ScheduledAtUtc,
         }).ToList();
 
-        var ids = await _svc.EnqueueBatch(jobs);
+        var ids = await _svc.EnqueueBatch(jobs, 0);
         return Ok(new { queued = ids.Count, ids });
     }
 
