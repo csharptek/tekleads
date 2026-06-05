@@ -60,6 +60,8 @@ export default function PhoneWebhookLogsView() {
   const [waFilter, setWaFilter] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [workerEnabled, setWorkerEnabled] = useState<boolean | null>(null);
+  const [togglingWorker, setTogglingWorker] = useState(false);
 
   const load = useCallback(async (p = page) => {
     setLoading(true);
@@ -77,6 +79,25 @@ export default function PhoneWebhookLogsView() {
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }, [source, waFilter, from, to, page, sortBy, sortDir]);
+
+  useEffect(() => {
+    api.get("/api/settings").then((res: any) => {
+      const val = res?.find?.((s: any) => s.key === "phone_webhook_worker_enabled")?.value;
+      setWorkerEnabled(val === undefined || val === "" || val === "true");
+    }).catch(() => setWorkerEnabled(true));
+  }, []);
+
+  async function toggleWorker() {
+    if (workerEnabled === null) return;
+    setTogglingWorker(true);
+    const next = !workerEnabled;
+    try {
+      await api.post("/api/settings", { phone_webhook_worker_enabled: next ? "true" : "false" });
+      setWorkerEnabled(next);
+    } finally {
+      setTogglingWorker(false);
+    }
+  }
 
   useEffect(() => { load(1); setPage(1); }, [source, waFilter, from, to, sortBy, sortDir]);
   useEffect(() => { load(page); }, [page]);
@@ -112,6 +133,24 @@ export default function PhoneWebhookLogsView() {
             <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
             Auto-refresh
           </label>
+          {workerEnabled !== null && (
+            <button
+              onClick={toggleWorker}
+              disabled={togglingWorker}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, padding: "5px 12px",
+                borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                background: workerEnabled ? "#16a34a" : "#dc2626",
+                color: "white", opacity: togglingWorker ? 0.6 : 1,
+              }}
+            >
+              <span style={{
+                display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+                background: "white", boxShadow: workerEnabled ? "0 0 4px #86efac" : "none"
+              }} />
+              Worker {workerEnabled ? "ON" : "OFF"}
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={() => load(page)} disabled={loading}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             Refresh

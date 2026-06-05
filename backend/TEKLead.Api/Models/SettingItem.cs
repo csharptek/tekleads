@@ -69,6 +69,8 @@ public static class SettingKeys
     public const string ArtifactFollowUp1Prompt     = "artifact_followup1_prompt";
     public const string ArtifactFollowUp2Prompt     = "artifact_followup2_prompt";
 
+    public const string PhoneWebhookWorkerEnabled = "phone_webhook_worker_enabled";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -83,6 +85,7 @@ public static class SettingKeys
         AppUrl, ApolloMasterKey, EmailSignature, InstantlyApiKey,
         ArtifactCoverLetterPrompt, ArtifactWhatsappPrompt, ArtifactEmailPrompt,
         ArtifactFollowUp1Prompt, ArtifactFollowUp2Prompt,
+        PhoneWebhookWorkerEnabled,
     };
 
     public static readonly HashSet<string> Secrets = new()

@@ -75,6 +75,16 @@ public class PhoneWebhookWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var settings = scope.ServiceProvider.GetRequiredService<SettingsService>();
+
+        // Check if worker is enabled
+        var all = await settings.GetAll();
+        var enabled = all.GetValueOrDefault(SettingKeys.PhoneWebhookWorkerEnabled, "true");
+        if (enabled.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            _log.LogDebug("PhoneWebhookWorker is disabled via settings.");
+            return;
+        }
+
         var leads    = scope.ServiceProvider.GetRequiredService<LeadService>();
         var wa       = scope.ServiceProvider.GetRequiredService<WhatsAppCloudService>();
 
