@@ -333,6 +333,15 @@ function ContactsTab({ list }: { list: ContactList }) {
   const [sentToday, setSentToday] = useState<Record<string, string>>({}); // contactId -> type
 
   const [showInstantly, setShowInstantly] = useState(false);
+
+  // Schedule send state
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleDateTime, setScheduleDateTime] = useState(""); // local IST datetime-local value
+  const [scheduledJobs, setScheduledJobs] = useState<{
+    id: string; contactName: string; phone: string; templateName?: string;
+    scheduledAt: string; status: string; error?: string;
+  }[]>([]);
+  const [showScheduledJobs, setShowScheduledJobs] = useState(false);
   const [inCampaigns, setInCampaigns]     = useState<{ id: string; name: string }[]>([]);
   const [inCampaignId, setInCampaignId]   = useState("");
   const [inLoading, setInLoading]         = useState(false);
@@ -426,6 +435,49 @@ function ContactsTab({ list }: { list: ContactList }) {
   }
 
   // Bulk WA API send
+  async function submitScheduleSend() {
+    if (!scheduleDateTime || !list || !selectedMetaTemplate) return;
+    const targets = contacts.filter(c => selected.has(c.id) && c.phone);
+    if (!targets.length) return;
+
+    // Convert IST to UTC: IST = UTC+5:30
+    const istDate = new Date(scheduleDateTime); // treated as local by browser
+    // We force IST offset: scheduleDateTime is "YYYY-MM-DDTHH:mm" in IST
+    // Parse as IST by adding 5h30m offset from UTC
+    const [datePart, timePart] = scheduleDateTime.split("T");
+    const [y, mo, d] = datePart.split("-").map(Number);
+    const [h, mi] = timePart.split(":").map(Number);
+    // IST is UTC+5:30 → subtract to get UTC
+    const utcMs = Date.UTC(y, mo - 1, d, h, mi) - (5 * 60 + 30) * 60 * 1000;
+    const scheduledAtUtc = new Date(utcMs).toISOString();
+
+    const jobs = targets.map(c => ({
+      contactId: c.id,
+      contactName: c.name,
+      phone: c.phone,
+      mode: "template",
+      templateName: selectedMetaTemplate.name,
+      templateLang: selectedMetaTemplate.language,
+      bodyVariables: [] as string[],
+    }));
+
+    try {
+      await api.post("/api/wa-schedule", {
+        listId: list.id,
+        listName: list.name,
+        scheduledAtUtc,
+        jobs,
+      });
+      setShowScheduleModal(false);
+      setShowWaPreview(false);
+      setScheduleDateTime("");
+      await loadScheduledJobs();
+      setShowScheduledJobs(true);
+    } catch (e: any) {
+      alert("Schedule failed: " + (e?.message || "unknown error"));
+    }
+  }
+
   function startWaBulkSend() {
     if (!selected.size) return;
     const targets = contacts.filter(c => selected.has(c.id) && c.phone);
@@ -690,6 +742,54 @@ function ContactsTab({ list }: { list: ContactList }) {
         </div>
       )}
 
+      {/* ── Scheduled Jobs Panel ── */}
+      {scheduledJobs.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <button onClick={() => setShowScheduledJobs(s => !s)}
+            style={{ fontSize: 12, color: "var(--muted)", background: "none", border: "none",
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "4px 0" }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            {scheduledJobs.filter(j => j.status === "pending").length} scheduled
+            {showScheduledJobs ? " ▲" : " ▼"}
+          </button>
+          {showScheduledJobs && (
+            <div style={{ maxHeight: 160, overflowY: "auto", marginTop: 6,
+              padding: "6px 12px", background: "var(--surface2)", borderRadius: 8,
+              border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>
+                Scheduled WA Sends
+              </div>
+              {scheduledJobs.map((j, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, padding: "3px 0",
+                  alignItems: "center", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ color: j.status === "sent" ? "#22c55e" : j.status === "failed" ? "#ef4444" :
+                    j.status === "cancelled" ? "#94a3b8" : "#6366f1", width: 14, textAlign: "center" }}>
+                    {j.status === "sent" ? "✓" : j.status === "failed" ? "✗" :
+                     j.status === "cancelled" ? "–" : "⏰"}
+                  </span>
+                  <span style={{ flex: 1, color: "var(--text)" }}>{j.contactName}</span>
+                  <span style={{ color: "var(--muted)" }}>{j.phone}</span>
+                  <span style={{ color: "var(--muted)", fontSize: 10 }}>
+                    {new Date(j.scheduledAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: true,
+                      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} IST
+                  </span>
+                  {j.status === "pending" && (
+                    <button onClick={async () => {
+                      await api.delete(`/api/wa-schedule/${j.id}`);
+                      await loadScheduledJobs();
+                    }} style={{ fontSize: 10, color: "#ef4444", background: "none",
+                      border: "none", cursor: "pointer", padding: "0 4px" }}>✕</button>
+                  )}
+                  {j.error && <span style={{ color: "#ef4444", fontSize: 10 }}>{j.error}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Pagination top ── */}
       <div style={{ marginBottom: 10 }}>{pagBar}</div>
 
@@ -820,6 +920,58 @@ function ContactsTab({ list }: { list: ContactList }) {
         />
       )}
 
+      {/* ── Schedule DateTime Modal ── */}
+      {showScheduleModal && (() => {
+        const targets = contacts.filter(c => selected.has(c.id) && c.phone);
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 1100,
+            display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="card" style={{ width: 380, maxWidth: "95vw", padding: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  Schedule Send
+                </h2>
+                <button onClick={() => setShowScheduleModal(false)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: 18 }}>✕</button>
+              </div>
+
+              <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+                {targets.length} message{targets.length !== 1 ? "s" : ""} will be sent via template
+                <strong style={{ color: "var(--text)" }}> {selectedMetaTemplate?.name}</strong>
+              </p>
+
+              <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 6 }}>
+                Date &amp; Time (IST)
+              </label>
+              <input
+                type="datetime-local"
+                value={scheduleDateTime}
+                onChange={e => setScheduleDateTime(e.target.value)}
+                min={new Date(Date.now() + 60000).toLocaleString("sv", { timeZone: "Asia/Kolkata" }).replace(" ", "T").slice(0, 16)}
+                style={{ width: "100%", fontSize: 14, padding: "8px 10px", borderRadius: 8,
+                  border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)",
+                  boxSizing: "border-box", marginBottom: 20 }}
+              />
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button className="btn btn-ghost" onClick={() => setShowScheduleModal(false)}>Cancel</button>
+                <button
+                  onClick={submitScheduleSend}
+                  disabled={!scheduleDateTime}
+                  style={{ background: !scheduleDateTime ? "#64748b" : "#6366f1", color: "white",
+                    border: "none", borderRadius: 6, padding: "7px 18px", cursor: "pointer",
+                    fontSize: 13, fontWeight: 600, opacity: !scheduleDateTime ? 0.5 : 1 }}>
+                  Confirm Schedule
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── WA Bulk Preview Modal ── */}
       {showWaPreview && (() => {
         const targets = contacts.filter(c => selected.has(c.id) && c.phone);
@@ -931,6 +1083,18 @@ function ContactsTab({ list }: { list: ContactList }) {
               {/* Footer */}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16, flexShrink: 0 }}>
                 <button className="btn btn-ghost" onClick={() => setShowWaPreview(false)}>Cancel</button>
+                <button
+                  onClick={() => setShowScheduleModal(true)}
+                  disabled={targets.length === 0}
+                  style={{ background: targets.length === 0 ? "#64748b" : "#6366f1", color: "white",
+                    border: "none", borderRadius: 6, padding: "7px 18px", cursor: "pointer",
+                    fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8,
+                    opacity: targets.length === 0 ? 0.5 : 1 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  Schedule Send
+                </button>
                 <button
                   onClick={() => { setShowWaPreview(false); startWaBulkSend(); }}
                   disabled={targets.length === 0}
