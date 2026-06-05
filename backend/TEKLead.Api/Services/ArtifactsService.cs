@@ -322,48 +322,53 @@ public class ArtifactsService
 
     // ── Prompts ───────────────────────────────────────────────────────────────
 
-    public static string CoverLetterPrompt() => @"You are writing a cover letter on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
+    public static string CoverLetterPrompt() => @"You are writing an Upwork cover letter on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
 
-STRUCTURE — follow this exact order:
+TARGET LENGTH: 180-230 words total. Clients read on mobile. Every word must earn its place.
 
-1. OPENING (2 lines max)
-- Line 1: Express genuine interest in the project. Do NOT start with ""I have reviewed"" or ""I am writing to"". Keep it natural and direct.
-- Line 2: CTA — propose a short call (e.g. ""Happy to jump on a 20-minute call this week to align on the technical direction."")
-Do NOT mention rate, hours, or availability here.
+STRUCTURE — follow this exact order, no section titles:
 
-2. APPROACH (3 bullet points)
-Titled: ""How I'd approach this:""
-Each bullet = one specific, concrete technical decision Bhanu would take.
-Name actual technologies, patterns, or architecture decisions relevant to the job post.
-This should make the client think ""he's already thought this through.""
+1. HOOK (1 sentence)
+Restate the client's core problem back to them in your own words — prove you read it.
+Do NOT start with ""I"". Do NOT use ""I have reviewed"", ""I am writing to"", ""I'm excited"", ""I believe"".
+If COMPANY DETAILS are provided, weave in one specific detail (size, industry, product description) naturally.
 
-3. PORTFOLIO (3 items)
-Titled: ""Relevant work from my portfolio:""
-List exactly 3 most relevant projects from the context provided.
-Format each as:
-[number]. [Project Name] — One sentence on what was built and why it's relevant. Live: [link if available]
-Do NOT use generic descriptions. Each must connect directly to a requirement in the job post.
-Do NOT invent portfolio items — only use what is provided in the context.
+2. PROOF (1-2 sentences)
+One metric-backed outcome from a past project most relevant to their stack.
+Format: [What you built] — [measurable result or specific outcome].
+Use only real data from RELEVANT PORTFOLIO PROJECTS in context.
 
-4. QUESTIONS (2-3 questions)
-Titled: ""A few questions before I dive in:""
-Ask smart, specific questions that show deep reading of the job post.
-Format: numbered list.
+3. DONE = (1 sentence)
+Write one clear acceptance criteria line in the client's own language.
+Format: ""Done = [specific deliverable they can test/verify]""
 
-5. SIGN-OFF
-One line: ""I'm Bhanu Gupta — 15+ years in full-stack development, 40+ projects delivered, with a strong focus on [relevant domain from job post]. Available at [rate from proposal]/hour, 30–40 hrs/week, with [timezone overlap] hours daily overlap with [client timezone]."" 
+4. APPROACH (3 bullets)
+Each bullet = one concrete technical decision with named technologies.
+Each bullet must make the client think: ""he's already thought this through.""
+No generic bullets like ""write clean code"" or ""ensure scalability"".
+
+5. PORTFOLIO (1 item only)
+The single most relevant project. One sentence + link.
+Format: [Project Name] — [one sentence why it's relevant]. [link if available]
+Do NOT list 3 projects. One sharp reference beats three generic ones.
+
+6. QUESTIONS (2 questions max)
+Smart, specific questions that show deep reading.
+Numbered list.
+
+7. SIGN-OFF (1 line + name)
+""I'm Bhanu Gupta — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
 Then: ""Bhanu Gupta""
 
-TONE RULES:
-- Write in first person as Bhanu
-- Do NOT mention ""Csharptek"" or Bhanu's company name anywhere
-- If COMPANY DETAILS section is provided in context, use it to personalize: reference their industry, scale (employee count), or a specific detail from their description to show you researched them — but keep it natural, 1 sentence max
-- Confident, not boastful
-- No fluff, no filler (""I am excited to..."", ""I believe I would be a great fit..."")
-- Every sentence must earn its place
-- Length: 300-400 words max
+RULES:
+- First person as Bhanu
+- Do NOT mention ""Csharptek"" or any company name of Bhanu
+- No filler: ""I am excited"", ""great fit"", ""passionate"", ""I'd love to"" — banned
+- Metrics over adjectives: ""reduced load time by 40%"" beats ""high-performance""
+- If no metric exists in portfolio context, describe a specific concrete outcome instead
+- Do NOT invent portfolio items or metrics — only use what context provides
 
-Return only the cover letter text. No preamble.";
+Return only the cover letter text. No preamble. No markdown.";
 
     public static string WhatsappPrompt() => @"Write a short WhatsApp outreach message for a freelance software proposal.
 
