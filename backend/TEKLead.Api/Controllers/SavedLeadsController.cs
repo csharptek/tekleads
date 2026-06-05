@@ -92,7 +92,7 @@ public class SavedLeadsController : ControllerBase
                     OrgWebsiteUrl = r.org_website_url, OrgEstimatedEmployees = r.org_estimated_employees,
                     OrgAnnualRevenue = r.org_annual_revenue, OrgFoundedYear = r.org_founded_year,
                     OrgLogoUrl = r.org_logo_url, OrgLinkedinUrl = r.org_linkedin_url,
-                    OrgPhone = r.org_phone, OrgAddress = r.org_address,
+                    OrgPhone = r.org_phone, OrgAddress = r.org_address, OrgDescription = r.org_description,
                 });
 
                 var empRows = await c.QueryAsync<dynamic>(

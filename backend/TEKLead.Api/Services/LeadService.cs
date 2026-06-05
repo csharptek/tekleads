@@ -67,6 +67,8 @@ public class LeadService
         foreach (var (col, def) in newCols)
             await c.ExecuteAsync($"ALTER TABLE saved_leads ADD COLUMN IF NOT EXISTS {col} {def}");
 
+        await c.ExecuteAsync("ALTER TABLE lead_org_details ADD COLUMN IF NOT EXISTS org_description TEXT");
+
         await c.ExecuteAsync(@"
             CREATE TABLE IF NOT EXISTS lead_org_details (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -79,6 +81,7 @@ public class LeadService
                 org_linkedin_url TEXT,
                 org_phone TEXT,
                 org_address TEXT,
+                org_description TEXT,
                 UNIQUE(lead_id)
             )");
 
@@ -217,10 +220,10 @@ public class LeadService
         await c.ExecuteAsync(@"
             INSERT INTO lead_org_details (
                 id, lead_id, org_website_url, org_estimated_employees, org_annual_revenue,
-                org_founded_year, org_logo_url, org_linkedin_url, org_phone, org_address)
+                org_founded_year, org_logo_url, org_linkedin_url, org_phone, org_address, org_description)
             VALUES (
                 @Id, @LeadId, @OrgWebsiteUrl, @OrgEstimatedEmployees, @OrgAnnualRevenue,
-                @OrgFoundedYear, @OrgLogoUrl, @OrgLinkedinUrl, @OrgPhone, @OrgAddress)
+                @OrgFoundedYear, @OrgLogoUrl, @OrgLinkedinUrl, @OrgPhone, @OrgAddress, @OrgDescription)
             ON CONFLICT (lead_id) DO UPDATE SET
                 org_website_url=EXCLUDED.org_website_url,
                 org_estimated_employees=EXCLUDED.org_estimated_employees,
@@ -229,7 +232,8 @@ public class LeadService
                 org_logo_url=EXCLUDED.org_logo_url,
                 org_linkedin_url=EXCLUDED.org_linkedin_url,
                 org_phone=EXCLUDED.org_phone,
-                org_address=EXCLUDED.org_address", o);
+                org_address=EXCLUDED.org_address,
+                org_description=EXCLUDED.org_description", o);
     }
 
     private static async Task UpsertEmploymentHistory(NpgsqlConnection c, Lead lead)
@@ -343,6 +347,7 @@ public class LeadService
         OrgLinkedinUrl        = r.org_linkedin_url,
         OrgPhone              = r.org_phone,
         OrgAddress            = r.org_address,
+        OrgDescription        = r.org_description,
     };
 
     private static LeadEmploymentHistory MapEmp(dynamic r) => new()

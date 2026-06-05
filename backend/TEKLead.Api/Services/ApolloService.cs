@@ -255,6 +255,7 @@ public class ApolloService
                 OrgWebsiteUrl         = Str(org, "website_url"),
                 OrgLinkedinUrl        = Str(org, "linkedin_url"),
                 OrgAddress            = Str(org, "raw_address"),
+                OrgDescription        = Str(org, "short_description"),
                 OrgLogoUrl            = Str(org, "logo_url"),
                 OrgFoundedYear        = org.TryGetProperty("founded_year", out var fy) && fy.ValueKind != JsonValueKind.Null ? fy.ToString() : null,
                 OrgEstimatedEmployees = org.TryGetProperty("estimated_num_employees", out var emp) && emp.ValueKind != JsonValueKind.Null ? emp.ToString() : null,

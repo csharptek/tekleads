@@ -41,6 +41,7 @@ public class LeadOrgDetails
     public string? OrgLinkedinUrl { get; set; }
     public string? OrgPhone { get; set; }
     public string? OrgAddress { get; set; }
+    public string? OrgDescription { get; set; }
 }
 
 public class LeadEmploymentHistory
