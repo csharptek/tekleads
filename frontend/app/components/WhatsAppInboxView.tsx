@@ -45,7 +45,7 @@ interface Message {
 }
 
 interface Props {
-  inboxType?: "sales" | "hr";
+  inboxType?: "sales" | "hr" | "contacts";
 }
 
 function fmtTime(iso: string) {
@@ -310,7 +310,7 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showSearch ? 8 : 0 }}>
             <div>
               <div className="page-title" style={{ fontSize: 15, margin: 0 }}>
-                {inboxType === "hr" ? "HR Inbox" : "WA Inbox"}
+                {inboxType === "hr" ? "HR Inbox" : inboxType === "contacts" ? "Contacts WA Inbox" : "WA Inbox"}
               </div>
               <div className="page-sub" style={{ fontSize: 11 }}>{total} conversations</div>
             </div>

@@ -206,9 +206,9 @@ public class ContactListsController : ControllerBase
         {
             (bool ok, string wamid, string error, string _) result;
             if (req.Mode == "template")
-                result = await _wa.SendTemplate(req.Phone, req.TemplateName, req.TemplateLang ?? "en", req.BodyVariables);
+                result = await _wa.SendTemplate(req.Phone, req.TemplateName, req.TemplateLang ?? "en", req.BodyVariables, inboxType: "contacts");
             else
-                result = await _wa.SendText(req.Phone, req.Body ?? "");
+                result = await _wa.SendText(req.Phone, req.Body ?? "", inboxType: "contacts");
 
             await _svc.LogOutreach(new ContactOutreachLog
             {

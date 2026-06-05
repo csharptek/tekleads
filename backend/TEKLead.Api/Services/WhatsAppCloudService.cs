@@ -1,4 +1,4 @@
-// DEPLOY-CHECK: whatsapp-cloud-v2-hr-inbox-20260525
+// DEPLOY-CHECK: whatsapp-cloud-v2-contacts-inbox-20260605
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -176,7 +176,8 @@ public class WhatsAppCloudService
         string? langCode,
         List<string>? bodyVariables,
         string? leadId = null,
-        string? proposalId = null)
+        string? proposalId = null,
+        string inboxType = "sales")
     {
         var cfg = await LoadConfig();
         if (string.IsNullOrWhiteSpace(cfg.token)) return (false, "", "Access token not configured.", "");
@@ -204,7 +205,7 @@ public class WhatsAppCloudService
 
         var payload = new { messaging_product = "whatsapp", to = phone, type = "template", template = templateObj };
         var url = $"https://graph.facebook.com/{cfg.version}/{cfg.phoneId}/messages";
-        return await Post(url, cfg.token, payload, phone, "template", tpl, null, leadId, proposalId);
+        return await Post(url, cfg.token, payload, phone, "template", tpl, null, leadId, proposalId, inboxType);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -263,7 +264,8 @@ public class WhatsAppCloudService
         string toPhone,
         string body,
         string? leadId = null,
-        string? proposalId = null)
+        string? proposalId = null,
+        string inboxType = "sales")
     {
         var cfg = await LoadConfig();
         if (string.IsNullOrWhiteSpace(cfg.token)) return (false, "", "Access token not configured.", "");
@@ -275,7 +277,7 @@ public class WhatsAppCloudService
 
         var payload = new { messaging_product = "whatsapp", recipient_type = "individual", to = phone, type = "text", text = new { preview_url = false, body = body } };
         var url = $"https://graph.facebook.com/{cfg.version}/{cfg.phoneId}/messages";
-        return await Post(url, cfg.token, payload, phone, "text", null, body, leadId, proposalId);
+        return await Post(url, cfg.token, payload, phone, "text", null, body, leadId, proposalId, inboxType);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -284,7 +286,7 @@ public class WhatsAppCloudService
     private async Task<(bool Ok, string Wamid, string Error, string RawResponse)> Post(
         string url, string token, object payload,
         string toPhone, string messageType, string? templateName, string? body,
-        string? leadId, string? proposalId)
+        string? leadId, string? proposalId, string inboxType = "sales")
     {
         var json = JsonSerializer.Serialize(payload);
         var req = new HttpRequestMessage(HttpMethod.Post, url)
@@ -347,7 +349,7 @@ public class WhatsAppCloudService
                 Status = ok ? "sent" : "failed",
                 ErrorMessage = ok ? null : err,
                 RawPayload = raw,
-                InboxType = "sales",
+                InboxType = inboxType,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
