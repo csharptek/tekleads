@@ -208,7 +208,7 @@ public class PortfolioService
             {
                 new { kind = "vector", vector = embedding, exhaustive = true, fields = "embedding", k = topK }
             },
-            select = "id,title,industry,tags,problem,solution,tech_stack,outcomes,links",
+            select = "id,title,industry,tags,problem,solution,tech_stack,outcomes,links,youtube_links",
             top = topK
         });
 
@@ -236,9 +236,14 @@ public class PortfolioService
                 Solution   = item.GetProperty("solution").GetString() ?? "",
                 TechStack  = item.GetProperty("tech_stack").GetString() ?? "",
                 Outcomes   = item.GetProperty("outcomes").GetString() ?? "",
-                Links      = item.GetProperty("links").GetString() ?? "",
+                Links        = item.GetProperty("links").GetString() ?? "",
+                YoutubeLinks = item.TryGetProperty("youtube_links", out var yl) ? yl.GetString() ?? "" : "",
             });
         }
+
+        // Deduplicate by title — keep first occurrence (highest score)
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        results = results.Where(r => seen.Add(r.Title)).ToList();
 
         return results;
     }
@@ -483,7 +488,8 @@ DOCUMENT:
     { "name": "solution",  "type": "Edm.String",             "key": false, "searchable": true,  "filterable": false, "retrievable": true },
     { "name": "tech_stack","type": "Edm.String",             "key": false, "searchable": true,  "filterable": false, "retrievable": true },
     { "name": "outcomes",  "type": "Edm.String",             "key": false, "searchable": true,  "filterable": false, "retrievable": true },
-    { "name": "links",     "type": "Edm.String",             "key": false, "searchable": false, "filterable": false, "retrievable": true },
+    { "name": "links",        "type": "Edm.String", "key": false, "searchable": false, "filterable": false, "retrievable": true },
+    { "name": "youtube_links", "type": "Edm.String", "key": false, "searchable": false, "filterable": false, "retrievable": true },
     {
       "name": "embedding",
       "type": "Collection(Edm.Single)",
@@ -534,8 +540,9 @@ DOCUMENT:
                     solution  = p.Solution,
                     tech_stack = p.TechStack,
                     outcomes  = p.Outcomes,
-                    links     = p.Links,
-                    embedding = embedding
+                    links         = p.Links,
+                    youtube_links = p.YoutubeLinks,
+                    embedding     = embedding
                 }
             }
         };
