@@ -12,6 +12,7 @@ builder.Services.AddScoped<LeadService>();
 builder.Services.AddScoped<ApolloService>();
 builder.Services.AddScoped<PortfolioService>();
 builder.Services.AddScoped<ProposalService>();
+builder.Services.AddScoped<ProposalCompanyContextService>();
 builder.Services.AddScoped<ProposalGenerationService>();
 builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<LogService>();
@@ -74,6 +75,7 @@ using (var scope = app.Services.CreateScope())
     try { await leadSvc.EnsureSchema();  } catch (Exception ex) { app.Logger.LogError(ex, "Leads schema failed"); }
     try { var portSvc = scope.ServiceProvider.GetRequiredService<PortfolioService>(); await portSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Portfolio schema failed"); }
     try { var propSvc = scope.ServiceProvider.GetRequiredService<ProposalService>(); await propSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Proposal schema failed"); }
+    try { var compCtxSvc = scope.ServiceProvider.GetRequiredService<ProposalCompanyContextService>(); await compCtxSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "CompanyContext schema failed"); }
     try { var logSvc = scope.ServiceProvider.GetRequiredService<LogService>(); await logSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Log schema failed"); }
     try { var genSvc = scope.ServiceProvider.GetRequiredService<ProposalGenerationService>(); await genSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "ProposalGeneration schema failed"); }
     try { var artSvc = scope.ServiceProvider.GetRequiredService<ArtifactsService>(); await artSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Artifacts schema failed"); }

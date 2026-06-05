@@ -12,12 +12,14 @@ public class ProposalController : ControllerBase
     private readonly LeadService _leads;
     private readonly BlobService _blob;
     private readonly ILogger<ProposalController> _log;
+    private readonly ProposalCompanyContextService _companyCtx;
 
-    public ProposalController(ProposalService proposals, LeadService leads, BlobService blob, ILogger<ProposalController> log)
+    public ProposalController(ProposalService proposals, LeadService leads, BlobService blob, ILogger<ProposalController> log, ProposalCompanyContextService companyCtx)
     {
         _proposals = proposals;
         _leads = leads;
         _blob = blob;
+        _companyCtx = companyCtx;
         _log = log;
     }
 
@@ -129,6 +131,28 @@ public class ProposalController : ControllerBase
         if (!string.IsNullOrEmpty(req.ClientCompany)) p.ClientCompany = req.ClientCompany;
 
         var saved = await _proposals.Upsert(p);
+
+        // Populate company context from lead org details
+        if (savedLead.OrgDetails != null || req.Lead?.OrgDetails != null)
+        {
+            var org = savedLead.OrgDetails ?? req.Lead?.OrgDetails;
+            var ctx = new ProposalCompanyContext
+            {
+                ProposalId         = p.Id,
+                LeadId             = savedLead.Id == Guid.Empty ? null : savedLead.Id,
+                CompanyName        = p.ClientCompany,
+                Industry           = savedLead.Industry,
+                Description        = org?.OrgDescription,
+                EstimatedEmployees = org?.OrgEstimatedEmployees,
+                AnnualRevenue      = org?.OrgAnnualRevenue,
+                FoundedYear        = org?.OrgFoundedYear,
+                WebsiteUrl         = org?.OrgWebsiteUrl,
+                LinkedinUrl        = org?.OrgLinkedinUrl,
+                Address            = org?.OrgAddress,
+            };
+            await _companyCtx.Upsert(ctx);
+        }
+
         return Ok(new { proposal = saved, leadId = savedLead.Id });
     }
 }

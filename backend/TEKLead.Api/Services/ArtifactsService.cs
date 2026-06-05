@@ -26,6 +26,7 @@ public class ArtifactsService
     private readonly SettingsService _settings;
     private readonly PortfolioService _portfolio;
     private readonly ProposalService _proposals;
+    private readonly ProposalCompanyContextService _companyCtx;
     private readonly IHttpClientFactory _http;
     private readonly ILogger<ArtifactsService> _log;
 
@@ -33,12 +34,14 @@ public class ArtifactsService
         SettingsService settings,
         PortfolioService portfolio,
         ProposalService proposals,
+        ProposalCompanyContextService companyCtx,
         IHttpClientFactory http,
         ILogger<ArtifactsService> log)
     {
         _settings = settings;
         _portfolio = portfolio;
         _proposals = proposals;
+        _companyCtx = companyCtx;
         _http = http;
         _log = log;
     }
@@ -131,7 +134,8 @@ public class ArtifactsService
                 portfolioItems = all.Take(3).ToList();
         }
 
-        var context = BuildContext(proposal, portfolioItems);
+        var companyCtx = await _companyCtx.GetByProposalId(proposal.Id);
+        var context = BuildContext(proposal, portfolioItems, companyCtx);
 
         var clPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
         var waPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
@@ -180,9 +184,9 @@ public class ArtifactsService
 
     public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId, string? customPrompt = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
         if (err != null) return Fail(err);
-        var context = BuildContext(proposal!, portfolioItems);
+        var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? CoverLetterPrompt() : savedPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
@@ -192,9 +196,9 @@ public class ArtifactsService
 
     public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
         if (err != null) return Fail(err);
-        var context = BuildContext(proposal!, portfolioItems);
+        var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? WhatsappPrompt() : savedPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
@@ -204,9 +208,9 @@ public class ArtifactsService
 
     public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
         if (err != null) return Fail(err);
-        var context = BuildContext(proposal!, portfolioItems);
+        var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? EmailPrompt() : savedPrompt);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
@@ -218,12 +222,12 @@ public class ArtifactsService
 
     public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
         if (err != null) return Fail(err);
 
         // Load initial email so FU1 can reference it
         var existing = await GetExisting(proposalId);
-        var context = BuildContext(proposal!, portfolioItems);
+        var context = BuildContext(proposal!, portfolioItems, company);
         if (existing.Ok && !string.IsNullOrWhiteSpace(existing.EmailSubject))
         {
             context += $"\n\n## INITIAL EMAIL ALREADY SENT\nSubject: {existing.EmailSubject}\nBody:\n{existing.EmailBody}\n";
@@ -245,11 +249,11 @@ public class ArtifactsService
 
     public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
         if (err != null) return Fail(err);
 
         var existing = await GetExisting(proposalId);
-        var context = BuildContext(proposal!, portfolioItems);
+        var context = BuildContext(proposal!, portfolioItems, company);
         if (existing.Ok && !string.IsNullOrWhiteSpace(existing.EmailSubject))
         {
             context += $"\n\n## INITIAL EMAIL ALREADY SENT\nSubject: {existing.EmailSubject}\nBody:\n{existing.EmailBody}\n";
@@ -273,10 +277,10 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow };
     }
 
-    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error)> GetContext(Guid proposalId)
+    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company)> GetContext(Guid proposalId)
     {
         var proposal = await _proposals.GetById(proposalId);
-        if (proposal == null) return (null, null, null, null, new(), new(), "Proposal not found.");
+        if (proposal == null) return (null, null, null, null, new(), new(), "Proposal not found.", null);
 
         var settings = await _settings.GetAll();
         var aoEndpoint   = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
@@ -284,7 +288,7 @@ public class ArtifactsService
         var aoDeployment = settings.GetValueOrDefault(SettingKeys.AzureOpenAiDeployment, "");
 
         if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
-            return (null, null, null, null, new(), new(), "Azure OpenAI not configured in Settings.");
+            return (null, null, null, null, new(), new(), "Azure OpenAI not configured in Settings.", null);
 
         List<PortfolioProject> portfolioItems;
         try
@@ -302,7 +306,8 @@ public class ArtifactsService
             if (portfolioItems.Count == 0) portfolioItems = all.Take(3).ToList();
         }
 
-        return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null);
+        var company = await _companyCtx.GetByProposalId(proposal.Id);
+        return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null, company);
     }
 
     private async Task SaveField(Guid proposalId, string column, string value)
@@ -351,7 +356,8 @@ Then: ""Bhanu Gupta""
 
 TONE RULES:
 - Write in first person as Bhanu
-- Do NOT mention ""Csharptek"" or any company name anywhere
+- Do NOT mention ""Csharptek"" or Bhanu's company name anywhere
+- If COMPANY DETAILS section is provided in context, use it to personalize: reference their industry, scale (employee count), or a specific detail from their description to show you researched them — but keep it natural, 1 sentence max
 - Confident, not boastful
 - No fluff, no filler (""I am excited to..."", ""I believe I would be a great fit..."")
 - Every sentence must earn its place
@@ -436,7 +442,7 @@ Return only the JSON. No preamble.";
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private string BuildContext(Proposal p, List<PortfolioProject> portfolio)
+    private string BuildContext(Proposal p, List<PortfolioProject> portfolio, ProposalCompanyContext? company = null)
     {
         var sb = new StringBuilder();
 
@@ -454,6 +460,18 @@ Return only the JSON. No preamble.";
         }
         if (!string.IsNullOrWhiteSpace(p.ClientCompany)) sb.AppendLine($"Company: {p.ClientCompany}");
         if (!string.IsNullOrWhiteSpace(p.ClientEmail))   sb.AppendLine($"Email: {p.ClientEmail}");
+
+        if (company != null)
+        {
+            sb.AppendLine("\n## COMPANY DETAILS");
+            if (!string.IsNullOrWhiteSpace(company.CompanyName))        sb.AppendLine($"Company: {company.CompanyName}");
+            if (!string.IsNullOrWhiteSpace(company.Industry))           sb.AppendLine($"Industry: {company.Industry}");
+            if (!string.IsNullOrWhiteSpace(company.EstimatedEmployees)) sb.AppendLine($"Employees: {company.EstimatedEmployees}");
+            if (!string.IsNullOrWhiteSpace(company.AnnualRevenue))      sb.AppendLine($"Revenue: {company.AnnualRevenue}");
+            if (!string.IsNullOrWhiteSpace(company.FoundedYear))        sb.AppendLine($"Founded: {company.FoundedYear}");
+            if (!string.IsNullOrWhiteSpace(company.WebsiteUrl))         sb.AppendLine($"Website: {company.WebsiteUrl}");
+            if (!string.IsNullOrWhiteSpace(company.Description))        sb.AppendLine($"About: {company.Description}");
+        }
 
         sb.AppendLine("\n## PROPOSAL PRICING & TIMELINE");
         if (p.FinalPrice.HasValue)
