@@ -322,53 +322,47 @@ public class ArtifactsService
 
     // ── Prompts ───────────────────────────────────────────────────────────────
 
-    public static string CoverLetterPrompt() => @"You are writing an Upwork cover letter on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
+    public static string CoverLetterPrompt() => @"You are writing an Upwork proposal on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
 
-TARGET LENGTH: 180-230 words total. Clients read on mobile. Every word must earn its place.
+TARGET LENGTH: 150-200 words total. Short, direct, no fluff. Clients read on mobile.
 
-STRUCTURE — follow this exact order, no section titles:
+STRUCTURE — follow this exact order, no section titles, no headers:
 
-1. HOOK (1 sentence)
-Restate the client's core problem back to them in your own words — prove you read it.
+1. HOOK (1-2 sentences)
+Mirror their exact pain point back to them — prove you read it, not skimmed it.
 Do NOT start with ""I"". Do NOT use ""I have reviewed"", ""I am writing to"", ""I'm excited"", ""I believe"".
-If COMPANY DETAILS are provided, weave in one specific detail (size, industry, product description) naturally.
+If deadline is mentioned in the job post, acknowledge it directly.
 
-2. PROOF (1-2 sentences)
-One metric-backed outcome from a past project most relevant to their stack.
-Format: [What you built] — [measurable result or specific outcome].
-Use only real data from RELEVANT PORTFOLIO PROJECTS in context.
+2. CREDIBILITY (1-2 sentences)
+One relevant past project with a specific outcome. Use only real data from RELEVANT PORTFOLIO PROJECTS in context.
+Format: [What we built] — [specific measurable result or concrete outcome].
 
-3. DONE = (1 sentence)
-Write one clear acceptance criteria line in the client's own language.
-Format: ""Done = [specific deliverable they can test/verify]""
+3. APPROACH (2-3 sentences, prose — no bullets)
+Brief how, not why. Name specific technologies. One sentence per phase if phased work.
+Must make the client think: ""he's already thought this through.""
 
-4. APPROACH (3 bullets)
-Each bullet = one concrete technical decision with named technologies.
-Each bullet must make the client think: ""he's already thought this through.""
-No generic bullets like ""write clean code"" or ""ensure scalability"".
+4. PRICING & TIMELINE (1 sentence)
+Use exact figures from PROPOSAL PRICING & TIMELINE section in context.
+Format: ""[Phase/Project]: ~[hours] hrs at $[rate]/hr — $[total]. Starting today.""
+If no pricing set: ""Happy to share a detailed estimate on a call.""
 
-5. PORTFOLIO (1 item only)
-The single most relevant project. One sentence + link.
-Format: [Project Name] — [one sentence why it's relevant]. [link if available]
-Do NOT list 3 projects. One sharp reference beats three generic ones.
+5. CTA (1 sentence)
+One clear next step. A question that invites a reply.
 
-6. QUESTIONS (2 questions max)
-Smart, specific questions that show deep reading.
-Numbered list.
-
-7. SIGN-OFF (1 line + name)
-""I'm Bhanu Gupta — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
-Then: ""Bhanu Gupta""
+6. SCREENING ANSWERS (if job post contains screening questions)
+Answer each question directly and concisely. One line per answer.
+Label each: ""[Question topic]: [answer]""
 
 RULES:
 - First person as Bhanu
 - Do NOT mention ""Csharptek"" or any company name of Bhanu
-- No filler: ""I am excited"", ""great fit"", ""passionate"", ""I'd love to"" — banned
-- Metrics over adjectives: ""reduced load time by 40%"" beats ""high-performance""
-- If no metric exists in portfolio context, describe a specific concrete outcome instead
+- No filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"" — banned
+- No bullet points in main body — prose only
+- Metrics over adjectives always
 - Do NOT invent portfolio items or metrics — only use what context provides
+- If screening questions exist in job post, always include answers at the end
 
-Return only the cover letter text. No preamble. No markdown.";
+Return only the proposal text. No preamble. No markdown. No section labels.";
 
     public static string WhatsappPrompt() => @"Write a short WhatsApp outreach message for a freelance software proposal.
 
