@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 
 interface LeadOrgDetails {
   orgWebsiteUrl?: string;
+  orgDescription?: string;
   orgEstimatedEmployees?: string;
   orgAnnualRevenue?: string;
   orgFoundedYear?: string;
@@ -771,8 +772,17 @@ export default function NewProposalView({
                     {l.company && <div style={{ color: "var(--muted)" }}>🏢 <span style={{ color: "var(--text)" }}>{l.company}</span></div>}
                     {org?.orgWebsiteUrl && <div style={{ color: "var(--muted)" }}>🌐 <a href={org.orgWebsiteUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>{org.orgWebsiteUrl.replace(/^https?:\/\//, "")}</a></div>}
                     {(l.city || l.state || l.country) && <div style={{ color: "var(--muted)" }}>📍 <span style={{ color: "var(--text)" }}>{[l.city, l.state, l.country].filter(Boolean).join(", ")}</span></div>}
+                    {org?.orgEstimatedEmployees && <div style={{ color: "var(--muted)" }}>👥 <span style={{ color: "var(--text)" }}>{org.orgEstimatedEmployees} employees</span></div>}
+                    {org?.orgAnnualRevenue && <div style={{ color: "var(--muted)" }}>💰 <span style={{ color: "var(--text)" }}>{org.orgAnnualRevenue}</span></div>}
+                    {org?.orgFoundedYear && <div style={{ color: "var(--muted)" }}>📅 <span style={{ color: "var(--text)" }}>Founded {org.orgFoundedYear}</span></div>}
+                    {org?.orgLinkedinUrl && <div style={{ color: "var(--muted)", gridColumn: "1/-1" }}><a href={org.orgLinkedinUrl} target="_blank" rel="noreferrer" style={{ color: "#0a66c2", fontSize: 11 }}>Company LinkedIn</a></div>}
                     {l.headline && <div style={{ color: "var(--muted)", gridColumn: "1/-1" }}>💬 <span style={{ color: "var(--text)" }}>{l.headline}</span></div>}
                   </div>
+                  {org?.orgDescription && (
+                    <div style={{ marginTop: 6, padding: "6px 8px", background: "var(--surface2, #f8f9fa)", borderRadius: 6, fontSize: 11, color: "var(--text)", lineHeight: 1.5, borderLeft: "3px solid var(--accent)" }}>
+                      {org.orgDescription}
+                    </div>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 6 }}>
                     {l.emails?.map((e, ei) => (
                       <div key={ei} style={{ display: "flex", alignItems: "center", gap: 4 }}>

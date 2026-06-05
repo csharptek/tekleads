@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 
 interface LeadOrgDetails {
   orgWebsiteUrl?: string;
+  orgDescription?: string;
   orgEstimatedEmployees?: string;
   orgAnnualRevenue?: string;
   orgFoundedYear?: string;
@@ -131,6 +132,7 @@ function ExpandedRow({ lead, waTemplate }: { lead: Lead; waTemplate: string }) {
               {org.orgFoundedYear && <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>Founded: <span style={{ color: "var(--text)" }}>{org.orgFoundedYear}</span></div>}
               {org.orgPhone && <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>Phone: <span style={{ color: "var(--text)" }}>{org.orgPhone}</span></div>}
               {org.orgLinkedinUrl && <a href={org.orgLinkedinUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#0a66c2" }}>LinkedIn</a>}
+              {org.orgDescription && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>{org.orgDescription}</div>}
             </div>
           )}
 
