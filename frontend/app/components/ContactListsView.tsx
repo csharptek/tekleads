@@ -388,6 +388,23 @@ function ContactsTab({ list }: { list: ContactList }) {
     }).catch(() => {});
   }, [list.id]);
 
+  async function loadScheduledJobs() {
+    try {
+      const data = await api.get<any[]>(`/api/wa-schedule?listId=${list.id}`);
+      setScheduledJobs((data || []).map((j: any) => ({
+        id: j.id,
+        contactName: j.contactName,
+        phone: j.phone,
+        templateName: j.templateName,
+        scheduledAt: j.scheduledAt,
+        status: j.status,
+        error: j.error,
+      })));
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => { loadScheduledJobs(); }, [list.id]);
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
