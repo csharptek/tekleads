@@ -82,7 +82,7 @@ export default function PhoneWebhookLogsView() {
 
   useEffect(() => {
     api.get("/api/settings").then((res: any) => {
-      const val = res?.find?.((s: any) => s.key === "phone_webhook_worker_enabled")?.value;
+      const val = res?.values?.phone_webhook_worker_enabled;
       setWorkerEnabled(val === undefined || val === "" || val === "true");
     }).catch(() => setWorkerEnabled(true));
   }, []);
@@ -92,7 +92,7 @@ export default function PhoneWebhookLogsView() {
     setTogglingWorker(true);
     const next = !workerEnabled;
     try {
-      await api.post("/api/settings", { phone_webhook_worker_enabled: next ? "true" : "false" });
+      await api.post("/api/settings", { values: { phone_webhook_worker_enabled: next ? "true" : "false" } });
       setWorkerEnabled(next);
     } finally {
       setTogglingWorker(false);
