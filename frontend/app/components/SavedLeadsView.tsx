@@ -94,6 +94,11 @@ function ExpandedRow({ lead, waTemplate }: { lead: Lead; waTemplate: string }) {
           {/* Contact details */}
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Contact</div>
+            {lead.photoUrl && (
+              <div style={{ marginBottom: 10 }}>
+                <img src={lead.photoUrl} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--border)" }} />
+              </div>
+            )}
             {lead.headline && <div style={{ fontSize: 12, color: "var(--text)", marginBottom: 4 }}>{lead.headline}</div>}
             {lead.seniority && <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Seniority: <span style={{ color: "var(--text)" }}>{lead.seniority}</span></div>}
             {lead.departments?.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Dept: <span style={{ color: "var(--text)" }}>{lead.departments.join(", ")}</span></div>}
