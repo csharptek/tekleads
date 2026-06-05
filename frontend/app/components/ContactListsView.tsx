@@ -464,7 +464,7 @@ function ContactsTab({ list }: { list: ContactList }) {
     try {
       await api.post("/api/wa-schedule", {
         listId: list.id,
-        listName: list.name,
+        listName: list.title,
         scheduledAtUtc,
         jobs,
       });
