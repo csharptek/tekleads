@@ -322,47 +322,53 @@ public class ArtifactsService
 
     // ── Prompts ───────────────────────────────────────────────────────────────
 
-    public static string CoverLetterPrompt() => @"You are writing an Upwork proposal on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
+    public static string CoverLetterPrompt() => @"You are writing an Upwork cover letter on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
 
-TARGET LENGTH: 150-200 words total. Short, direct, no fluff. Clients read on mobile.
+TARGET LENGTH: 180-230 words total. Clients read on mobile. Every word must earn its place.
 
-STRUCTURE — follow this exact order, no section titles, no headers:
+STRUCTURE — follow this exact order, no section titles:
 
-1. HOOK (1-2 sentences)
-Mirror their exact pain point back to them — prove you read it, not skimmed it.
+1. HOOK (1 sentence)
+Restate the client's core problem back to them in your own words — prove you read it.
 Do NOT start with ""I"". Do NOT use ""I have reviewed"", ""I am writing to"", ""I'm excited"", ""I believe"".
-If deadline is mentioned in the job post, acknowledge it directly.
+If COMPANY DETAILS are provided, weave in one specific detail (size, industry, product description) naturally.
 
-2. CREDIBILITY (1-2 sentences)
-One relevant past project with a specific outcome. Use only real data from RELEVANT PORTFOLIO PROJECTS in context.
-Format: [What we built] — [specific measurable result or concrete outcome].
+2. PROOF (1-2 sentences)
+One metric-backed outcome from a past project most relevant to their stack.
+Format: [What you built] — [measurable result or specific outcome].
+Use only real data from RELEVANT PORTFOLIO PROJECTS in context.
 
-3. APPROACH (2-3 sentences, prose — no bullets)
-Brief how, not why. Name specific technologies. One sentence per phase if phased work.
-Must make the client think: ""he's already thought this through.""
+3. DONE = (1 sentence)
+Write one clear acceptance criteria line in the client's own language.
+Format: ""Done = [specific deliverable they can test/verify]""
 
-4. PRICING & TIMELINE (1 sentence)
-Use exact figures from PROPOSAL PRICING & TIMELINE section in context.
-Format: ""[Phase/Project]: ~[hours] hrs at $[rate]/hr — $[total]. Starting today.""
-If no pricing set: ""Happy to share a detailed estimate on a call.""
+4. APPROACH (3 bullets)
+Each bullet = one concrete technical decision with named technologies.
+Each bullet must make the client think: ""he's already thought this through.""
+No generic bullets like ""write clean code"" or ""ensure scalability"".
 
-5. CTA (1 sentence)
-One clear next step. A question that invites a reply.
+5. PORTFOLIO (1 item only)
+The single most relevant project. One sentence + link.
+Format: [Project Name] — [one sentence why it's relevant]. [link if available]
+Do NOT list 3 projects. One sharp reference beats three generic ones.
 
-6. SCREENING ANSWERS (if job post contains screening questions)
-Answer each question directly and concisely. One line per answer.
-Label each: ""[Question topic]: [answer]""
+6. QUESTIONS (2 questions max)
+Smart, specific questions that show deep reading.
+Numbered list.
+
+7. SIGN-OFF (1 line + name)
+""I'm Bhanu Gupta — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
+Then: ""Bhanu Gupta""
 
 RULES:
 - First person as Bhanu
 - Do NOT mention ""Csharptek"" or any company name of Bhanu
-- No filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"" — banned
-- No bullet points in main body — prose only
-- Metrics over adjectives always
+- No filler: ""I am excited"", ""great fit"", ""passionate"", ""I'd love to"" — banned
+- Metrics over adjectives: ""reduced load time by 40%"" beats ""high-performance""
+- If no metric exists in portfolio context, describe a specific concrete outcome instead
 - Do NOT invent portfolio items or metrics — only use what context provides
-- If screening questions exist in job post, always include answers at the end
 
-Return only the proposal text. No preamble. No markdown. No section labels.";
+Return only the cover letter text. No preamble. No markdown.";
 
     public static string WhatsappPrompt() => @"Write a short WhatsApp outreach message for a freelance software proposal.
 
@@ -377,30 +383,44 @@ Rules:
 
 Return only the WhatsApp message text.";
 
-    public static string EmailPrompt() => @"Write a cold outreach email for a freelance software proposal.
+    public static string EmailPrompt() => @"You are writing an Upwork proposal on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
 
 Return ONLY valid JSON in this exact format (no markdown, no backticks):
-{""subject"": ""your subject line here"", ""body"": ""full email body here with \n for line breaks""}
+{""subject"": ""your subject line here"", ""body"": ""full proposal body here with \n for line breaks""}
 
-Email rules:
+Proposal rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
 - Subject: specific, 8-12 words, references their project
-- Body: 100-130 words MAX — keep it tight
-- Professional tone
-- Para 1 (2 sentences): show you understand their specific problem
-- Para 2 (1-2 sentences): ONE most relevant portfolio reference with outcome. If a YouTube Demo link exists for that project in context, include it inline as: Demo: [url]
-- Para 3 (1 sentence): proposed approach + pricing. Use the timeline and pricing from the PROPOSAL PRICING & TIMELINE section. If FinalPrice is set, quote that exact amount. If only a budget range is set, quote within that range. Mention AI-assisted development as the reason for the competitive rate.
-- CTA (1 sentence): suggest a 20-min call
-- Do not include any name or company signature
+- Body: 150-200 words MAX — short, direct, no fluff
+- Do NOT mention ""Csharptek"" or any company name of Bhanu
+- No filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"" — banned
+- Do not include any name or company signature at the end
+
+STRUCTURE — follow this exact order, no section titles:
+
+Para 1 — HOOK (1-2 sentences):
+Mirror their exact pain point back — prove you read it. If deadline is mentioned, acknowledge it directly. Do NOT start with ""I"".
+
+Para 2 — CREDIBILITY (1-2 sentences):
+One relevant past project with a specific outcome. Use only real data from RELEVANT PORTFOLIO PROJECTS in context.
+Format: [What we built] — [specific measurable result]. If a YouTube Demo link exists, include it as: Demo: [url]
+
+Para 3 — APPROACH (2-3 sentences prose, no bullets):
+Brief how, not why. Name specific technologies. Must make client think: ""he's already thought this through.""
+
+Para 4 — PRICING & CTA (2 sentences):
+Sentence 1 — pricing: Use exact figures from PROPOSAL PRICING & TIMELINE section. Format: ""[Phase]: ~[hours] hrs at $[rate]/hr — $[total]. Starting today.""
+If no pricing set: ""Happy to share a detailed estimate on a call.""
+Sentence 2 — CTA: one clear next step, invites a reply.
+
+SCREENING ANSWERS (only if job post contains screening questions):
+Answer each question directly. One line per answer. Label each: ""[topic]: [answer]""
 
 Pricing rules:
-- ALWAYS use price and timeline from the PROPOSAL PRICING & TIMELINE section in the context
+- ALWAYS use price and timeline from PROPOSAL PRICING & TIMELINE section
 - If FinalPrice is set, use it as the exact fixed price
-- If only a budget range is provided, quote within that range
-- If no pricing info exists in context, do NOT mention a specific price — say ""happy to share a detailed estimate on a call""
-- Never invent or hardcode a price
-
-No generic phrases like ""I came across your post"". Be specific.";
+- If only budget range provided, quote within that range
+- Never invent or hardcode a price";
 
     public static string FollowUp1Prompt() => @"Write a SHORT follow-up email (Follow-up #1) for a freelance software proposal. The initial cold email has already been sent — this is a gentle nudge sent 24 hours later.
 

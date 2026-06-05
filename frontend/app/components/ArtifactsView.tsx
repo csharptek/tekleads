@@ -243,7 +243,7 @@ export default function ArtifactsView({
   };
 
   const openPromptModal = (type: "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2") => {
-    const titles = { coverLetter: "Upwork Proposal Prompt", whatsapp: "WhatsApp Prompt", email: "Email Prompt", followUp1: "Follow-up Email 1 Prompt", followUp2: "Follow-up Email 2 Prompt" };
+    const titles = { coverLetter: "Cover Letter Prompt", whatsapp: "WhatsApp Prompt", email: "Upwork Proposal Prompt", followUp1: "Follow-up Email 1 Prompt", followUp2: "Follow-up Email 2 Prompt" };
     const current = customPrompts[type] || defaultPrompts[type];
     setPromptDraft(current);
     setPromptModal({ type, title: titles[type], prompt: current });
@@ -434,7 +434,7 @@ export default function ArtifactsView({
     const blob = new Blob([artifacts.coverLetter || ""], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `upwork-proposal-${proposalId.slice(0, 8)}.txt`; a.click();
+    a.href = url; a.download = `cover-letter-${proposalId.slice(0, 8)}.txt`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -483,11 +483,11 @@ export default function ArtifactsView({
         </div>
       )}
 
-      {/* Upwork Proposal */}
+      {/* Cover Letter */}
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
-        title="Upwork Proposal"
-        subtitle={<>Upwork proposal — short, direct, crisp{isCustomized("coverLetter") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
+        title="Cover Letter"
+        subtitle={<>Professional cover letter for the proposal{isCustomized("coverLetter") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.coverLetter}
         actions={<>
           <PromptBtn onClick={() => openPromptModal("coverLetter")} />
@@ -545,7 +545,7 @@ export default function ArtifactsView({
       {/* Email */}
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
-        title="Email"
+        title="Upwork Proposal"
         subtitle={<>{clientEmail ? `Opens Outlook with ${clientEmail} in To field` : "Opens mail client — no email on file"}{isCustomized("email") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.email}
         actions={<>
