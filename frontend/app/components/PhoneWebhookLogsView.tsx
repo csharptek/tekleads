@@ -82,7 +82,7 @@ export default function PhoneWebhookLogsView() {
 
   useEffect(() => {
     api.get("/api/settings").then((res: any) => {
-      const val = res?.values?.phone_webhook_worker_enabled;
+      const val = res?.values?.wa_send_enabled;
       setWorkerEnabled(val === undefined || val === "" || val === "true");
     }).catch(() => setWorkerEnabled(true));
   }, []);
@@ -92,7 +92,7 @@ export default function PhoneWebhookLogsView() {
     setTogglingWorker(true);
     const next = !workerEnabled;
     try {
-      await api.post("/api/settings", { values: { phone_webhook_worker_enabled: next ? "true" : "false" } });
+      await api.post("/api/settings", { values: { wa_send_enabled: next ? "true" : "false" } });
       setWorkerEnabled(next);
     } finally {
       setTogglingWorker(false);
@@ -148,7 +148,7 @@ export default function PhoneWebhookLogsView() {
                 display: "inline-block", width: 8, height: 8, borderRadius: "50%",
                 background: "white", boxShadow: workerEnabled ? "0 0 4px #86efac" : "none"
               }} />
-              Worker {workerEnabled ? "ON" : "OFF"}
+              WA Send {workerEnabled ? "ON" : "OFF"}
             </button>
           )}
           <button className="btn btn-ghost btn-sm" onClick={() => load(page)} disabled={loading}>

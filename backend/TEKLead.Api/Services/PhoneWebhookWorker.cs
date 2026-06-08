@@ -76,14 +76,19 @@ public class PhoneWebhookWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var settings = scope.ServiceProvider.GetRequiredService<SettingsService>();
 
-        // Check if worker is enabled
         var all = await settings.GetAll();
-        var enabled = all.GetValueOrDefault(SettingKeys.PhoneWebhookWorkerEnabled, "true");
-        if (enabled.Equals("false", StringComparison.OrdinalIgnoreCase))
+
+        // Master kill switch — stops everything including DB processing
+        var workerEnabled = all.GetValueOrDefault(SettingKeys.PhoneWebhookWorkerEnabled, "true");
+        if (workerEnabled.Equals("false", StringComparison.OrdinalIgnoreCase))
         {
             _log.LogDebug("PhoneWebhookWorker is disabled via settings.");
             return;
         }
+
+        // WA send gate — phone enrichment (DB merge) still runs when this is false
+        var waSendEnabled = !all.GetValueOrDefault(SettingKeys.WaSendEnabled, "true")
+                                .Equals("false", StringComparison.OrdinalIgnoreCase);
 
         var leads    = scope.ServiceProvider.GetRequiredService<LeadService>();
         var wa       = scope.ServiceProvider.GetRequiredService<WhatsAppCloudService>();
@@ -101,7 +106,7 @@ public class PhoneWebhookWorker : BackgroundService
         foreach (var evt in events)
         {
             if (ct.IsCancellationRequested) break;
-            await HandleEvent(evt, c, leads, wa);
+            await HandleEvent(evt, c, leads, wa, waSendEnabled);
         }
     }
 
@@ -112,7 +117,8 @@ public class PhoneWebhookWorker : BackgroundService
         PhoneWebhookEvent evt,
         NpgsqlConnection c,
         LeadService leads,
-        WhatsAppCloudService wa)
+        WhatsAppCloudService wa,
+        bool waSendEnabled)
     {
         try
         {
@@ -148,21 +154,29 @@ public class PhoneWebhookWorker : BackgroundService
                 // Also update saved_leads
                 await PushToSavedLeads(mergeResult.ApolloId, evt.Phones, c);
 
-                // ── Step 6: send WhatsApp with first name + proposal headline ──
-                var firstName = string.IsNullOrWhiteSpace(mergeResult.FirstName) ? "there" : mergeResult.FirstName;
-                var headline  = string.IsNullOrWhiteSpace(proposalHeadline)      ? "your project" : proposalHeadline;
+                // ── Step 6: send WhatsApp (only if WA send is enabled) ──
+                if (!waSendEnabled)
+                {
+                    waResult = "wa_send_disabled";
+                    _log.LogInformation("PhoneWebhookWorker WA send disabled — phone saved, WA skipped for {EntityId}", evt.EntityId);
+                }
+                else
+                {
+                    var firstName = string.IsNullOrWhiteSpace(mergeResult.FirstName) ? "there" : mergeResult.FirstName;
+                    var headline  = string.IsNullOrWhiteSpace(proposalHeadline)      ? "your project" : proposalHeadline;
 
-                var (ok, _, err, _) = await wa.SendTemplate(
-                    mergeResult.Phone,
-                    templateName:  "csharptek_intro_v2_util_2",
-                    langCode:      null,
-                    bodyVariables: new List<string> { firstName, headline },
-                    leadId:        evt.EntityId.ToString());
+                    var (ok, _, err, _) = await wa.SendTemplate(
+                        mergeResult.Phone,
+                        templateName:  "csharptek_intro_v2_util_2",
+                        langCode:      null,
+                        bodyVariables: new List<string> { firstName, headline },
+                        leadId:        evt.EntityId.ToString());
 
-                waSent   = ok;
-                waResult = ok ? "sent" : $"failed:{err}";
-                _log.LogInformation("PhoneWebhookWorker WA to {Phone} [{Name}][{Headline}] → {Result}",
-                    mergeResult.Phone, firstName, headline, waResult);
+                    waSent   = ok;
+                    waResult = ok ? "sent" : $"failed:{err}";
+                    _log.LogInformation("PhoneWebhookWorker WA to {Phone} [{Name}][{Headline}] → {Result}",
+                        mergeResult.Phone, firstName, headline, waResult);
+                }
             }
 
             await c.ExecuteAsync(
