@@ -98,6 +98,8 @@ export default function ProposalList({
   const [notes, setNotes] = useState("");
   const [uploading, setUploading] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
+  const [copiedHeadline, setCopiedHeadline] = useState(false);
+  const [copiedJob, setCopiedJob] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [wonOpen, setWonOpen] = useState(false);
   const [syncingLeads, setSyncingLeads] = useState(false);
@@ -490,7 +492,15 @@ export default function ProposalList({
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 16 }}>{drawer.clientCompany || drawer.clientName || "Proposal"}</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{drawer.jobPostHeadline || drawer.jobPostBody?.slice(0, 80)}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ flex: 1 }}>{drawer.jobPostHeadline || drawer.jobPostBody?.slice(0, 80)}</span>
+                    {(drawer.jobPostHeadline || drawer.jobPostBody) && (
+                      <button onClick={() => { navigator.clipboard.writeText(drawer.jobPostHeadline || drawer.jobPostBody?.slice(0, 80) || ""); setCopiedHeadline(true); setTimeout(() => setCopiedHeadline(false), 1500); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: copiedHeadline ? "var(--green)" : "var(--muted)", fontSize: 11, flexShrink: 0 }} title="Copy headline">
+                        {copiedHeadline ? "✓" : "⎘"}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <StatusBadge status={drawer.status} />
@@ -537,7 +547,13 @@ export default function ProposalList({
                   {drawer.status === "won" && <div><div className="field-label">Final Agreed Price (USD)</div><input className="input" type="number" placeholder="Enter final price" value={finalPrice} onChange={e => setFinalPrice(e.target.value)} /></div>}
                   {drawer.status === "lost" && <div><div className="field-label">Reason Lost</div><input className="input" placeholder="e.g. Budget too low..." value={lostReason} onChange={e => setLostReason(e.target.value)} /></div>}
                   {drawer.followUpDate && <div style={{ padding: "10px 12px", background: "#fffbeb", borderRadius: 8, fontSize: 13, color: "#d97706" }}>📅 Follow up: {fmt(drawer.followUpDate)}</div>}
-                  {drawer.jobPostBody && <div><div className="field-label">Job Post</div><div style={{ fontSize: 12, color: "var(--muted)", background: "var(--surface)", padding: "10px 12px", borderRadius: 6, maxHeight: 200, overflowY: "auto", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{drawer.jobPostBody}</div></div>}
+                  {drawer.jobPostBody && <div><div className="field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>Job Post</span>
+                    <button onClick={() => { navigator.clipboard.writeText(drawer.jobPostBody || ""); setCopiedJob(true); setTimeout(() => setCopiedJob(false), 1500); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 6px", color: copiedJob ? "var(--green)" : "var(--muted)", fontSize: 11, fontWeight: 500 }} title="Copy job post">
+                      {copiedJob ? "✓ Copied" : "⎘ Copy"}
+                    </button>
+                  </div><div style={{ fontSize: 12, color: "var(--muted)", background: "var(--surface)", padding: "10px 12px", borderRadius: 6, maxHeight: 200, overflowY: "auto", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{drawer.jobPostBody}</div></div>}
                   {drawer.links?.filter(l => l).length > 0 && <div><div className="field-label">Links</div>{drawer.links.map((l, i) => l && <a key={i} href={l} target="_blank" rel="noreferrer" style={{ display: "block", fontSize: 13, color: "var(--accent)", textDecoration: "none", marginBottom: 4 }}>{drawer.linkLabels?.[i] || l}</a>)}</div>}
                   {drawer.clientQuestions?.filter(q => q).length > 0 && <div><div className="field-label">Client Questions</div>{drawer.clientQuestions.filter(q => q).map((q, i) => <div key={i} style={{ fontSize: 13, padding: "6px 10px", background: "var(--surface)", borderRadius: 6, marginBottom: 4 }}>{q}</div>)}</div>}
                 </div>
