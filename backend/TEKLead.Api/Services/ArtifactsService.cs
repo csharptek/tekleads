@@ -355,9 +355,9 @@ Each bullet = one concrete technical decision with named technologies.
 No generic bullets like ""write clean code"".
 
 5. PORTFOLIO (1 item only)
-The single most industry-relevant project. One sentence + YouTube demo link if available in context.
+The single most industry-relevant project. One sentence + YouTube demo link.
 Format: [Project Name] — [one sentence why relevant]. Demo: [YouTube link]
-Only use YouTube Demo links from context. Never use any other link type. If no YouTube link exists, skip the link.
+MANDATORY: If context contains an AVAILABLE YOUTUBE DEMOS section, the Demo link MUST appear here. Only use YouTube Demo links from context, never any other link type. Only if context says NO YOUTUBE DEMOS AVAILABLE, skip the link.
 
 6. QUESTIONS (2 max)
 Smart, specific questions showing deep reading. Numbered.
@@ -381,7 +381,7 @@ PURPOSE OF THIS ARTIFACT: WhatsApp is personal space — this message must feel 
 
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Reference exactly ONE portfolio project, and it MUST match the CLIENT INDUSTRY from context if a match exists.
-- Link rule: ONLY use the YouTube Demo link from context. Never any other link. If no YouTube link exists, mention the project without a link.
+- Link rule: ONLY use YouTube Demo links from context. Never any other link. MANDATORY: if context contains an AVAILABLE YOUTUBE DEMOS section, Line 3 with the demo link MUST be present. Only skip the link if context says NO YOUTUBE DEMOS AVAILABLE.
 
 STRUCTURE:
 Line 1: Personal opener using their first name + one specific detail from their project/company (proves it's not spam).
@@ -409,7 +409,8 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Reference 1 (max 2) portfolio projects, and they MUST match the CLIENT INDUSTRY from context if a match exists.
-- Link rule: ONLY use YouTube Demo links from context, formatted as: Demo: [url]. Never any other link type. If no YouTube link, skip the link.
+- YOUTUBE LINK RULE (MANDATORY): If the context contains an AVAILABLE YOUTUBE DEMOS section, you MUST include exactly one demo link in Para 2, on the format: Demo: [url]. Prefer the demo of the project you referenced. Omitting the demo link when one is available is a FAILURE.
+- Never use any link type other than YouTube Demo links from context. If context says NO YOUTUBE DEMOS AVAILABLE, include no link.
 
 Proposal rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
@@ -426,7 +427,8 @@ Mirror their exact pain point. If deadline mentioned, acknowledge directly. Do N
 
 Para 2 — CREDIBILITY (1-2 sentences):
 The most industry-relevant past project with a specific outcome.
-Format: [What we built] — [measurable result]. Demo: [YouTube url if in context]
+Format: [What we built] — [measurable result]. Demo: [YouTube url]
+The Demo line is REQUIRED whenever AVAILABLE YOUTUBE DEMOS exists in context.
 
 Para 3 — APPROACH (2-3 sentences prose, no bullets):
 Brief how. Name specific technologies. Show the work is already scoped in Bhanu's head.
@@ -565,6 +567,18 @@ Return only the JSON. No preamble.";
                 if (!string.IsNullOrWhiteSpace(proj.Solution)) sb.AppendLine($"Solution: {proj.Solution}");
                 if (!string.IsNullOrWhiteSpace(proj.Outcomes)) sb.AppendLine($"Outcomes: {proj.Outcomes}");
                 if (!string.IsNullOrWhiteSpace(proj.YoutubeLinks)) sb.AppendLine($"YouTube Demo: {proj.YoutubeLinks}");
+            }
+
+            var demos = portfolio.Where(x => !string.IsNullOrWhiteSpace(x.YoutubeLinks)).ToList();
+            if (demos.Count > 0)
+            {
+                sb.AppendLine("\n## AVAILABLE YOUTUBE DEMOS (you MUST include exactly one of these as a Demo link)");
+                foreach (var d in demos)
+                    sb.AppendLine($"- {d.Title}: {d.YoutubeLinks}");
+            }
+            else
+            {
+                sb.AppendLine("\n## NO YOUTUBE DEMOS AVAILABLE — do not include any demo link.");
             }
         }
 

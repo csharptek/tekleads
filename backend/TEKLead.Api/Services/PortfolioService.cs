@@ -283,10 +283,11 @@ public class PortfolioService
                 rest.Add(p);
         }
 
-        // Industry-first ordering: matched projects lead, semantic order preserved within groups
+        // Industry-first ordering: matched projects lead; within groups, projects
+        // with YouTube demos float up (stable sort preserves semantic order otherwise)
         var ranked = new List<PortfolioProject>();
-        ranked.AddRange(matches);
-        ranked.AddRange(rest);
+        ranked.AddRange(matches.OrderByDescending(p => !string.IsNullOrWhiteSpace(p.YoutubeLinks)));
+        ranked.AddRange(rest.OrderByDescending(p => !string.IsNullOrWhiteSpace(p.YoutubeLinks)));
         return ranked.Take(topK).ToList();
     }
 
