@@ -114,13 +114,15 @@ public class ArtifactsService
         if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
             return Fail("Azure OpenAI not configured in Settings.");
 
-        // RAG: get relevant portfolio items (embedding may fail if not configured)
+        var companyCtx = await _companyCtx.GetByProposalId(proposal.Id);
+
+        // RAG: industry-first portfolio retrieval (embedding may fail if not configured)
         List<PortfolioProject> portfolioItems;
         try
         {
             var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
             if (query.Length > 500) query = query[..500];
-            portfolioItems = await _portfolio.SearchSimilar(query, topK: 3);
+            portfolioItems = await _portfolio.SearchSimilarSmart(query, companyCtx?.Industry, topK: 3);
         }
         catch
         {
@@ -129,12 +131,10 @@ public class ArtifactsService
         if (portfolioItems.Count == 0)
         {
             var all = await _portfolio.GetAll();
-            portfolioItems = all.Where(p => p.EmbeddingIndexed).Take(3).ToList();
+            portfolioItems = RankByIndustry(all.Where(p => p.EmbeddingIndexed).ToList(), companyCtx?.Industry, 3);
             if (portfolioItems.Count == 0)
-                portfolioItems = all.Take(3).ToList();
+                portfolioItems = RankByIndustry(all, companyCtx?.Industry, 3);
         }
-
-        var companyCtx = await _companyCtx.GetByProposalId(proposal.Id);
         var context = BuildContext(proposal, portfolioItems, companyCtx);
 
         var clPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
@@ -290,23 +290,24 @@ public class ArtifactsService
         if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
             return (null, null, null, null, new(), new(), "Azure OpenAI not configured in Settings.", null);
 
+        var company = await _companyCtx.GetByProposalId(proposal.Id);
+
         List<PortfolioProject> portfolioItems;
         try
         {
             var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
             if (query.Length > 500) query = query[..500];
-            portfolioItems = await _portfolio.SearchSimilar(query, topK: 3);
+            portfolioItems = await _portfolio.SearchSimilarSmart(query, company?.Industry, topK: 3);
         }
         catch { portfolioItems = new List<PortfolioProject>(); }
 
         if (portfolioItems.Count == 0)
         {
             var all = await _portfolio.GetAll();
-            portfolioItems = all.Where(p => p.EmbeddingIndexed).Take(3).ToList();
-            if (portfolioItems.Count == 0) portfolioItems = all.Take(3).ToList();
+            portfolioItems = RankByIndustry(all.Where(p => p.EmbeddingIndexed).ToList(), company?.Industry, 3);
+            if (portfolioItems.Count == 0) portfolioItems = RankByIndustry(all, company?.Industry, 3);
         }
 
-        var company = await _companyCtx.GetByProposalId(proposal.Id);
         return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null, company);
     }
 
@@ -322,39 +323,44 @@ public class ArtifactsService
 
     // ── Prompts ───────────────────────────────────────────────────────────────
 
-    public static string CoverLetterPrompt() => @"You are writing an Upwork cover letter on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
+    public static string CoverLetterPrompt() => @"You are writing an Upwork COVER LETTER on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
 
-TARGET LENGTH: 180-230 words total. Clients read on mobile. Every word must earn its place.
+PURPOSE OF THIS ARTIFACT: The cover letter is the FIRST IMPRESSION inside an Upwork job application. Its only job: make the client stop scrolling and shortlist Bhanu. It is read on mobile in under 30 seconds. It is NOT an email — no subject, no greeting line like a letter, no pricing.
+
+PORTFOLIO SELECTION RULE (CRITICAL):
+- Look at CLIENT INDUSTRY in context. Reference ONLY portfolio projects from the SAME or closest industry.
+- If the client is healthcare, reference healthcare projects. If fintech, fintech. Never reference an unrelated-industry project when an industry match exists in context.
+- Use maximum 1-2 projects, never all three.
+
+TARGET LENGTH: 180-230 words total. Every word must earn its place.
 
 STRUCTURE — follow this exact order, no section titles:
 
 1. HOOK (1 sentence)
-Restate the client's core problem back to them in your own words — prove you read it.
-Do NOT start with ""I"". Do NOT use ""I have reviewed"", ""I am writing to"", ""I'm excited"", ""I believe"".
-If COMPANY DETAILS are provided, weave in one specific detail (size, industry, product description) naturally.
+Restate the client's core problem back in your own words — prove you read it.
+Do NOT start with ""I"". Banned: ""I have reviewed"", ""I am writing to"", ""I'm excited"", ""I believe"".
+If COMPANY DETAILS exist, weave in one specific detail (industry, size, product) naturally.
 
 2. PROOF (1-2 sentences)
-One metric-backed outcome from a past project most relevant to their stack.
-Format: [What you built] — [measurable result or specific outcome].
-Use only real data from RELEVANT PORTFOLIO PROJECTS in context.
+One metric-backed outcome from the MOST INDUSTRY-RELEVANT past project.
+Format: [What you built] — [measurable result].
+Use only real data from RELEVANT PORTFOLIO PROJECTS in context. Never invent.
 
 3. DONE = (1 sentence)
-Write one clear acceptance criteria line in the client's own language.
+One acceptance criteria line in the client's language.
 Format: ""Done = [specific deliverable they can test/verify]""
 
 4. APPROACH (3 bullets)
 Each bullet = one concrete technical decision with named technologies.
-Each bullet must make the client think: ""he's already thought this through.""
-No generic bullets like ""write clean code"" or ""ensure scalability"".
+No generic bullets like ""write clean code"".
 
 5. PORTFOLIO (1 item only)
-The single most relevant project. One sentence + link.
-Format: [Project Name] — [one sentence why it's relevant]. [link if available]
-Do NOT list 3 projects. One sharp reference beats three generic ones.
+The single most industry-relevant project. One sentence + YouTube demo link if available in context.
+Format: [Project Name] — [one sentence why relevant]. Demo: [YouTube link]
+Only use YouTube Demo links from context. Never use any other link type. If no YouTube link exists, skip the link.
 
-6. QUESTIONS (2 questions max)
-Smart, specific questions that show deep reading.
-Numbered list.
+6. QUESTIONS (2 max)
+Smart, specific questions showing deep reading. Numbered.
 
 7. SIGN-OFF (1 line + name)
 ""I'm Bhanu Gupta — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
@@ -362,104 +368,143 @@ Then: ""Bhanu Gupta""
 
 RULES:
 - First person as Bhanu
-- Do NOT mention ""Csharptek"" or any company name of Bhanu
-- No filler: ""I am excited"", ""great fit"", ""passionate"", ""I'd love to"" — banned
-- Metrics over adjectives: ""reduced load time by 40%"" beats ""high-performance""
-- If no metric exists in portfolio context, describe a specific concrete outcome instead
-- Do NOT invent portfolio items or metrics — only use what context provides
+- Never mention ""Csharptek"" or any company name of Bhanu
+- Banned filler: ""I am excited"", ""great fit"", ""passionate"", ""I'd love to""
+- Metrics over adjectives
+- Never invent portfolio items, metrics, or links
 
 Return only the cover letter text. No preamble. No markdown.";
 
-    public static string WhatsappPrompt() => @"Write a short WhatsApp outreach message for a freelance software proposal.
+    public static string WhatsappPrompt() => @"Write a WhatsApp FIRST-TOUCH outreach message for a freelance software proposal.
 
-Rules:
-- Max 5-6 lines
-- Casual but professional tone
-- Mention their specific project in one sentence
-- One relevant portfolio reference with a link
-- End with a soft CTA: ""Happy to jump on a quick call — would that work?""
+PURPOSE OF THIS ARTIFACT: WhatsApp is personal space — this message must feel like a human reaching out, not a pitch. Its only job: earn a reply. NOT to sell, NOT to explain the full offer, NOT to share pricing. Shorter and more casual than the cover letter and proposal — those do the heavy lifting later.
+
+PORTFOLIO SELECTION RULE (CRITICAL):
+- Reference exactly ONE portfolio project, and it MUST match the CLIENT INDUSTRY from context if a match exists.
+- Link rule: ONLY use the YouTube Demo link from context. Never any other link. If no YouTube link exists, mention the project without a link.
+
+STRUCTURE:
+Line 1: Personal opener using their first name + one specific detail from their project/company (proves it's not spam).
+Line 2: One sentence — what Bhanu built for a similar client in THEIR industry + the concrete outcome.
+Line 3 (optional): YouTube demo link, bare, on its own line. Format: Demo: [link]
+Line 4: Soft CTA — ""Worth a quick 10-min call this week?"" or similar low-friction ask.
+
+RULES:
+- Max 4-5 lines, under 60 words total
+- Casual-professional tone, like texting a colleague
+- Max 1 emoji, or none
+- No pricing, no timeline, no bullet points
+- No greeting like ""Dear"" — use ""Hi [first name]""
 - Do not include any name or signature at the end
-- No bullet points, no emojis spam (max 1-2)
+- Never invent projects, outcomes, or links
 
 Return only the WhatsApp message text.";
 
-    public static string EmailPrompt() => @"You are writing an Upwork proposal on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
+    public static string EmailPrompt() => @"You are writing the MAIN PROPOSAL EMAIL on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.
+
+PURPOSE OF THIS ARTIFACT: This is the commercial document — the only artifact that talks money and commitment. The cover letter earns attention, WhatsApp earns a reply, THIS email closes toward a call or a yes. It must read like a confident contractor who has already scoped the work.
 
 Return ONLY valid JSON in this exact format (no markdown, no backticks):
 {""subject"": ""your subject line here"", ""body"": ""full proposal body here with \n for line breaks""}
 
+PORTFOLIO SELECTION RULE (CRITICAL):
+- Reference 1 (max 2) portfolio projects, and they MUST match the CLIENT INDUSTRY from context if a match exists.
+- Link rule: ONLY use YouTube Demo links from context, formatted as: Demo: [url]. Never any other link type. If no YouTube link, skip the link.
+
 Proposal rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
-- Subject: specific, 8-12 words, references their project
-- Body: 150-200 words MAX — short, direct, no fluff
-- Do NOT mention ""Csharptek"" or any company name of Bhanu
-- No filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"" — banned
-- Do not include any name or company signature at the end
+- Subject: specific, 8-12 words, references their project — not generic
+- Body: 150-200 words MAX
+- Never mention ""Csharptek"" or any company name of Bhanu
+- Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited""
+- No name or company signature at the end (system appends it)
 
-STRUCTURE — follow this exact order, no section titles:
+STRUCTURE — exact order, no section titles:
 
 Para 1 — HOOK (1-2 sentences):
-Mirror their exact pain point back — prove you read it. If deadline is mentioned, acknowledge it directly. Do NOT start with ""I"".
+Mirror their exact pain point. If deadline mentioned, acknowledge directly. Do NOT start with ""I"".
 
 Para 2 — CREDIBILITY (1-2 sentences):
-One relevant past project with a specific outcome. Use only real data from RELEVANT PORTFOLIO PROJECTS in context.
-Format: [What we built] — [specific measurable result]. If a YouTube Demo link exists, include it as: Demo: [url]
+The most industry-relevant past project with a specific outcome.
+Format: [What we built] — [measurable result]. Demo: [YouTube url if in context]
 
 Para 3 — APPROACH (2-3 sentences prose, no bullets):
-Brief how, not why. Name specific technologies. Must make client think: ""he's already thought this through.""
+Brief how. Name specific technologies. Show the work is already scoped in Bhanu's head.
 
 Para 4 — PRICING & CTA (2 sentences):
-Sentence 1 — pricing: Use exact figures from PROPOSAL PRICING & TIMELINE section. Format: ""[Phase]: ~[hours] hrs at $[rate]/hr — $[total]. Starting today.""
+Sentence 1 — pricing from PROPOSAL PRICING & TIMELINE section. Format: ""[Phase]: ~[hours] hrs at $[rate]/hr — $[total]. Starting today.""
 If no pricing set: ""Happy to share a detailed estimate on a call.""
-Sentence 2 — CTA: one clear next step, invites a reply.
+Sentence 2 — one clear next step that invites a reply.
 
 SCREENING ANSWERS (only if job post contains screening questions):
-Answer each question directly. One line per answer. Label each: ""[topic]: [answer]""
+Answer each directly, one line each: ""[topic]: [answer]""
 
 Pricing rules:
-- ALWAYS use price and timeline from PROPOSAL PRICING & TIMELINE section
-- If FinalPrice is set, use it as the exact fixed price
-- If only budget range provided, quote within that range
-- Never invent or hardcode a price";
+- ALWAYS use figures from PROPOSAL PRICING & TIMELINE
+- If FinalPrice set, use it as exact fixed price
+- If only budget range, quote within range
+- Never invent a price";
 
-    public static string FollowUp1Prompt() => @"Write a SHORT follow-up email (Follow-up #1) for a freelance software proposal. The initial cold email has already been sent — this is a gentle nudge sent 24 hours later.
+    public static string FollowUp1Prompt() => @"Write Follow-up #1 — a SHORT nudge email sent 24 hours after the initial proposal email.
+
+PURPOSE OF THIS ARTIFACT: Not a re-pitch. Its only job: resurface the thread with ONE new piece of value and make replying effortless. If it repeats the first email, it failed.
 
 Return ONLY valid JSON in this exact format (no markdown, no backticks):
 {""subject"": ""your subject line here"", ""body"": ""full email body here with \n for line breaks""}
 
-Email rules:
+Rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
-- Subject: write any placeholder — it will be automatically set to ""Re: <initial subject>"" by the system for inbox threading.
+- Subject: any placeholder — system sets ""Re: <initial subject>"" for threading
 - Body: MAX 2 short paragraphs, 60-100 words total
-- Paragraph 1: Acknowledge the initial email briefly, then add ONE piece of new value — either a fresh insight, a relevant portfolio link, or a clarifying question about their project. Reference the INITIAL EMAIL ALREADY SENT in context so this feels like a continuation, not a copy.
-- Paragraph 2: A clear, low-friction CTA — propose a 20-min call, or ask one direct question that's easy to reply to with one line.
-- Tone: friendly, confident, not pushy. No apologies (""sorry to bother you"").
-- Do not repeat pricing or timeline from the first email
-- Do not include a name signature in the body — the system appends a signature automatically
+- Paragraph 1: Reference the INITIAL EMAIL ALREADY SENT briefly, then add ONE new thing — a fresh insight about their problem, an industry-matched YouTube demo link (only from context), or one sharp clarifying question.
+- Paragraph 2: Low-friction CTA — propose a 20-min call or ask one question answerable in one line.
+- Tone: friendly, confident, not pushy. No apologies.
+- Do not repeat pricing or timeline
+- No name signature (system appends it)
+- Link rule: YouTube Demo links from context only, or no link
 
-Variables you can use in the body: {{name}}, {{first_name}}, {{email}} — only if natural.
+Variables allowed in body: {{name}}, {{first_name}}, {{email}} — only if natural.
 
 Return only the JSON. No preamble.";
 
-    public static string FollowUp2Prompt() => @"Write a final follow-up email (Follow-up #2) for a freelance software proposal. The initial email and Follow-up #1 have already been sent. This is the last nudge, sent 48 hours after the initial.
+    public static string FollowUp2Prompt() => @"Write Follow-up #2 — the FINAL nudge email, sent 48 hours after the initial proposal email. Initial email and Follow-up #1 already sent.
+
+PURPOSE OF THIS ARTIFACT: A graceful close of the loop. Its only job: get a yes/no decision while leaving the door open and Bhanu's positioning intact. Zero desperation.
 
 Return ONLY valid JSON in this exact format (no markdown, no backticks):
 {""subject"": ""your subject line here"", ""body"": ""full email body here with \n for line breaks""}
 
-Email rules:
+Rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
-- Subject: write any placeholder — it will be automatically set to ""Re: <initial subject>"" by the system for inbox threading.
+- Subject: any placeholder — system sets ""Re: <initial subject>"" for threading
 - Body: MAX 2 short paragraphs, 50-80 words total
-- Paragraph 1: Acknowledge this is the final follow-up. Briefly restate the core value you'd bring — one concrete outcome or a single relevant portfolio reference. Do not rehash the entire pitch.
-- Paragraph 2: A polite, definitive CTA — either ""Let me know if timing isn't right and I'll close this out"" or a soft yes/no question. Make it genuinely easy for them to walk away or say yes.
-- Tone: warm, respectful, zero desperation. No guilt, no urgency tactics.
-- Do not include a name signature in the body — the system appends a signature automatically
+- Paragraph 1: Acknowledge this is the last follow-up. Restate ONE concrete outcome Bhanu would deliver — ideally tied to their industry. Do not rehash the pitch. No new links unless an industry-matched YouTube demo exists in context and wasn't used before.
+- Paragraph 2: Definitive but polite CTA — ""Let me know if timing isn't right and I'll close this out"" or a soft yes/no question. Make walking away easy.
+- Tone: warm, respectful. No guilt, no urgency tactics.
+- No name signature (system appends it)
 
-Variables you can use in the body: {{name}}, {{first_name}}, {{email}} — only if natural.
+Variables allowed in body: {{name}}, {{first_name}}, {{email}} — only if natural.
 
 Return only the JSON. No preamble.";
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// Fallback ranking when AI Search is unavailable: industry-matched projects first.
+    private static List<PortfolioProject> RankByIndustry(List<PortfolioProject> items, string? industry, int topK)
+    {
+        if (string.IsNullOrWhiteSpace(industry) || items.Count == 0)
+            return items.Take(topK).ToList();
+
+        var ind = industry.ToLowerInvariant();
+        var matched = items.Where(p =>
+            (!string.IsNullOrWhiteSpace(p.Industry) &&
+                (p.Industry.ToLowerInvariant().Contains(ind) || ind.Contains(p.Industry.ToLowerInvariant()))) ||
+            p.Tags.Any(t => !string.IsNullOrWhiteSpace(t) &&
+                (t.ToLowerInvariant().Contains(ind) || ind.Contains(t.ToLowerInvariant())))).ToList();
+
+        var rest = items.Except(matched).ToList();
+        return matched.Concat(rest).Take(topK).ToList();
+    }
 
     private string BuildContext(Proposal p, List<PortfolioProject> portfolio, ProposalCompanyContext? company = null)
     {
@@ -483,6 +528,8 @@ Return only the JSON. No preamble.";
         if (company != null)
         {
             sb.AppendLine("\n## COMPANY DETAILS");
+            if (!string.IsNullOrWhiteSpace(company.Industry))
+                sb.AppendLine($"CLIENT INDUSTRY (prefer portfolio projects from this industry): {company.Industry}");
             if (!string.IsNullOrWhiteSpace(company.CompanyName))        sb.AppendLine($"Company: {company.CompanyName}");
             if (!string.IsNullOrWhiteSpace(company.Industry))           sb.AppendLine($"Industry: {company.Industry}");
             if (!string.IsNullOrWhiteSpace(company.EstimatedEmployees)) sb.AppendLine($"Employees: {company.EstimatedEmployees}");
@@ -517,7 +564,6 @@ Return only the JSON. No preamble.";
                 if (!string.IsNullOrWhiteSpace(proj.Problem))  sb.AppendLine($"Problem: {proj.Problem}");
                 if (!string.IsNullOrWhiteSpace(proj.Solution)) sb.AppendLine($"Solution: {proj.Solution}");
                 if (!string.IsNullOrWhiteSpace(proj.Outcomes)) sb.AppendLine($"Outcomes: {proj.Outcomes}");
-                if (!string.IsNullOrWhiteSpace(proj.Links))    sb.AppendLine($"Links: {proj.Links}");
                 if (!string.IsNullOrWhiteSpace(proj.YoutubeLinks)) sb.AppendLine($"YouTube Demo: {proj.YoutubeLinks}");
             }
         }

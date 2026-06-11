@@ -202,14 +202,19 @@ public class PortfolioService
 
         var url = $"{searchEp.TrimEnd('/')}/indexes/{searchIndex}/docs/search?api-version=2024-05-01-preview";
 
+        // Hybrid search: keyword + vector for better relevance
+        var searchText = query.Length > 200 ? query[..200] : query;
         var body = JsonSerializer.Serialize(new
         {
+            search = searchText,
+            queryType = "simple",
+            searchMode = "any",
             vectorQueries = new[]
             {
-                new { kind = "vector", vector = embedding, exhaustive = true, fields = "embedding", k = topK }
+                new { kind = "vector", vector = embedding, exhaustive = true, fields = "embedding", k = Math.Max(topK * 3, 10) }
             },
             select = "id,title,industry,tags,problem,solution,tech_stack,outcomes,links,youtube_links",
-            top = topK
+            top = Math.Max(topK * 3, 10)
         });
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
@@ -245,7 +250,79 @@ public class PortfolioService
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         results = results.Where(r => seen.Add(r.Title)).ToList();
 
-        return results;
+        return results.Take(topK).ToList();
+    }
+
+    /// <summary>
+    /// Industry-aware portfolio retrieval.
+    /// Pulls a wide hybrid-search pool, then re-ranks so projects whose industry
+    /// matches the target industry come first. Guarantees at most topK results,
+    /// with industry matches prioritised (1-2 industry matches + best semantic rest).
+    /// </summary>
+    public async Task<List<PortfolioProject>> SearchSimilarSmart(string query, string? industry, int topK = 3)
+    {
+        // Wide pool via hybrid search
+        var pool = await SearchSimilar(query, topK: 10);
+        if (pool.Count == 0) return pool;
+
+        if (string.IsNullOrWhiteSpace(industry))
+            return pool.Take(topK).ToList();
+
+        var industryTokens = Tokenize(industry);
+        if (industryTokens.Count == 0)
+            return pool.Take(topK).ToList();
+
+        var matches = new List<PortfolioProject>();
+        var rest    = new List<PortfolioProject>();
+
+        foreach (var p in pool)
+        {
+            if (IndustryMatches(industryTokens, p))
+                matches.Add(p);
+            else
+                rest.Add(p);
+        }
+
+        // Industry-first ordering: matched projects lead, semantic order preserved within groups
+        var ranked = new List<PortfolioProject>();
+        ranked.AddRange(matches);
+        ranked.AddRange(rest);
+        return ranked.Take(topK).ToList();
+    }
+
+    private static bool IndustryMatches(HashSet<string> industryTokens, PortfolioProject p)
+    {
+        var projTokens = Tokenize(p.Industry);
+        foreach (var t in p.Tags) foreach (var tt in Tokenize(t)) projTokens.Add(tt);
+
+        foreach (var tok in industryTokens)
+            if (projTokens.Contains(tok)) return true;
+
+        // Substring fallback: "healthcare" vs "health"
+        foreach (var a in industryTokens)
+            foreach (var b in projTokens)
+                if (a.Length >= 4 && b.Length >= 4 && (a.Contains(b) || b.Contains(a)))
+                    return true;
+
+        return false;
+    }
+
+    private static readonly HashSet<string> IndustryStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "and", "the", "of", "for", "services", "service", "industry", "industries",
+        "solutions", "company", "companies", "inc", "llc", "ltd", "other", "general"
+    };
+
+    private static HashSet<string> Tokenize(string? text)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(text)) return set;
+        foreach (var raw in System.Text.RegularExpressions.Regex.Split(text.ToLowerInvariant(), @"[^a-z0-9]+"))
+        {
+            var w = raw.Trim();
+            if (w.Length >= 3 && !IndustryStopWords.Contains(w)) set.Add(w);
+        }
+        return set;
     }
 
     // ── Document Extraction ───────────────────────────────────────────────────
