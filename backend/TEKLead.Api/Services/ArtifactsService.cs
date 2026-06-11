@@ -619,7 +619,15 @@ Return only the JSON. No preamble.";
         var url = $"{endpoint.TrimEnd('/')}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01";
         // Prepend a compact YouTube reminder directly into the user turn —
         // models attend most strongly to the end of the user message.
-        var ytSection = context.Contains("AVAILABLE YOUTUBE DEMOS")
+        var hasYtDemos = context.Contains("AVAILABLE YOUTUBE DEMOS");
+        _log.LogInformation("CallAI: hasYoutubeDemos={0}, contextLen={1}, contextSnippet={2}",
+            hasYtDemos,
+            context.Length,
+            context.Contains("AVAILABLE YOUTUBE DEMOS")
+                ? context.Substring(context.IndexOf("AVAILABLE YOUTUBE DEMOS"), Math.Min(300, context.Length - context.IndexOf("AVAILABLE YOUTUBE DEMOS")))
+                : "(no demos block)");
+
+        var ytSection = hasYtDemos
             ? "IMPORTANT: The context below contains an AVAILABLE YOUTUBE DEMOS section. You MUST include exactly one of those YouTube URLs as a Demo link in your output. Do not omit it.\n\n"
             : "IMPORTANT: No YouTube demo links are available in the context. Do not invent or include any links.\n\n";
 
@@ -643,8 +651,52 @@ Return only the JSON. No preamble.";
             .GetProperty("content")
             .GetString() ?? "";
         text = text.Replace("**", "");
+
+        // Post-inject: if context had YouTube demos but model skipped them, append
+        text = EnsureYouTubeLinks(text, context);
+
         _log.LogInformation("CallAI result length: {0}, first 200: {1}", text.Length, text.Length > 200 ? text[..200] : text);
         return text;
+    }
+
+    /// <summary>
+    /// If the context contained YouTube demo links but the model output contains none,
+    /// append them directly so they always appear.
+    /// </summary>
+    private static string EnsureYouTubeLinks(string output, string context)
+    {
+        // Parse available demos from context block
+        var demos = new List<(string title, string url)>();
+        var inBlock = false;
+        foreach (var line in context.Split('\n'))
+        {
+            if (line.Contains("AVAILABLE YOUTUBE DEMOS")) { inBlock = true; continue; }
+            if (inBlock)
+            {
+                if (line.TrimStart().StartsWith("##") || line.TrimStart().StartsWith("IMPORTANT")) break;
+                // Format: "- Title: url"
+                var trimmed = line.TrimStart('-', ' ');
+                var colon = trimmed.IndexOf(": http");
+                if (colon > 0)
+                    demos.Add((trimmed[..colon].Trim(), trimmed[(colon + 2)..].Trim()));
+            }
+        }
+
+        if (demos.Count == 0) return output;
+
+        // Check if any YouTube URL already in output
+        foreach (var (_, url) in demos)
+            if (output.Contains(url)) return output; // already there
+
+        // Model skipped — append demo section
+        var sb = new StringBuilder(output.TrimEnd());
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("Demo" + (demos.Count > 1 ? "s" : "") + ":");
+        foreach (var (title, url) in demos)
+            sb.AppendLine($"- {title}: {url}");
+
+        return sb.ToString();
     }
 
     private (string subject, string body) ParseEmail(string raw)
