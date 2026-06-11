@@ -96,17 +96,23 @@ export default function PortfolioView() {
   function startEdit(p: Project) {
     setEditId(p.id);
     setJustSavedId(null);
-    const linksArr = Array.isArray(p.links)
+    const allLinks = Array.isArray(p.links)
       ? p.links
-      : (typeof p.links === "string" && p.links ? p.links.split("\n").filter(Boolean) : [""]);
-    const ytLinksArr = Array.isArray(p.youtubeLinks)
+      : (typeof p.links === "string" && p.links ? p.links.split("\n").filter(Boolean) : []);
+    const existingYt = Array.isArray(p.youtubeLinks)
       ? p.youtubeLinks
-      : (typeof p.youtubeLinks === "string" && p.youtubeLinks ? p.youtubeLinks.split("\n").filter(Boolean) : [""]);
+      : (typeof p.youtubeLinks === "string" && p.youtubeLinks ? p.youtubeLinks.split("\n").filter(Boolean) : []);
+    // Auto-migrate: move YouTube URLs from links → youtubeLinks
+    const isYt = (u: string) => u.includes("youtu.be") || u.includes("youtube.com");
+    const migratedYt = [...new Set([...existingYt, ...allLinks.filter(isYt)])].filter(Boolean);
+    const otherLinks = allLinks.filter(l => !isYt(l));
+    const linksArr = otherLinks.length ? otherLinks : [""];
+    const ytLinksArr = migratedYt.length ? migratedYt : [""];
     setForm({
       title: p.title, industry: p.industry, tags: p.tags, problem: p.problem,
       solution: p.solution, techStack: p.techStack, outcomes: p.outcomes,
-      links: linksArr.length ? linksArr : [""],
-      youtubeLinks: ytLinksArr.length ? ytLinksArr : [""],
+      links: linksArr,
+      youtubeLinks: ytLinksArr,
     });
     setShowForm(true);
     setTimeout(() => {
@@ -305,7 +311,27 @@ export default function PortfolioView() {
                 <input className="input" value={form.outcomes} onChange={e => f("outcomes")(e.target.value)} placeholder="e.g. 40% cost reduction" />
               </div>
               <div className="full">
-                <div className="field-label">Links</div>
+                <div className="field-label">YouTube Demo Links</div>
+                {form.youtubeLinks.map((link, i) => (
+                  <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                    <span style={{ fontSize: 16 }}>▶</span>
+                    <input className="input" style={{ flex: 1 }} value={link}
+                      onChange={e => {
+                        const arr = [...form.youtubeLinks]; arr[i] = e.target.value;
+                        setForm(p => ({ ...p, youtubeLinks: arr }));
+                      }}
+                      placeholder="https://youtu.be/..." />
+                    {form.youtubeLinks.length > 1 && (
+                      <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)" }}
+                        onClick={() => setForm(p => ({ ...p, youtubeLinks: p.youtubeLinks.filter((_, j) => j !== i) }))}>✕</button>
+                    )}
+                  </div>
+                ))}
+                <button className="btn btn-ghost btn-sm" style={{ marginTop: 2 }}
+                  onClick={() => setForm(p => ({ ...p, youtubeLinks: [...p.youtubeLinks, ""] }))}>+ Add YouTube Link</button>
+              </div>
+              <div className="full">
+                <div className="field-label">Other Links</div>
                 {form.links.map((link, i) => (
                   <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
                     <input className="input" style={{ flex: 1 }} value={link}
