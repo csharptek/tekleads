@@ -250,7 +250,37 @@ public class PortfolioService
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         results = results.Where(r => seen.Add(r.Title)).ToList();
 
+        // Hydrate from PostgreSQL — index docs can be stale (e.g. YouTube links
+        // added after last re-index). PG is source of truth; search order kept.
+        results = await HydrateFromDb(results);
+
         return results.Take(topK).ToList();
+    }
+
+    private async Task<List<PortfolioProject>> HydrateFromDb(List<PortfolioProject> hits)
+    {
+        if (hits.Count == 0) return hits;
+        try
+        {
+            var cs = _settings.ConnectionString;
+            if (string.IsNullOrEmpty(cs)) return hits;
+
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+
+            var ids = hits.Select(h => h.Id).ToArray();
+            var rows = await c.QueryAsync<dynamic>(
+                "SELECT * FROM portfolio_projects WHERE id = ANY(@ids)", new { ids });
+
+            var fresh = rows.Select(Map).Cast<PortfolioProject>().ToDictionary(p => p.Id, p => p);
+
+            // Preserve search relevance order; swap in fresh DB record when found
+            return hits.Select(h => fresh.TryGetValue(h.Id, out var f) ? f : h).ToList();
+        }
+        catch
+        {
+            return hits; // never break search on hydration failure
+        }
     }
 
     /// <summary>
@@ -539,6 +569,26 @@ DOCUMENT:
             .EnumerateArray()
             .Select(v => v.GetSingle())
             .ToArray();
+    }
+
+    public async Task<(bool ok, string message)> RecreateSearchIndex()
+    {
+        var settings = await _settings.GetAll();
+        var searchEp    = settings.GetValueOrDefault(SettingKeys.AzureSearchEndpoint, "");
+        var searchKey   = settings.GetValueOrDefault(SettingKeys.AzureSearchKey, "");
+        var searchIndex = settings.GetValueOrDefault(SettingKeys.AzureSearchIndex, "portfolio");
+        if (string.IsNullOrWhiteSpace(searchEp) || string.IsNullOrWhiteSpace(searchKey))
+            return (false, "Azure Search not configured.");
+        try
+        {
+            var client = _http.CreateClient();
+            client.DefaultRequestHeaders.Add("api-key", searchKey);
+            var delUrl = $"{searchEp.TrimEnd('/')}/indexes/{searchIndex}?api-version=2024-05-01-preview";
+            await client.DeleteAsync(delUrl); // ignore if not exists
+            await EnsureSearchIndex(searchEp, searchKey, searchIndex);
+            return (true, $"Index '{searchIndex}' recreated with latest schema.");
+        }
+        catch (Exception ex) { return (false, ex.Message); }
     }
 
     private async Task EnsureSearchIndex(string endpoint, string key, string indexName)

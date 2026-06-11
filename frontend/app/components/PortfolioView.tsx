@@ -63,6 +63,7 @@ export default function PortfolioView() {
   const [loading, setLoading] = useState(false);
   const [indexingId, setIndexingId] = useState<string | null>(null);
   const [reindexingAll, setReindexingAll] = useState(false);
+  const [recreatingIndex, setRecreatingIndex] = useState(false);
   const [banner, setBanner] = useState<{ kind: "error" | "success" | "info"; text: string } | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -184,6 +185,17 @@ export default function PortfolioView() {
     } catch (e: any) { setBanner({ kind: "error", text: e.message }); }
   }
 
+  async function handleRecreateIndex() {
+    if (!confirm("This will delete and recreate the Azure Search index with the latest schema. All projects will need to be re-indexed after. Continue?")) return;
+    setRecreatingIndex(true);
+    try {
+      const res = await api.post<{ ok: boolean; message: string }>("/api/portfolio/recreate-index", {});
+      setBanner({ kind: res.ok ? "success" : "error", text: res.message });
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setRecreatingIndex(false); }
+  }
+
   async function handleReindexAll() {
     setReindexingAll(true);
     setBanner(null);
@@ -265,6 +277,9 @@ export default function PortfolioView() {
             onChange={e => { const fl = e.target.files?.[0]; if (fl) handleExtract(fl); e.target.value = ""; }} />
           <button className="btn btn-ghost" disabled={extracting} onClick={() => fileRef.current?.click()}>
             {extracting ? <><span className="spinner spinner-dark" /> Extracting…</> : "↑ Upload & Extract"}
+          </button>
+          <button className="btn btn-ghost" disabled={recreatingIndex} onClick={handleRecreateIndex} title="Delete & recreate Azure Search index with latest schema">
+            {recreatingIndex ? <><span className="spinner spinner-dark" /> Recreating…</> : "⚙ Recreate Index"}
           </button>
           <button className="btn btn-ghost" disabled={reindexingAll || projects.length === 0} onClick={handleReindexAll}>
             {reindexingAll ? <><span className="spinner spinner-dark" /> Re-indexing…</> : "↺ Re-index All"}

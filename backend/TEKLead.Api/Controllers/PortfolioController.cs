@@ -57,6 +57,13 @@ public class PortfolioController : ControllerBase
         return Ok(new { ok = true });
     }
 
+    [HttpPost("recreate-index")]
+    public async Task<IActionResult> RecreateIndex()
+    {
+        var (ok, message) = await _svc.RecreateSearchIndex();
+        return ok ? Ok(new { ok, message }) : BadRequest(new { ok, message });
+    }
+
     [HttpPost("{id:guid}/index")]
     public async Task<IActionResult> IndexEmbedding(Guid id)
     {
