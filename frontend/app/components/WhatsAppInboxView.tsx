@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { api, API_BASE } from "../../lib/api";
 
 function proxyMedia(url: string | null) {
@@ -48,6 +48,8 @@ interface Props {
   inboxType?: "sales" | "hr" | "contacts";
 }
 
+type LeftTab = "all" | "hot";
+
 function fmtTime(iso: string) {
   const d = new Date(iso);
   const now = new Date();
@@ -68,7 +70,6 @@ function dateGroupLabel(iso: string) {
   return d.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" });
 }
 
-// WhatsApp-style status ticks
 function StatusTick({ status }: { status: string | null }) {
   if (!status) return null;
   if (status === "failed" || status === "undelivered") {
@@ -109,7 +110,13 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
   const [searchQ, setSearchQ] = useState("");
   const [searchResults, setSearchResults] = useState<Thread[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [leftTab, setLeftTab] = useState<LeftTab>("all");
+  const [textareaHeight, setTextareaHeight] = useState(60);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartY = useRef(0);
+  const resizeStartH = useRef(0);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -121,7 +128,7 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  const loadInbox = async (resetPage = true) => {
+  const loadInbox = useCallback(async (resetPage = true) => {
     const p = resetPage ? 1 : page;
     if (resetPage) setLoading(true);
     try {
@@ -131,14 +138,14 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
           setThreads(data.items || []);
           setPage(1);
         } else {
-          setThreads(prev => [...prev, ...(data.items || [])]);
+          setThreads((prev: Thread[]) => [...prev, ...(data.items || [])]);
         }
         setTotal(data.total);
         setHasMore(data.hasMore);
       }
     } catch { }
     setLoading(false);
-  };
+  }, [inboxType, page]);
 
   const loadMore = async () => {
     setLoadingMore(true);
@@ -146,7 +153,7 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
     try {
       const data = await api.get<InboxPage>(`/api/whatsapp/inbox?inbox=${inboxType}&page=${nextPage}&pageSize=50`);
       if (data) {
-        setThreads(prev => [...prev, ...(data.items || [])]);
+        setThreads((prev: Thread[]) => [...prev, ...(data.items || [])]);
         setPage(nextPage);
         setHasMore(data.hasMore);
         setTotal(data.total);
@@ -164,7 +171,17 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
     setMsgLoading(false);
   };
 
-  useEffect(() => { loadInbox(); }, [inboxType]);
+  // Initial load + auto-refresh every 120s
+  useEffect(() => {
+    loadInbox(true);
+    if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+    autoRefreshRef.current = setInterval(() => {
+      loadInbox(true);
+    }, 120000);
+    return () => {
+      if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+    };
+  }, [inboxType]);
 
   useEffect(() => {
     if (selected) loadConversation(selected.phone);
@@ -189,12 +206,35 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
     }, 400);
   }, [searchQ, showSearch, inboxType]);
 
+  // Textarea resize drag
+  const onResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    resizeStartY.current = e.clientY;
+    resizeStartH.current = textareaHeight;
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const onMove = (e: MouseEvent) => {
+      const delta = resizeStartY.current - e.clientY;
+      const newH = Math.min(300, Math.max(40, resizeStartH.current + delta));
+      setTextareaHeight(newH);
+    };
+    const onUp = () => setIsResizing(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isResizing]);
+
   const toggleHotLead = async (t: Thread, isHot: boolean) => {
     try {
       await api.patch(`/api/whatsapp/conversations/${t.phone}/hot-lead`, { isHot });
-      // Update local state
-      setThreads(prev => prev.map(x => x.phone === t.phone ? { ...x, isHotLead: isHot } : x));
-      if (selected?.phone === t.phone) setSelected(s => s ? { ...s, isHotLead: isHot } : s);
+      setThreads((prev: Thread[]) => prev.map((x: Thread) => x.phone === t.phone ? { ...x, isHotLead: isHot } : x));
+      if (selected?.phone === t.phone) setSelected((s: Thread | null) => s ? { ...s, isHotLead: isHot } : s);
     } catch { }
   };
 
@@ -243,7 +283,6 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
     setSending(false);
   };
 
-  // Group non-hot threads by date
   const hotThreads = threads.filter(t => t.isHotLead);
   const normalThreads = threads.filter(t => !t.isHotLead);
 
@@ -254,8 +293,6 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
     if (existing) existing.items.push(t);
     else groupedNormal.push({ label, items: [t] });
   }
-
-  const displayThreads = searchResults !== null ? searchResults : null;
 
   const renderThread = (t: Thread, showHotControls = false) => (
     <div key={t.phone}
@@ -301,18 +338,31 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
     </div>
   );
 
+  const tabStyle = (active: boolean): Record<string, unknown> => ({
+    flex: 1,
+    padding: "7px 0",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    border: "none",
+    background: "none",
+    borderBottom: active ? "2px solid var(--primary, #6366f1)" : "2px solid transparent",
+    color: active ? "var(--primary, #6366f1)" : "var(--muted)",
+    transition: "all 0.15s",
+  });
+
   return (
     <div className="page" style={{ padding: 0, display: "flex", height: "100%", overflow: "hidden" }}>
       {/* Thread list */}
       <div style={{ width: isMobile ? "100%" : 300, minWidth: isMobile ? "unset" : 240, borderRight: "1px solid var(--border)", display: isMobile && selected ? "none" : "flex", flexDirection: "column", background: "var(--surface)" }}>
         {/* Header */}
-        <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showSearch ? 8 : 0 }}>
+        <div style={{ padding: "14px 14px 0", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showSearch ? 8 : 4 }}>
             <div>
               <div className="page-title" style={{ fontSize: 15, margin: 0 }}>
                 {inboxType === "hr" ? "HR Inbox" : inboxType === "contacts" ? "Contacts WA Inbox" : "WA Inbox"}
               </div>
-              <div className="page-sub" style={{ fontSize: 11 }}>{total} conversations</div>
+              <div className="page-sub" style={{ fontSize: 11 }}>{total} conversations · auto-refresh 2m</div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button
@@ -336,12 +386,22 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
             <input
               ref={searchInputRef}
               className="input"
-              style={{ width: "100%", fontSize: 12, boxSizing: "border-box", padding: "6px 10px" }}
+              style={{ width: "100%", fontSize: 12, boxSizing: "border-box", padding: "6px 10px", marginBottom: 8 }}
               placeholder="Search name or number…"
               value={searchQ}
               onChange={e => setSearchQ(e.target.value)}
             />
           )}
+
+          {/* Tab bar */}
+          <div style={{ display: "flex", marginTop: 2 }}>
+            <button style={tabStyle(leftTab === "all")} onClick={() => setLeftTab("all")}>
+              All
+            </button>
+            <button style={tabStyle(leftTab === "hot")} onClick={() => setLeftTab("hot")}>
+              🔥 Hot {hotThreads.length > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: 999, fontSize: 9, padding: "1px 5px", marginLeft: 3, fontWeight: 700 }}>{hotThreads.length}</span>}
+            </button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto" }}>
@@ -358,16 +418,28 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
             </>
           )}
 
-          {/* Normal inbox (when not searching) */}
-          {!(showSearch && searchQ.trim()) && !loading && threads.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              No messages yet.<br />Send a template from Artifacts to get started.
-            </div>
+          {/* HOT tab */}
+          {!(showSearch && searchQ.trim()) && !loading && leftTab === "hot" && (
+            <>
+              {hotThreads.length === 0 && (
+                <div style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                  No hot leads yet.<br />Mark contacts 🔥 from a conversation.
+                </div>
+              )}
+              {hotThreads.map(t => renderThread(t, true))}
+            </>
           )}
 
-          {!(showSearch && searchQ.trim()) && !loading && (
+          {/* ALL tab */}
+          {!(showSearch && searchQ.trim()) && !loading && leftTab === "all" && (
             <>
-              {/* Hot Leads section */}
+              {threads.length === 0 && (
+                <div style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                  No messages yet.<br />Send a template from Artifacts to get started.
+                </div>
+              )}
+
+              {/* Hot section inside All tab */}
               {hotThreads.length > 0 && (
                 <>
                   <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 700, color: "#ef4444", borderBottom: "1px solid var(--border)", background: "#fff7f7", letterSpacing: "0.04em" }}>
@@ -509,60 +581,79 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
             </div>
 
             {/* Reply box */}
-            <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
-              {sendResult && (
-                <div className={`banner ${sendResult.ok ? "banner-success" : "banner-error"}`} style={{ marginBottom: 8, fontSize: 12 }}>
-                  {sendResult.ok ? "✓ " : "✗ "}{sendResult.msg}
-                </div>
-              )}
-              {showAttach && (
-                <div style={{ marginBottom: 10, padding: 12, background: "#f8fafc", border: "1px solid var(--border)", borderRadius: 8 }}>
-                  <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
-                    <select className="input" style={{ width: 120, fontSize: 12, padding: "4px 8px" }} value={attachType} onChange={e => setAttachType(e.target.value)}>
-                      <option value="document">Document</option>
-                      <option value="image">Image</option>
-                      <option value="video">Video</option>
-                      <option value="audio">Audio</option>
-                    </select>
-                    <input ref={attachInputRef} type="file"
-                      accept={attachType === "image" ? "image/*" : attachType === "video" ? "video/*" : attachType === "audio" ? "audio/*" : ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
-                      onChange={e => setAttachFile(e.target.files?.[0] ?? null)}
-                      style={{ flex: 1, fontSize: 12 }}
-                    />
-                  </div>
-                  {(attachType === "document" || attachType === "image") && (
-                    <div style={{ marginBottom: 8 }}>
-                      <input className="input" style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }} placeholder="Caption (optional)" value={attachCaption} onChange={e => setAttachCaption(e.target.value)} />
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    {attachFile && <span style={{ fontSize: 11, color: "var(--muted)", alignSelf: "center", flex: 1 }}>{attachFile.name} ({(attachFile.size / 1024).toFixed(0)} KB)</span>}
-                    <button className="btn btn-sm btn-primary" onClick={sendAttachment} disabled={sending || !attachFile}>{attachUploading ? "Uploading…" : sending ? "Sending…" : "Send"}</button>
-                    <button className="btn btn-sm" onClick={() => { setShowAttach(false); setAttachFile(null); if (attachInputRef.current) attachInputRef.current.value = ""; }} style={{ fontSize: 11 }}>Cancel</button>
-                  </div>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 8 }}>
-                <div style={{ flex: 1, position: "relative" }}>
-                  <textarea className="input"
-                    style={{ width: "100%", minHeight: 60, resize: "none", fontSize: 13, paddingRight: 36, boxSizing: "border-box" }}
-                    placeholder="Type a reply… (only works within 24hr reply window)"
-                    value={replyText}
-                    onChange={e => setReplyText(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply("text"); } }}
-                  />
-                  <button onClick={() => { setShowAttach(v => !v); setSendResult(null); }} title="Send attachment"
-                    style={{ position: "absolute", bottom: 8, right: 8, background: "none", border: "none", cursor: "pointer", color: showAttach ? "#6366f1" : "var(--muted)", padding: 2, lineHeight: 1, transition: "color 0.15s" }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                  </button>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <button className="btn btn-sm btn-primary" onClick={() => sendReply("text")} disabled={sending || !replyText.trim()}>{sending ? "…" : "Send"}</button>
-                  <button className="btn btn-sm" onClick={() => sendReply("template")} disabled={sending} style={{ background: "#128C7E", color: "white", border: "none", fontSize: 11 }} title="Send csharptek_intro_v2 template">Template</button>
-                </div>
+            <div style={{ borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
+              {/* Resize handle */}
+              <div
+                onMouseDown={onResizeMouseDown}
+                style={{
+                  height: 6,
+                  cursor: "ns-resize",
+                  background: isResizing ? "var(--primary, #6366f1)" : "var(--border)",
+                  transition: "background 0.15s",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                title="Drag to resize"
+              >
+                <div style={{ width: 32, height: 2, borderRadius: 2, background: isResizing ? "white" : "var(--muted)", opacity: 0.5 }} />
               </div>
-              <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 6 }}>
-                Free-form text only works within 24hr after recipient replies.
+
+              <div style={{ padding: "8px 20px 12px" }}>
+                {sendResult && (
+                  <div className={`banner ${sendResult.ok ? "banner-success" : "banner-error"}`} style={{ marginBottom: 8, fontSize: 12 }}>
+                    {sendResult.ok ? "✓ " : "✗ "}{sendResult.msg}
+                  </div>
+                )}
+                {showAttach && (
+                  <div style={{ marginBottom: 10, padding: 12, background: "#f8fafc", border: "1px solid var(--border)", borderRadius: 8 }}>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                      <select className="input" style={{ width: 120, fontSize: 12, padding: "4px 8px" }} value={attachType} onChange={e => setAttachType(e.target.value)}>
+                        <option value="document">Document</option>
+                        <option value="image">Image</option>
+                        <option value="video">Video</option>
+                        <option value="audio">Audio</option>
+                      </select>
+                      <input ref={attachInputRef} type="file"
+                        accept={attachType === "image" ? "image/*" : attachType === "video" ? "video/*" : attachType === "audio" ? "audio/*" : ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+                        onChange={e => setAttachFile(e.target.files?.[0] ?? null)}
+                        style={{ flex: 1, fontSize: 12 }}
+                      />
+                    </div>
+                    {(attachType === "document" || attachType === "image") && (
+                      <div style={{ marginBottom: 8 }}>
+                        <input className="input" style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }} placeholder="Caption (optional)" value={attachCaption} onChange={e => setAttachCaption(e.target.value)} />
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      {attachFile && <span style={{ fontSize: 11, color: "var(--muted)", alignSelf: "center", flex: 1 }}>{attachFile.name} ({(attachFile.size / 1024).toFixed(0)} KB)</span>}
+                      <button className="btn btn-sm btn-primary" onClick={sendAttachment} disabled={sending || !attachFile}>{attachUploading ? "Uploading…" : sending ? "Sending…" : "Send"}</button>
+                      <button className="btn btn-sm" onClick={() => { setShowAttach(false); setAttachFile(null); if (attachInputRef.current) attachInputRef.current.value = ""; }} style={{ fontSize: 11 }}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ flex: 1, position: "relative" }}>
+                    <textarea className="input"
+                      style={{ width: "100%", height: textareaHeight, resize: "none", fontSize: 13, paddingRight: 36, boxSizing: "border-box" }}
+                      placeholder="Type a reply… (only works within 24hr reply window)"
+                      value={replyText}
+                      onChange={e => setReplyText(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply("text"); } }}
+                    />
+                    <button onClick={() => { setShowAttach(v => !v); setSendResult(null); }} title="Send attachment"
+                      style={{ position: "absolute", bottom: 8, right: 8, background: "none", border: "none", cursor: "pointer", color: showAttach ? "#6366f1" : "var(--muted)", padding: 2, lineHeight: 1, transition: "color 0.15s" }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <button className="btn btn-sm btn-primary" onClick={() => sendReply("text")} disabled={sending || !replyText.trim()}>{sending ? "…" : "Send"}</button>
+                    <button className="btn btn-sm" onClick={() => sendReply("template")} disabled={sending} style={{ background: "#128C7E", color: "white", border: "none", fontSize: 11 }} title="Send csharptek_intro_v2 template">Template</button>
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 6 }}>
+                  Free-form text only works within 24hr after recipient replies.
+                </div>
               </div>
             </div>
           </>
