@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from "react";
 import { api } from "../../lib/api";
 
+type UsedPortfolioItem = { title: string; industry: string; youtubeLinks: string; hasYoutubeLink: boolean; };
+
 type Artifacts = {
   coverLetter?: string;
   whatsappMessage?: string;
@@ -90,6 +92,7 @@ export default function ArtifactsView({
   const [artifacts, setArtifacts] = useState<Artifacts>({});
   const [generating, setGenerating] = useState<GeneratingState>({ coverLetter: false, whatsapp: false, email: false, followUp1: false, followUp2: false });
   const [errors, setErrors] = useState<ErrorState>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
+  const [usedProjects, setUsedProjects] = useState<UsedPortfolioItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [defaultPrompts, setDefaultPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
   const [customPrompts, setCustomPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
@@ -229,6 +232,7 @@ export default function ArtifactsView({
         if (stateKey2 && resKey2) u[stateKey2] = res[resKey2];
         return u;
       });
+      if (res.usedProjects?.length) setUsedProjects(res.usedProjects);
     } catch (e: any) {
       setErrors(er => ({ ...er, [type]: (e as any).message }));
     } finally {
@@ -480,6 +484,48 @@ export default function ArtifactsView({
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.5" style={{ marginBottom: 12 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           <div style={{ fontSize: 14, color: "var(--muted)", marginBottom: 16 }}>No artifacts generated yet for this proposal</div>
           <button className="btn btn-primary" onClick={generateAll}>Generate All Artifacts</button>
+        </div>
+      )}
+
+      {/* Portfolio used in artifacts */}
+      {usedProjects.length > 0 && (
+        <div style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--card)" }}>
+          <div style={{ padding: "10px 16px", background: "var(--accent-light)", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600, color: "var(--accent-text)" }}>
+            📁 Portfolio projects used to generate these artifacts
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "var(--surface)" }}>
+                  <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Project</th>
+                  <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Industry</th>
+                  <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>YouTube Demo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usedProjects.map((p, i) => (
+                  <tr key={i} style={{ borderBottom: i < usedProjects.length - 1 ? "1px solid var(--border)" : "none" }}>
+                    <td style={{ padding: "8px 14px", fontWeight: 500 }}>{p.title}</td>
+                    <td style={{ padding: "8px 14px", color: "var(--muted)" }}>{p.industry || "—"}</td>
+                    <td style={{ padding: "8px 14px" }}>
+                      {p.hasYoutubeLink
+                        ? <a href={p.youtubeLinks} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "underline", wordBreak: "break-all" }}>{p.youtubeLinks}</a>
+                        : <span style={{ color: "var(--red)", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            No YouTube link — please update this portfolio item
+                          </span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {usedProjects.some(p => !p.hasYoutubeLink) && (
+            <div style={{ padding: "10px 16px", background: "#fff7ed", borderTop: "1px solid #fed7aa", color: "#c2410c", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              One or more projects above are missing a YouTube demo link. The AI could not include a demo in the generated artifacts. Go to Portfolio to add YouTube links.
+            </div>
+          )}
         </div>
       )}
 

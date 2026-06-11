@@ -6,6 +6,14 @@ using TEKLead.Api.Models;
 
 namespace TEKLead.Api.Services;
 
+public class UsedPortfolioItem
+{
+    public string Title { get; set; } = "";
+    public string Industry { get; set; } = "";
+    public string YoutubeLinks { get; set; } = "";
+    public bool HasYoutubeLink => !string.IsNullOrWhiteSpace(YoutubeLinks);
+}
+
 public class ArtifactsResult
 {
     public bool Ok { get; set; }
@@ -19,6 +27,7 @@ public class ArtifactsResult
     public string FollowUp2Subject { get; set; } = "";
     public string FollowUp2Body { get; set; } = "";
     public DateTime GeneratedAt { get; set; }
+    public List<UsedPortfolioItem> UsedProjects { get; set; } = new();
 }
 
 public class ArtifactsService
@@ -179,6 +188,7 @@ public class ArtifactsService
             EmailSubject = emailSubject,
             EmailBody = emailBody,
             GeneratedAt = DateTime.UtcNow,
+            UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList()
         };
     }
 
@@ -191,7 +201,7 @@ public class ArtifactsService
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? CoverLetterPrompt() : savedPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_cover_letter", result);
-        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow };
+        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null)
@@ -203,7 +213,7 @@ public class ArtifactsService
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? WhatsappPrompt() : savedPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_whatsapp", result);
-        return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow };
+        return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null)
@@ -217,7 +227,7 @@ public class ArtifactsService
         var (subject, body) = ParseEmail(raw);
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
-        return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow };
+        return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null)
@@ -244,7 +254,7 @@ public class ArtifactsService
 
         await SaveField(proposalId, "artifact_followup1_subject", subject);
         await SaveField(proposalId, "artifact_followup1_body", body);
-        return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow };
+        return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null)
@@ -274,7 +284,7 @@ public class ArtifactsService
 
         await SaveField(proposalId, "artifact_followup2_subject", subject);
         await SaveField(proposalId, "artifact_followup2_body", body);
-        return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow };
+        return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company)> GetContext(Guid proposalId)
