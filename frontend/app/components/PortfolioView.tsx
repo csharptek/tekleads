@@ -62,6 +62,7 @@ export default function PortfolioView() {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [indexingId, setIndexingId] = useState<string | null>(null);
+  const [reindexingAll, setReindexingAll] = useState(false);
   const [banner, setBanner] = useState<{ kind: "error" | "success" | "info"; text: string } | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -183,6 +184,21 @@ export default function PortfolioView() {
     } catch (e: any) { setBanner({ kind: "error", text: e.message }); }
   }
 
+  async function handleReindexAll() {
+    setReindexingAll(true);
+    setBanner(null);
+    let done = 0, failed = 0;
+    for (const p of projects) {
+      try {
+        await api.post<{ ok: boolean }>(`/api/portfolio/${p.id}/index`, {});
+        done++;
+      } catch { failed++; }
+    }
+    await loadProjects();
+    setBanner({ kind: failed === 0 ? "success" : "error", text: failed === 0 ? `All ${done} projects re-indexed for AI.` : `${done} indexed, ${failed} failed.` });
+    setReindexingAll(false);
+  }
+
   async function handleIndex(id: string) {
     setIndexingId(id);
     try {
@@ -249,6 +265,9 @@ export default function PortfolioView() {
             onChange={e => { const fl = e.target.files?.[0]; if (fl) handleExtract(fl); e.target.value = ""; }} />
           <button className="btn btn-ghost" disabled={extracting} onClick={() => fileRef.current?.click()}>
             {extracting ? <><span className="spinner spinner-dark" /> Extracting…</> : "↑ Upload & Extract"}
+          </button>
+          <button className="btn btn-ghost" disabled={reindexingAll || projects.length === 0} onClick={handleReindexAll}>
+            {reindexingAll ? <><span className="spinner spinner-dark" /> Re-indexing…</> : "↺ Re-index All"}
           </button>
           <button className="btn btn-primary" onClick={() => { cancelForm(); setShowForm(s => !s); }}>
             + Add Project
