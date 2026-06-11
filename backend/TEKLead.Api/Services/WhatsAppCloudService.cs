@@ -554,6 +554,8 @@ public class WhatsAppCloudService
                                     CreatedAt = DateTime.UtcNow,
                                     UpdatedAt = DateTime.UtcNow
                                 });
+                                // Auto-mark as hot lead on any inbound reply
+                                await ToggleHotLead(from, true);
                                 inbound++;
 
                                 var capturedFrom = from;
