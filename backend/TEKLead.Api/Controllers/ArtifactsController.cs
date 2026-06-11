@@ -28,6 +28,13 @@ public class ArtifactsController : ControllerBase
         followUp2   = ArtifactsService.FollowUp2Prompt(),
     });
 
+    [HttpGet("{proposalId}/debug-context")]
+    public async Task<IActionResult> DebugContext(Guid proposalId)
+    {
+        var ctx = await _svc.GetDebugContext(proposalId);
+        return Ok(ctx);
+    }
+
     [HttpGet("{proposalId}")]
     public async Task<IActionResult> GetExisting(Guid proposalId)
     {

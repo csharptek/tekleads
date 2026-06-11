@@ -287,6 +287,21 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
+    public async Task<object> GetDebugContext(Guid proposalId)
+    {
+        var (proposal, _, _, _, portfolioItems, _, err, company) = await GetContext(proposalId);
+        if (proposal == null) return new { error = err ?? "proposal not found" };
+        var context = BuildContext(proposal, portfolioItems, company);
+        return new
+        {
+            industry        = company?.Industry ?? "(none)",
+            portfolioCount  = portfolioItems.Count,
+            portfolioItems  = portfolioItems.Select(p => new { p.Title, p.Industry, p.YoutubeLinks }),
+            hasYoutubeLinks = portfolioItems.Any(p => !string.IsNullOrWhiteSpace(p.YoutubeLinks)),
+            fullContext     = context
+        };
+    }
+
     private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company)> GetContext(Guid proposalId)
     {
         var proposal = await _proposals.GetById(proposalId);
@@ -602,12 +617,18 @@ Return only the JSON. No preamble.";
         client.Timeout = TimeSpan.FromSeconds(90);
 
         var url = $"{endpoint.TrimEnd('/')}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01";
+        // Prepend a compact YouTube reminder directly into the user turn —
+        // models attend most strongly to the end of the user message.
+        var ytSection = context.Contains("AVAILABLE YOUTUBE DEMOS")
+            ? "IMPORTANT: The context below contains an AVAILABLE YOUTUBE DEMOS section. You MUST include exactly one of those YouTube URLs as a Demo link in your output. Do not omit it.\n\n"
+            : "IMPORTANT: No YouTube demo links are available in the context. Do not invent or include any links.\n\n";
+
         var messages = new[]
         {
             new { role = "system", content = systemPrompt },
-            new { role = "user",   content = context },
+            new { role = "user",   content = ytSection + context },
         };
-        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 1500 });
+        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 2500 });
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var json = await resp.Content.ReadAsStringAsync();
