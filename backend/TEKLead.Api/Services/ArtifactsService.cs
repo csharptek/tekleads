@@ -192,9 +192,9 @@ public class ArtifactsService
         };
     }
 
-    public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId, string? customPrompt = null)
+    public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
@@ -204,9 +204,9 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
-    public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null)
+    public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
@@ -216,9 +216,9 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
-    public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null)
+    public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
@@ -230,9 +230,9 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
-    public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null)
+    public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
 
         // Load initial email so FU1 can reference it
@@ -257,9 +257,9 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
-    public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null)
+    public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
 
         var existing = await GetExisting(proposalId);

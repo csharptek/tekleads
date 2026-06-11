@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from "react";
 import { api } from "../../lib/api";
 
-type UsedPortfolioItem = { title: string; industry: string; youtubeLinks: string; hasYoutubeLink: boolean; };
+type UsedPortfolioItem = { title: string; industry: string; youtubeLinks: string; hasYoutubeLink: boolean; id?: string; };
+type AllPortfolioItem = { id: string; title: string; industry: string; youtubeLinks: string; embeddingIndexed: boolean; };
 
 type Artifacts = {
   coverLetter?: string;
@@ -93,6 +94,11 @@ export default function ArtifactsView({
   const [generating, setGenerating] = useState<GeneratingState>({ coverLetter: false, whatsapp: false, email: false, followUp1: false, followUp2: false });
   const [errors, setErrors] = useState<ErrorState>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
   const [usedProjects, setUsedProjects] = useState<UsedPortfolioItem[]>([]);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [showPortfolioPicker, setShowPortfolioPicker] = useState(false);
+  const [allPortfolio, setAllPortfolio] = useState<AllPortfolioItem[]>([]);
+  const [pickerSelected, setPickerSelected] = useState<Set<string>>(new Set());
+  const [loadingPortfolio, setLoadingPortfolio] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [defaultPrompts, setDefaultPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
   const [customPrompts, setCustomPrompts] = useState<DefaultPrompts>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
@@ -219,12 +225,14 @@ export default function ArtifactsView({
     stateKey: keyof Artifacts,
     resKey2?: string,
     stateKey2?: keyof Artifacts,
-    customPrompt?: string
+    customPrompt?: string,
+    portfolioIds?: string[]
   ) => {
     setGenerating(g => ({ ...g, [type]: true }));
     setErrors(e => ({ ...e, [type]: '' }));
     const body: any = {};
     if (customPrompt) body.customPrompt = customPrompt;
+    if (portfolioIds && portfolioIds.length > 0) body.portfolioIds = portfolioIds;
     try {
       const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/generate/${endpoint}`, body);
       setArtifacts(a => {
@@ -232,12 +240,32 @@ export default function ArtifactsView({
         if (stateKey2 && resKey2) u[stateKey2] = res[resKey2];
         return u;
       });
-      if (res.usedProjects?.length) setUsedProjects(res.usedProjects);
+      if (res.usedProjects?.length) {
+        setUsedProjects(res.usedProjects);
+        setCheckedIds(new Set(res.usedProjects.map((p: any) => p.id).filter(Boolean)));
+      }
     } catch (e: any) {
       setErrors(er => ({ ...er, [type]: (e as any).message }));
     } finally {
       setGenerating(g => ({ ...g, [type]: false }));
     }
+  };
+
+  const openPortfolioPicker = async () => {
+    setShowPortfolioPicker(true);
+    setLoadingPortfolio(true);
+    try {
+      const res = await (api as any).get("/api/portfolio");
+      setAllPortfolio(res || []);
+      setPickerSelected(new Set(checkedIds));
+    } catch { } finally { setLoadingPortfolio(false); }
+  };
+
+  const regenerateSelected = async (ids: string[]) => {
+    const pids = ids.length > 0 ? ids : undefined;
+    await generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter", undefined, undefined, undefined, pids);
+    await generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage", undefined, undefined, undefined, pids);
+    await generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody", undefined, pids);
   };
 
   const generateAll = async () => {
@@ -490,13 +518,22 @@ export default function ArtifactsView({
       {/* Portfolio used in artifacts */}
       {usedProjects.length > 0 && (
         <div style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--card)" }}>
-          <div style={{ padding: "10px 16px", background: "var(--accent-light)", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600, color: "var(--accent-text)" }}>
-            📁 Portfolio projects used to generate these artifacts
+          <div style={{ padding: "10px 16px", background: "var(--accent-light)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent-text)" }}>📁 Portfolio projects used — select to regenerate</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="btn btn-ghost btn-sm" onClick={openPortfolioPicker}>+ Add / Change Projects</button>
+              <button className="btn btn-primary btn-sm"
+                disabled={checkedIds.size === 0 || Object.values(generating).some(Boolean)}
+                onClick={() => regenerateSelected(Array.from(checkedIds))}>
+                ↺ Regenerate ({checkedIds.size} selected)
+              </button>
+            </div>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: "var(--surface)" }}>
+                  <th style={{ padding: "8px 10px", width: 32, borderBottom: "1px solid var(--border)" }}></th>
                   <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Project</th>
                   <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Industry</th>
                   <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>YouTube Demo</th>
@@ -504,7 +541,14 @@ export default function ArtifactsView({
               </thead>
               <tbody>
                 {usedProjects.map((p, i) => (
-                  <tr key={i} style={{ borderBottom: i < usedProjects.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <tr key={i} style={{ borderBottom: i < usedProjects.length - 1 ? "1px solid var(--border)" : "none", background: p.id && checkedIds.has(p.id) ? "var(--accent-light)" : "transparent" }}>
+                    <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                      <input type="checkbox" checked={!!(p.id && checkedIds.has(p.id))}
+                        onChange={e => {
+                          if (!p.id) return;
+                          setCheckedIds(prev => { const s = new Set(prev); e.target.checked ? s.add(p.id!) : s.delete(p.id!); return s; });
+                        }} />
+                    </td>
                     <td style={{ padding: "8px 14px", fontWeight: 500 }}>{p.title}</td>
                     <td style={{ padding: "8px 14px", color: "var(--muted)" }}>{p.industry || "—"}</td>
                     <td style={{ padding: "8px 14px" }}>
@@ -512,7 +556,7 @@ export default function ArtifactsView({
                         ? <a href={p.youtubeLinks} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "underline", wordBreak: "break-all" }}>{p.youtubeLinks}</a>
                         : <span style={{ color: "var(--red)", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                            No YouTube link — please update this portfolio item
+                            No YouTube link — update in Portfolio
                           </span>}
                     </td>
                   </tr>
@@ -523,9 +567,72 @@ export default function ArtifactsView({
           {usedProjects.some(p => !p.hasYoutubeLink) && (
             <div style={{ padding: "10px 16px", background: "#fff7ed", borderTop: "1px solid #fed7aa", color: "#c2410c", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              One or more projects above are missing a YouTube demo link. The AI could not include a demo in the generated artifacts. Go to Portfolio to add YouTube links.
+              Missing YouTube links — go to Portfolio to add them.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Portfolio picker modal */}
+      {showPortfolioPicker && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--card)", borderRadius: 12, width: "100%", maxWidth: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Select Portfolio Projects</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Max 3 — all selected projects will be included in artifacts with their YouTube links</div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowPortfolioPicker(false)}>✕</button>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {loadingPortfolio ? (
+                <div style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}><span className="spinner" /></div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <tbody>
+                    {allPortfolio.map((p, i) => {
+                      const checked = pickerSelected.has(p.id);
+                      const disabled = !checked && pickerSelected.size >= 3;
+                      return (
+                        <tr key={p.id} style={{ borderBottom: "1px solid var(--border)", background: checked ? "var(--accent-light)" : "transparent", opacity: disabled ? 0.45 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
+                          onClick={() => {
+                            if (disabled) return;
+                            setPickerSelected(prev => { const s = new Set(prev); checked ? s.delete(p.id) : s.add(p.id); return s; });
+                          }}>
+                          <td style={{ padding: "10px 14px", width: 36 }}>
+                            <input type="checkbox" checked={checked} readOnly style={{ pointerEvents: "none" }} />
+                          </td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <div style={{ fontWeight: 600 }}>{p.title}</div>
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.industry}</div>
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                            {p.youtubeLinks
+                              ? <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 600 }}>▶ Demo</span>
+                              : <span style={{ fontSize: 11, color: "var(--muted)" }}>No demo</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost" onClick={() => setShowPortfolioPicker(false)}>Cancel</button>
+              <button className="btn btn-primary" disabled={pickerSelected.size === 0}
+                onClick={() => {
+                  const ids = Array.from(pickerSelected) as string[];
+                  const selected = allPortfolio.filter(p => ids.includes(p.id));
+                  setUsedProjects(selected.map(p => ({ id: p.id, title: p.title, industry: p.industry, youtubeLinks: p.youtubeLinks, hasYoutubeLink: !!p.youtubeLinks })));
+                  setCheckedIds(new Set(ids));
+                  setShowPortfolioPicker(false);
+                  regenerateSelected(ids);
+                }}>
+                Generate with {pickerSelected.size} project{pickerSelected.size !== 1 ? "s" : ""}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
