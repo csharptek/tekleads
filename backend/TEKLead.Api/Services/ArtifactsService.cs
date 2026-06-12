@@ -8,6 +8,7 @@ namespace TEKLead.Api.Services;
 
 public class UsedPortfolioItem
 {
+    public Guid Id { get; set; }
     public string Title { get; set; } = "";
     public string Industry { get; set; } = "";
     public string YoutubeLinks { get; set; } = "";
@@ -188,7 +189,7 @@ public class ArtifactsService
             EmailSubject = emailSubject,
             EmailBody = emailBody,
             GeneratedAt = DateTime.UtcNow,
-            UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList()
+            UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList()
         };
     }
 
@@ -201,7 +202,7 @@ public class ArtifactsService
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? CoverLetterPrompt() : savedPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_cover_letter", result);
-        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
@@ -213,7 +214,7 @@ public class ArtifactsService
         var prompt = customPrompt ?? (string.IsNullOrWhiteSpace(savedPrompt) ? WhatsappPrompt() : savedPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_whatsapp", result);
-        return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
@@ -227,7 +228,7 @@ public class ArtifactsService
         var (subject, body) = ParseEmail(raw);
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
-        return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
@@ -254,7 +255,7 @@ public class ArtifactsService
 
         await SaveField(proposalId, "artifact_followup1_subject", subject);
         await SaveField(proposalId, "artifact_followup1_body", body);
-        return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
@@ -284,7 +285,7 @@ public class ArtifactsService
 
         await SaveField(proposalId, "artifact_followup2_subject", subject);
         await SaveField(proposalId, "artifact_followup2_body", body);
-        return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
     public async Task<object> GetDebugContext(Guid proposalId)
@@ -296,7 +297,7 @@ public class ArtifactsService
         {
             industry        = company?.Industry ?? "(none)",
             portfolioCount  = portfolioItems.Count,
-            portfolioItems  = portfolioItems.Select(p => new { p.Title, p.Industry, p.YoutubeLinks }),
+            portfolioItems  = portfolioItems.Select(p => new { p.Id, p.Title, p.Industry, p.YoutubeLinks }),
             hasYoutubeLinks = portfolioItems.Any(p => !string.IsNullOrWhiteSpace(p.YoutubeLinks)),
             fullContext     = context
         };

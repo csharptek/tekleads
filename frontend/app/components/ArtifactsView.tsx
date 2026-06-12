@@ -537,7 +537,7 @@ export default function ArtifactsView({
           <div style={{ padding: "10px 16px", background: "var(--accent-light)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent-text)" }}>📁 Portfolio projects used — select to regenerate</span>
             <div style={{ display: "flex", gap: 6 }}>
-              <button className="btn btn-ghost btn-sm" onClick={openPortfolioPicker}>+ Add / Change Projects</button>
+              <button className="btn btn-secondary btn-sm" onClick={openPortfolioPicker} style={{ fontWeight: 600 }}>+ Add / Change Projects</button>
               <button className="btn btn-primary btn-sm"
                 disabled={checkedIds.size === 0 || Object.values(generating).some(Boolean)}
                 onClick={() => regenerateSelected(Array.from(checkedIds))}>
