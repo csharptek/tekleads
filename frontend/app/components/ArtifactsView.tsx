@@ -212,6 +212,22 @@ export default function ArtifactsView({
         hasExisting = true;
       }
     } catch { /* none yet */ }
+
+    // Always load the portfolio context panel (shows which projects are available + checkboxes)
+    try {
+      const ctx: any = await api.get(`/api/artifacts/${proposalId}/debug-context`);
+      if (ctx?.portfolioItems?.length) {
+        setUsedProjects(ctx.portfolioItems.map((p: any) => ({
+          id: p.Id ?? p.id,
+          title: p.Title ?? p.title,
+          industry: p.Industry ?? p.industry,
+          youtubeLinks: p.YoutubeLinks ?? p.youtubeLinks ?? "",
+          hasYoutubeLink: !!(p.YoutubeLinks ?? p.youtubeLinks),
+        })));
+        setCheckedIds(new Set(ctx.portfolioItems.map((p: any) => p.Id ?? p.id).filter(Boolean)));
+      }
+    } catch { /* non-critical */ }
+
     setLoaded(true);
     if (autoGenerate && !hasExisting) {
       generateAll();
