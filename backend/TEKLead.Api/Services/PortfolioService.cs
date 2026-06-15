@@ -19,6 +19,11 @@ public class PortfolioService
         _log = log;
     }
 
+    // Explicit column list (excludes embedding_vec — Dapper/Npgsql can't map the
+    // pgvector "vector" type to dynamic/object without the Pgvector.Npgsql plugin).
+    private const string SelectColumns =
+        "id, title, industry, tags, problem, solution, tech_stack, outcomes, links, youtube_links, embedding_indexed, created_at";
+
     // ── Schema ────────────────────────────────────────────────────────────────
 
     public async Task EnsureSchema()
@@ -63,7 +68,7 @@ public class PortfolioService
         await c.OpenAsync();
 
         var rows = await c.QueryAsync<dynamic>(
-            "SELECT * FROM portfolio_projects ORDER BY created_at DESC");
+            $"SELECT {SelectColumns} FROM portfolio_projects ORDER BY created_at DESC");
 
         return rows.Select(Map).ToList();
     }
@@ -75,7 +80,7 @@ public class PortfolioService
         await c.OpenAsync();
 
         var row = await c.QuerySingleOrDefaultAsync<dynamic>(
-            "SELECT * FROM portfolio_projects WHERE id=@id", new { id });
+            $"SELECT {SelectColumns} FROM portfolio_projects WHERE id=@id", new { id });
 
         return row == null ? null : Map(row);
     }
@@ -282,7 +287,7 @@ public class PortfolioService
 
             var ids = hits.Select(h => h.Id).ToArray();
             var rows = await c.QueryAsync<dynamic>(
-                "SELECT * FROM portfolio_projects WHERE id = ANY(@ids)", new { ids });
+                $"SELECT {SelectColumns} FROM portfolio_projects WHERE id = ANY(@ids)", new { ids });
 
             var fresh = rows.Select(Map).Cast<PortfolioProject>().ToDictionary(p => p.Id, p => p);
 
@@ -389,7 +394,7 @@ public class PortfolioService
             await c.OpenAsync();
 
             var rows = await c.QueryAsync<dynamic>(
-                @"SELECT * FROM portfolio_projects
+                $@"SELECT {SelectColumns} FROM portfolio_projects
                   WHERE embedding_vec IS NOT NULL
                   ORDER BY embedding_vec <=> @vec::vector
                   LIMIT @topK",
