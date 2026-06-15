@@ -337,6 +337,32 @@ public class ArtifactsService
         return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null, company);
     }
 
+    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company)> GetContext(Guid proposalId, List<Guid>? portfolioIds)
+    {
+        // If no specific portfolio IDs requested, delegate to the standard version
+        if (portfolioIds == null || portfolioIds.Count == 0)
+            return await GetContext(proposalId);
+
+        var proposal = await _proposals.GetById(proposalId);
+        if (proposal == null) return (null, null, null, null, new(), new(), "Proposal not found.", null);
+
+        var settings = await _settings.GetAll();
+        var aoEndpoint   = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
+        var aoKey        = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
+        var aoDeployment = settings.GetValueOrDefault(SettingKeys.AzureOpenAiDeployment, "");
+
+        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
+            return (null, null, null, null, new(), new(), "Azure OpenAI not configured in Settings.", null);
+
+        var company = await _companyCtx.GetByProposalId(proposal.Id);
+
+        // Fetch all portfolio items and filter to the requested IDs
+        var all = await _portfolio.GetAll();
+        var portfolioItems = all.Where(p => portfolioIds.Contains(p.Id)).ToList();
+
+        return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null, company);
+    }
+
     private async Task SaveField(Guid proposalId, string column, string value)
     {
         var cs = _settings.ConnectionString;
