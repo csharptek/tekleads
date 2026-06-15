@@ -47,6 +47,10 @@ public class PortfolioService
         // Migration: add youtube_links if not exists
         try { await c.ExecuteAsync("ALTER TABLE portfolio_projects ADD COLUMN IF NOT EXISTS youtube_links TEXT NOT NULL DEFAULT \'\'"); } catch { }
 
+        // Migration: pgvector support (alternative to Azure AI Search)
+        try { await c.ExecuteAsync("CREATE EXTENSION IF NOT EXISTS vector"); } catch (Exception ex) { _log.LogWarning("pgvector extension not available: {0}", ex.Message); }
+        try { await c.ExecuteAsync("ALTER TABLE portfolio_projects ADD COLUMN IF NOT EXISTS embedding_vec vector(1536)"); } catch (Exception ex) { _log.LogWarning("embedding_vec column not added: {0}", ex.Message); }
+
         _log.LogInformation("portfolio_projects table ready.");
     }
 
@@ -129,6 +133,10 @@ public class PortfolioService
         if (project == null) return (false, "Project not found.");
 
         var settings = await _settings.GetAll();
+        var vectorProvider = settings.GetValueOrDefault(SettingKeys.VectorProvider, "azure_search");
+
+        if (vectorProvider == "pgvector")
+            return await IndexEmbeddingPgVector(project, settings);
 
         var aoEndpoint  = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
         var aoKey       = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
@@ -184,6 +192,10 @@ public class PortfolioService
     public async Task<List<PortfolioProject>> SearchSimilar(string query, int topK = 3)
     {
         var settings = await _settings.GetAll();
+        var vectorProvider = settings.GetValueOrDefault(SettingKeys.VectorProvider, "azure_search");
+
+        if (vectorProvider == "pgvector")
+            return await SearchSimilarPgVector(query, topK, settings);
 
         var aoEndpoint  = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
         var aoKey       = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
@@ -283,6 +295,115 @@ public class PortfolioService
         }
     }
 
+    // ── pgvector (alternative to Azure AI Search) ──────────────────────────────
+
+    private static string EmbeddingToVectorLiteral(float[] embedding) =>
+        "[" + string.Join(",", embedding.Select(v => v.ToString(System.Globalization.CultureInfo.InvariantCulture))) + "]";
+
+    private async Task<(bool ok, string message)> IndexEmbeddingPgVector(PortfolioProject project, Dictionary<string, string> settings)
+    {
+        var aoEndpoint = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
+        var aoKey      = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
+        var aoEmbedDep = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEmbeddingDeployment, "text-embedding-3-small");
+
+        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey))
+            return (false, "Azure OpenAI endpoint/key not configured in Settings (required for embeddings).");
+
+        float[] embedding;
+        try
+        {
+            embedding = await GenerateEmbedding(aoEndpoint, aoKey, aoEmbedDep, BuildText(project));
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Embedding failed: {ex.Message}");
+        }
+
+        try
+        {
+            var cs = _settings.ConnectionString;
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+            await c.ExecuteAsync(
+                "UPDATE portfolio_projects SET embedding_vec = @vec::vector, embedding_indexed = TRUE WHERE id = @id",
+                new { vec = EmbeddingToVectorLiteral(embedding), id = project.Id });
+        }
+        catch (Exception ex)
+        {
+            return (false, $"pgvector write failed: {ex.Message}");
+        }
+
+        return (true, "Indexed successfully (pgvector).");
+    }
+
+    /// <summary>
+    /// Regenerates embeddings for ALL portfolio projects and stores them in
+    /// the pgvector "embedding_vec" column. Used by the Settings page
+    /// "Reindex All (pgvector)" button when switching to pgvector.
+    /// </summary>
+    public async Task<(bool ok, string message)> ReindexAllPgVector()
+    {
+        var settings = await _settings.GetAll();
+        var aoEndpoint = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
+        var aoKey      = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
+
+        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey))
+            return (false, "Azure OpenAI endpoint/key not configured in Settings (required for embeddings).");
+
+        var projects = await GetAll();
+        int ok = 0, failed = 0;
+
+        foreach (var project in projects)
+        {
+            var (success, _) = await IndexEmbeddingPgVector(project, settings);
+            if (success) ok++; else failed++;
+        }
+
+        return (true, $"Reindexed {ok} project(s) into pgvector." + (failed > 0 ? $" {failed} failed." : ""));
+    }
+
+    private async Task<List<PortfolioProject>> SearchSimilarPgVector(string query, int topK, Dictionary<string, string> settings)
+    {
+        var aoEndpoint = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
+        var aoKey      = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
+        var aoEmbedDep = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEmbeddingDeployment, "text-embedding-3-small");
+
+        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey))
+            return new List<PortfolioProject>();
+
+        float[] embedding;
+        try
+        {
+            embedding = await GenerateEmbedding(aoEndpoint, aoKey, aoEmbedDep, query);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning("pgvector embedding failed: {0}", ex.Message);
+            return new List<PortfolioProject>();
+        }
+
+        try
+        {
+            var cs = _settings.ConnectionString;
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+
+            var rows = await c.QueryAsync<dynamic>(
+                @"SELECT * FROM portfolio_projects
+                  WHERE embedding_vec IS NOT NULL
+                  ORDER BY embedding_vec <=> @vec::vector
+                  LIMIT @topK",
+                new { vec = EmbeddingToVectorLiteral(embedding), topK });
+
+            return rows.Select(Map).ToList();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning("pgvector search failed: {0}", ex.Message);
+            return new List<PortfolioProject>();
+        }
+    }
+
     /// <summary>
     /// Industry-aware portfolio retrieval.
     /// Pulls a wide hybrid-search pool, then re-ranks so projects whose industry
@@ -365,8 +486,10 @@ public class PortfolioService
         var aoEndpoint  = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
         var aoKey       = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
         var aoDeployment = settings.GetValueOrDefault(SettingKeys.AzureOpenAiDeployment, "");
+        var provider = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
 
-        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment))
+        if (provider != "groq" &&
+            (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment)))
             return (false, "Azure OpenAI not configured in Settings.", null);
 
         // Extract text from file
@@ -404,31 +527,19 @@ DOCUMENT:
 
         try
         {
-            var client = _http.CreateClient();
-            client.DefaultRequestHeaders.Add("api-key", aoKey);
-
-            var url = $"{aoEndpoint.TrimEnd('/')}/openai/deployments/{aoDeployment}/chat/completions?api-version=2024-02-01";
-            var body = JsonSerializer.Serialize(new
+            var messages = new List<object>
             {
-                messages = new[]
-                {
-                    new { role = "user", content = prompt }
-                },
-                max_completion_tokens = 1000
-            });
-
-            var resp = await client.PostAsync(url, new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
-            var json = await resp.Content.ReadAsStringAsync();
-
-            if (!resp.IsSuccessStatusCode)
-                return (false, $"OpenAI error: {json}", null);
-
-            var doc = JsonDocument.Parse(json);
-            var content = doc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString() ?? "";
+                new { role = "user", content = prompt }
+            };
+            string content;
+            try
+            {
+                content = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 1000);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"LLM error: {ex.Message}", null);
+            }
 
             // Strip markdown fences if present
             content = content.Trim();

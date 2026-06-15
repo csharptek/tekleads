@@ -35,6 +35,10 @@ const KEYS = {
   InstantlyApiKey: "instantly_api_key",
   AppUrl: "app_url",
   ApolloMasterKey: "apollo_master_key",
+  AiProvider: "ai_provider",
+  GroqApiKey: "groq_api_key",
+  GroqModel: "groq_model",
+  VectorProvider: "vector_provider",
 };
 
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
@@ -66,6 +70,14 @@ const TECH_GROUPS: Group[] = [
     fields: [
       { key: KEYS.AzureBlobConnString, label: "Connection String", placeholder: "DefaultEndpointsProtocol=https;...", secret: true, full: true },
       { key: KEYS.WhatsappBlobContainer, label: "WhatsApp Media Container", placeholder: "whatsapp-media" },
+    ],
+  },
+  {
+    title: "Groq (Alternative LLM)",
+    subtitle: "Open-source models via Groq. Used when AI Provider is set to Groq.",
+    fields: [
+      { key: KEYS.GroqApiKey, label: "API Key", placeholder: "Enter to set / replace", secret: true, full: true },
+      { key: KEYS.GroqModel, label: "Model", placeholder: "llama-3.3-70b-versatile" },
     ],
   },
   {
@@ -190,6 +202,28 @@ function FieldGroup({ group, form, setVal, serverValues, isSet, reveal, setRevea
 }
 
 
+function RadioGroup({ label, value, options, onChange }: {
+  label: string;
+  value: string;
+  options: { value: string; label: string; hint?: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div className="field-label"><span>{label}</span></div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        {options.map(opt => (
+          <label key={opt.value} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
+            <input type="radio" name={label} checked={value === opt.value} onChange={() => onChange(opt.value)} />
+            <span>{opt.label}</span>
+            {opt.hint && <span style={{ color: "var(--muted)", fontSize: 11 }}>({opt.hint})</span>}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const DEFAULT_SIGNATURE = `--\nThanks & Regards,\n\nManjika Tantia\nStrategic Partnership & Marketing Manager | Csharptek\nP: IND: (+91)-7667124920\nE: manjika.tantia@csharptek.com\nwww.csharptek.com`;
 
 function SignatureEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -244,6 +278,7 @@ export default function SettingsView() {
   const [apolloStats, setApolloStats] = useState<any>(null);
   const [apolloStatsLoading, setApolloStatsLoading] = useState(false);
   const [apolloStatsError, setApolloStatsError] = useState("");
+  const [reindexing, setReindexing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -277,6 +312,15 @@ export default function SettingsView() {
   useEffect(() => { load(); loadDiag(); }, [load, loadDiag]);
 
   const setVal = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  const onReindexPgVector = async () => {
+    setReindexing(true); setBanner(null);
+    try {
+      const res = await api.post<{ ok: boolean; message: string }>("/api/portfolio/reindex-pgvector", {});
+      setBanner({ kind: res.ok ? "success" : "error", text: res.message });
+    } catch (e: any) { setBanner({ kind: "error", text: `Reindex failed: ${e.message}` }); }
+    finally { setReindexing(false); }
+  };
 
   const onSave = async () => {
     if (Object.keys(form).length === 0) { setBanner({ kind: "info", text: "Nothing to save." }); return; }
@@ -316,6 +360,49 @@ export default function SettingsView() {
       {/* User config — always visible */}
       <div className="card">
         {USER_GROUPS.map(g => <FieldGroup key={g.title} group={g} {...sharedProps} />)}
+      </div>
+
+      {/* AI & Vector Provider toggles */}
+      <div className="card">
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>🤖 AI & Vector Provider</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Choose which LLM generates content and which store powers portfolio RAG search.</div>
+        </div>
+
+        <RadioGroup
+          label="AI Provider (LLM)"
+          value={form[KEYS.AiProvider] ?? (serverValues[KEYS.AiProvider] || "azure")}
+          onChange={v => setVal(KEYS.AiProvider, v)}
+          options={[
+            { value: "azure", label: "Azure OpenAI" },
+            { value: "groq", label: "Groq", hint: "open-source models, free tier" },
+          ]}
+        />
+
+        <RadioGroup
+          label="Vector Provider (Portfolio RAG)"
+          value={form[KEYS.VectorProvider] ?? (serverValues[KEYS.VectorProvider] || "azure_search")}
+          onChange={v => setVal(KEYS.VectorProvider, v)}
+          options={[
+            { value: "azure_search", label: "Azure AI Search" },
+            { value: "pgvector", label: "PostgreSQL (pgvector)", hint: "uses existing Railway DB" },
+          ]}
+        />
+
+        {(form[KEYS.VectorProvider] ?? serverValues[KEYS.VectorProvider]) === "pgvector" && (
+          <div style={{ marginTop: 10 }}>
+            <button className="btn btn-ghost btn-sm" onClick={onReindexPgVector} disabled={reindexing}>
+              {reindexing ? <span className="spinner spinner-dark" /> : null}{reindexing ? "Reindexing..." : "Reindex All (pgvector)"}
+            </button>
+            <div style={{ marginTop: 6, fontSize: 11, color: "var(--dim)" }}>
+              Regenerates embeddings for all portfolio projects and stores them in PostgreSQL. Run once after switching to pgvector. Still uses Azure OpenAI for embeddings.
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: 10, fontSize: 11, color: "var(--dim)" }}>
+          Save settings first, then use Reindex. Switching providers takes effect immediately on next generation/search.
+        </div>
       </div>
 
       {/* Email Signature */}

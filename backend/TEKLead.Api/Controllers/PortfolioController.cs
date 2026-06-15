@@ -64,6 +64,13 @@ public class PortfolioController : ControllerBase
         return ok ? Ok(new { ok, message }) : BadRequest(new { ok, message });
     }
 
+    [HttpPost("reindex-pgvector")]
+    public async Task<IActionResult> ReindexPgVector()
+    {
+        var (ok, message) = await _svc.ReindexAllPgVector();
+        return ok ? Ok(new { ok, message }) : BadRequest(new { ok, message });
+    }
+
     [HttpPost("{id:guid}/index")]
     public async Task<IActionResult> IndexEmbedding(Guid id)
     {

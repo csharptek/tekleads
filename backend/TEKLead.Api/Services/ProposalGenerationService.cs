@@ -349,25 +349,8 @@ Guidelines:
 
     private async Task<string> CallAzureOpenAIMessages(string endpoint, string key, string deployment, List<object> messages)
     {
-        var client = _http.CreateClient();
-        client.DefaultRequestHeaders.Add("api-key", key);
-        client.Timeout = TimeSpan.FromSeconds(120);
-
-        var url = $"{endpoint.TrimEnd('/')}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01";
-        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 2500 });
-
-        var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
-        var json = await resp.Content.ReadAsStringAsync();
-
-        if (!resp.IsSuccessStatusCode)
-            throw new Exception($"OpenAI {(int)resp.StatusCode}: {json}");
-
-        var doc = JsonDocument.Parse(json);
-        return doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString() ?? "";
+        var settings = await _settings.GetAll();
+        return await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 2500);
     }
 
     private async Task<QualityScoreResult?> ScoreProposal(string endpoint, string key, string deployment, string proposalText, string jobPost)

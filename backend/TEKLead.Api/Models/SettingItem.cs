@@ -38,6 +38,14 @@ public static class SettingKeys
     public const string AzureSearchIndex           = "azure_search_index";
     public const string AzureOpenAiEmbeddingDeployment = "azure_openai_embedding_deployment";
 
+    // LLM provider toggle
+    public const string AiProvider                 = "ai_provider";          // "azure" | "groq"
+    public const string GroqApiKey                 = "groq_api_key";
+    public const string GroqModel                  = "groq_model";
+
+    // Vector store toggle
+    public const string VectorProvider             = "vector_provider";      // "azure_search" | "pgvector"
+
     // Proposal Settings
     public const string ProposalCompanyName         = "proposal_company_name";
     public const string ProposalTagline             = "proposal_tagline";
@@ -81,6 +89,7 @@ public static class SettingKeys
         WhatsappCloudPhoneNumberId, WhatsappCloudWabaId, WhatsappCloudAccessToken, WhatsappCloudVerifyToken,
         WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion, WhatsappBlobContainer,
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
+        AiProvider, GroqApiKey, GroqModel, VectorProvider,
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,
         ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt,
@@ -95,6 +104,6 @@ public static class SettingKeys
     public static readonly HashSet<string> Secrets = new()
     {
         AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey,
-        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey
+        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey
     };
 }

@@ -613,11 +613,6 @@ Return only the JSON. No preamble.";
 
     private async Task<string> CallAI(string endpoint, string key, string deployment, string systemPrompt, string context)
     {
-        var client = _http.CreateClient();
-        client.DefaultRequestHeaders.Add("api-key", key);
-        client.Timeout = TimeSpan.FromSeconds(90);
-
-        var url = $"{endpoint.TrimEnd('/')}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01";
         // Prepend a compact YouTube reminder directly into the user turn —
         // models attend most strongly to the end of the user message.
         var hasYtDemos = context.Contains("AVAILABLE YOUTUBE DEMOS");
@@ -632,25 +627,14 @@ Return only the JSON. No preamble.";
             ? "IMPORTANT: The context below contains an AVAILABLE YOUTUBE DEMOS section. You MUST include exactly one of those YouTube URLs as a Demo link in your output. Do not omit it.\n\n"
             : "IMPORTANT: No YouTube demo links are available in the context. Do not invent or include any links.\n\n";
 
-        var messages = new[]
+        var messages = new List<object>
         {
             new { role = "system", content = systemPrompt },
             new { role = "user",   content = ytSection + context },
         };
-        var body = JsonSerializer.Serialize(new { messages, max_completion_tokens = 2500 });
 
-        var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
-        var json = await resp.Content.ReadAsStringAsync();
-
-        if (!resp.IsSuccessStatusCode)
-            throw new Exception($"OpenAI {(int)resp.StatusCode}: {json}");
-
-        var doc = JsonDocument.Parse(json);
-        var text = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString() ?? "";
+        var settings = await _settings.GetAll();
+        var text = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 2500);
         text = text.Replace("**", "");
 
         // Post-inject: if context had YouTube demos but model skipped them, append
