@@ -337,6 +337,29 @@ public class ArtifactsService
         return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null, company);
     }
 
+    /// <summary>
+    /// Overload allowing the caller to pin specific portfolio projects (e.g. user
+    /// manually selected items in the UI) instead of auto-ranked search results.
+    /// Falls back to the 1-arg GetContext behavior when portfolioIds is null/empty.
+    /// </summary>
+    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company)> GetContext(Guid proposalId, List<Guid>? portfolioIds)
+    {
+        var ctx = await GetContext(proposalId);
+        if (ctx.error != null || portfolioIds == null || portfolioIds.Count == 0)
+            return ctx;
+
+        var selected = new List<PortfolioProject>();
+        foreach (var id in portfolioIds)
+        {
+            var p = await _portfolio.GetById(id);
+            if (p != null) selected.Add(p);
+        }
+
+        if (selected.Count == 0) return ctx;
+
+        return (ctx.proposal, ctx.aoEndpoint, ctx.aoKey, ctx.aoDeployment, selected, ctx.settings, ctx.error, ctx.company);
+    }
+
     private async Task SaveField(Guid proposalId, string column, string value)
     {
         var cs = _settings.ConnectionString;
