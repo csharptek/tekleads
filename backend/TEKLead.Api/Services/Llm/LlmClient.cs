@@ -70,7 +70,7 @@ public static class LlmClient
         client.Timeout = TimeSpan.FromSeconds(120);
 
         const string url = "https://api.groq.com/openai/v1/chat/completions";
-        var body = JsonSerializer.Serialize(new { model, messages, max_tokens = maxTokens });
+        var body = JsonSerializer.Serialize(new { model, messages, max_tokens = maxTokens, reasoning_effort = "none" });
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var json = await resp.Content.ReadAsStringAsync();
