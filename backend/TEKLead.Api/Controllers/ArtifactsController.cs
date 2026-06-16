@@ -46,42 +46,42 @@ public class ArtifactsController : ControllerBase
     [HttpPost("{proposalId}/generate")]
     public async Task<IActionResult> Generate(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {
-        try { var r = await _svc.Generate(proposalId); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        try { var r = await _svc.Generate(proposalId, req?.Provider); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
     [HttpPost("{proposalId}/generate/cover-letter")]
     public async Task<IActionResult> GenerateCoverLetter(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {
-        try { var r = await _svc.GenerateCoverLetter(proposalId, req?.CustomPrompt, req?.PortfolioIds); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        try { var r = await _svc.GenerateCoverLetter(proposalId, req?.CustomPrompt, req?.PortfolioIds, req?.Provider); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
     [HttpPost("{proposalId}/generate/whatsapp")]
     public async Task<IActionResult> GenerateWhatsapp(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {
-        try { var r = await _svc.GenerateWhatsapp(proposalId, req?.CustomPrompt, req?.PortfolioIds); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        try { var r = await _svc.GenerateWhatsapp(proposalId, req?.CustomPrompt, req?.PortfolioIds, req?.Provider); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
     [HttpPost("{proposalId}/generate/email")]
     public async Task<IActionResult> GenerateEmail(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {
-        try { var r = await _svc.GenerateEmail(proposalId, req?.CustomPrompt, req?.PortfolioIds); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        try { var r = await _svc.GenerateEmail(proposalId, req?.CustomPrompt, req?.PortfolioIds, req?.Provider); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
     [HttpPost("{proposalId}/generate/followup1")]
     public async Task<IActionResult> GenerateFollowUp1(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {
-        try { var r = await _svc.GenerateFollowUp1(proposalId, req?.CustomPrompt, req?.PortfolioIds); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        try { var r = await _svc.GenerateFollowUp1(proposalId, req?.CustomPrompt, req?.PortfolioIds, req?.Provider); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
     [HttpPost("{proposalId}/generate/followup2")]
     public async Task<IActionResult> GenerateFollowUp2(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {
-        try { var r = await _svc.GenerateFollowUp2(proposalId, req?.CustomPrompt, req?.PortfolioIds); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        try { var r = await _svc.GenerateFollowUp2(proposalId, req?.CustomPrompt, req?.PortfolioIds, req?.Provider); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
@@ -182,7 +182,7 @@ public class ArtifactsController : ControllerBase
     }
 }
 
-public class CustomPromptRequest  { public string? CustomPrompt { get; set; } public List<Guid>? PortfolioIds { get; set; } }
+public class CustomPromptRequest  { public string? CustomPrompt { get; set; } public List<Guid>? PortfolioIds { get; set; } public string? Provider { get; set; } }
 public class SendEmailRequest     { public string ToEmail { get; set; } = ""; public string? ToName { get; set; } public string? Signature { get; set; } }
 public class BulkSendRecipient    { public string Email { get; set; } = ""; public string? Name { get; set; } }
 public class CancelFollowUpsRequest { public string? ContactEmail { get; set; } public int? Stage { get; set; } }

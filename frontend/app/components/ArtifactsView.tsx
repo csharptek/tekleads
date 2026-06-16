@@ -28,6 +28,23 @@ type PromptModal = {
   prompt: string;
 };
 
+function ProviderToggle({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 2, background: "var(--surface)", borderRadius: 6, padding: 2, border: "1px solid var(--border)" }}>
+      {["azure", "groq"].map(p => (
+        <button key={p} onClick={() => onChange(p)} style={{
+          padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none",
+          background: value === p ? "var(--accent)" : "transparent",
+          color: value === p ? "#fff" : "var(--muted)",
+          transition: "all 0.15s",
+        }}>
+          {p === "azure" ? "☁️ Azure" : "⚡ Groq"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function CopyBtn({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -93,6 +110,13 @@ export default function ArtifactsView({
   const [artifacts, setArtifacts] = useState<Artifacts>({});
   const [generating, setGenerating] = useState<GeneratingState>({ coverLetter: false, whatsapp: false, email: false, followUp1: false, followUp2: false });
   const [errors, setErrors] = useState<ErrorState>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
+
+  // Per-artifact provider override (null = use global setting)
+  type ArtifactType = "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2";
+  const [globalProvider, setGlobalProvider] = useState<string>("azure");
+  const [artifactProvider, setArtifactProvider] = useState<Record<ArtifactType, string | null>>({
+    coverLetter: null, whatsapp: null, email: null, followUp1: null, followUp2: null,
+  });
   const [usedProjects, setUsedProjects] = useState<UsedPortfolioItem[]>([]);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [showPortfolioPicker, setShowPortfolioPicker] = useState(false);
@@ -125,7 +149,10 @@ export default function ArtifactsView({
 
   useEffect(() => {
     api.get<{ values: Record<string, string> }>("/api/settings")
-      .then(d => { if (d.values?.email_signature) setEmailSignature(d.values.email_signature); })
+      .then(d => {
+        if (d.values?.email_signature) setEmailSignature(d.values.email_signature);
+        if (d.values?.ai_provider) setGlobalProvider(d.values.ai_provider);
+      })
       .catch(() => {});
     
     // Load Instantly campaigns
@@ -249,6 +276,9 @@ export default function ArtifactsView({
     const body: any = {};
     if (customPrompt) body.customPrompt = customPrompt;
     if (portfolioIds && portfolioIds.length > 0) body.portfolioIds = portfolioIds;
+    // Per-artifact provider override
+    const effectiveProvider = artifactProvider[type as ArtifactType] ?? globalProvider;
+    body.provider = effectiveProvider;
     try {
       const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/generate/${endpoint}`, body);
       setArtifacts(a => {
@@ -659,6 +689,7 @@ export default function ArtifactsView({
         subtitle={<>Professional cover letter for the proposal{isCustomized("coverLetter") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.coverLetter}
         actions={<>
+          <ProviderToggle value={artifactProvider.coverLetter ?? globalProvider} onChange={v => setArtifactProvider(p => ({ ...p, coverLetter: v }))} />
           <PromptBtn onClick={() => openPromptModal("coverLetter")} />
           {artifacts.coverLetter && <>
             <CopyBtn text={artifacts.coverLetter} />
@@ -683,6 +714,7 @@ export default function ArtifactsView({
         subtitle={<>{clientPhone ? `Will send to ${clientPhone}` : "No phone — opens WhatsApp to enter manually"}{isCustomized("whatsapp") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.whatsapp}
         actions={<>
+          <ProviderToggle value={artifactProvider.whatsapp ?? globalProvider} onChange={v => setArtifactProvider(p => ({ ...p, whatsapp: v }))} />
           <PromptBtn onClick={() => openPromptModal("whatsapp")} />
           <button className="btn btn-sm" onClick={() => sendWhatsappCloud("template")} disabled={cloudSending} style={{ background: "#128C7E", color: "white", border: "none" }} title="Send approved template via Meta Cloud API (works for cold outreach)">
             {cloudSending ? "Sending…" : "Send Template (API)"}
@@ -718,6 +750,7 @@ export default function ArtifactsView({
         subtitle={<>{clientEmail ? `Opens Outlook with ${clientEmail} in To field` : "Opens mail client — no email on file"}{isCustomized("email") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.email}
         actions={<>
+          <ProviderToggle value={artifactProvider.email ?? globalProvider} onChange={v => setArtifactProvider(p => ({ ...p, email: v }))} />
           <PromptBtn onClick={() => openPromptModal("email")} />
           {artifacts.emailSubject && <>
             <CopyBtn text={`Subject: ${artifacts.emailSubject}\n\n${artifacts.emailBody}`} />
@@ -761,6 +794,7 @@ export default function ArtifactsView({
                 style={{ width: 60, fontSize: 12, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
               />
             </div>
+            <ProviderToggle value={artifactProvider.followUp1 ?? globalProvider} onChange={v => setArtifactProvider(p => ({ ...p, followUp1: v }))} />
             <PromptBtn onClick={() => openPromptModal("followUp1")} />
             {artifacts.followUp1Subject && <>
               <CopyBtn text={`Subject: ${artifacts.followUp1Subject}\n\n${artifacts.followUp1Body}`} />
@@ -802,6 +836,7 @@ export default function ArtifactsView({
                 style={{ width: 60, fontSize: 12, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
               />
             </div>
+            <ProviderToggle value={artifactProvider.followUp2 ?? globalProvider} onChange={v => setArtifactProvider(p => ({ ...p, followUp2: v }))} />
             <PromptBtn onClick={() => openPromptModal("followUp2")} />
             {artifacts.followUp2Subject && <>
               <CopyBtn text={`Subject: ${artifacts.followUp2Subject}\n\n${artifacts.followUp2Body}`} />

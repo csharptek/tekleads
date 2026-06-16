@@ -110,7 +110,7 @@ public class ArtifactsService
         };
     }
 
-    public async Task<ArtifactsResult> Generate(Guid proposalId)
+    public async Task<ArtifactsResult> Generate(Guid proposalId, string? providerOverride = null)
     {
         var proposal = await _proposals.GetById(proposalId);
         if (proposal == null)
@@ -150,7 +150,7 @@ public class ArtifactsService
         var clPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
         var waPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
         var emPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
-        var isGroq   = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
+        var isGroq   = (!string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure")) == "groq";
 
         // Generate sequentially to avoid timeout overload
         string coverLetter, whatsapp, emailSubject, emailBody;
@@ -194,39 +194,39 @@ public class ArtifactsService
         };
     }
 
-    public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
+    public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
-        var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
+        var isGroq = (!string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure")) == "groq";
         var prompt = customPrompt ?? GetPrompt(savedPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, isGroq, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_cover_letter", result);
         return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
-    public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
+    public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
-        var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
+        var isGroq = (!string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure")) == "groq";
         var prompt = customPrompt ?? GetPrompt(savedPrompt, WhatsappPrompt, GroqWhatsappPrompt, isGroq, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_whatsapp", result);
         return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
-    public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
+    public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
-        var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
+        var isGroq = (!string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure")) == "groq";
         var prompt = customPrompt ?? GetPrompt(savedPrompt, EmailPrompt, GroqEmailPrompt, isGroq, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
@@ -235,7 +235,7 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
-    public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
+    public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
@@ -249,7 +249,7 @@ public class ArtifactsService
         }
 
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactFollowUp1Prompt, "");
-        var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
+        var isGroq = (!string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure")) == "groq";
         var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp1Prompt, GroqFollowUp1Prompt, isGroq, settings, SettingKeys.ArtifactFollowUp1PromptAzure, SettingKeys.ArtifactFollowUp1PromptGroq);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
@@ -263,7 +263,7 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
     }
 
-    public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null)
+    public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
@@ -280,7 +280,7 @@ public class ArtifactsService
         }
 
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactFollowUp2Prompt, "");
-        var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
+        var isGroq = (!string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure")) == "groq";
         var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp2Prompt, GroqFollowUp2Prompt, isGroq, settings, SettingKeys.ArtifactFollowUp2PromptAzure, SettingKeys.ArtifactFollowUp2PromptGroq);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
