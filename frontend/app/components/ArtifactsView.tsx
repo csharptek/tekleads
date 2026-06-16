@@ -888,7 +888,7 @@ export default function ArtifactsView({
                       rows={12} style={{width:"100%", fontFamily:"monospace", fontSize:12, resize:"vertical", borderRadius:6, border:"1px solid var(--border)", padding:"8px 10px", background:"var(--surface)", color:"var(--text)"}} />
                   </div>
                   <div style={{display:"flex", gap:6, marginTop:6}}>
-                    <button className="btn btn-primary btn-sm" onClick={async () => { await saveEdit(proposalId, "followUp1Subject", "followUp1Subject"); await saveEdit(proposalId, "followUp1Body", "followUp1Body"); }} disabled={saving["followUp1Subject"] || saving["followUp1Body"]}">{saving["followUp1Subject"] ? "Saving..." : "Save"}</button>
+                    <button className="btn btn-primary btn-sm" onClick={async () => { await saveEdit(proposalId, "followUp1Subject", "followUp1Subject"); await saveEdit(proposalId, "followUp1Body", "followUp1Body"); }} disabled={saving["followUp1Subject"] || saving["followUp1Body"]}>{saving["followUp1Subject"] ? "Saving..." : "Save"}</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => { cancelEdit("followUp1Subject"); cancelEdit("followUp1Body"); }}>Cancel</button>
                   </div>
                 </div>
