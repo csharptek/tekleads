@@ -376,6 +376,26 @@ public class ArtifactsService
             new { v = value, id = proposalId });
     }
 
+    private static readonly Dictionary<string, string> ArtifactFieldMap = new()
+    {
+        { "coverLetter",      "artifact_cover_letter"       },
+        { "whatsappMessage",  "artifact_whatsapp"           },
+        { "emailSubject",     "artifact_email_subject"      },
+        { "emailBody",        "artifact_email_body"         },
+        { "followUp1Subject", "artifact_followup1_subject"  },
+        { "followUp1Body",    "artifact_followup1_body"     },
+        { "followUp2Subject", "artifact_followup2_subject"  },
+        { "followUp2Body",    "artifact_followup2_body"     },
+    };
+
+    public async Task<(bool ok, string error)> SaveArtifact(Guid proposalId, string field, string value)
+    {
+        if (!ArtifactFieldMap.TryGetValue(field, out var column))
+            return (false, $"Unknown artifact field: {field}");
+        await SaveField(proposalId, column, value);
+        return (true, "");
+    }
+
     // ── Prompts ───────────────────────────────────────────────────────────────
 
     public static string CoverLetterPrompt() => @"You are writing an Upwork COVER LETTER on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years of experience and 40+ projects delivered.

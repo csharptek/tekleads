@@ -130,6 +130,35 @@ export default function ArtifactsView({
   const [promptDraft, setPromptDraft] = useState("");
   const [emailSignature, setEmailSignature] = useState("");
 
+  // Manual edit state per artifact
+  type EditableArtifact = "coverLetter" | "whatsappMessage" | "emailSubject" | "emailBody" | "followUp1Subject" | "followUp1Body" | "followUp2Subject" | "followUp2Body";
+  const [editing, setEditing] = useState<Partial<Record<EditableArtifact, boolean>>>({});
+  const [editDraft, setEditDraft] = useState<Partial<Record<EditableArtifact, string>>>({});
+  const [saving, setSaving] = useState<Partial<Record<EditableArtifact, boolean>>>({});
+
+  const startEdit = (field: EditableArtifact, current: string) => {
+    setEditDraft(d => ({ ...d, [field]: current }));
+    setEditing(e => ({ ...e, [field]: true }));
+  };
+
+  const cancelEdit = (field: EditableArtifact) => {
+    setEditing(e => ({ ...e, [field]: false }));
+  };
+
+  const saveEdit = async (proposalId: string, field: EditableArtifact, stateKey: keyof Artifacts) => {
+    const value = editDraft[field] ?? "";
+    setSaving(s => ({ ...s, [field]: true }));
+    try {
+      await (api as any).patch(`/api/artifacts/${proposalId}/artifact`, { field, value });
+      setArtifacts(a => ({ ...a, [stateKey]: value }));
+      setEditing(e => ({ ...e, [field]: false }));
+    } catch (e: any) {
+      alert(`Save failed: ${e.message}`);
+    } finally {
+      setSaving(s => ({ ...s, [field]: false }));
+    }
+  };
+
   // Send to All state
   const [sendInterval, setSendInterval] = useState(5);
   const [sendAllQueued, setSendAllQueued] = useState(false);
@@ -697,13 +726,23 @@ export default function ArtifactsView({
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter", undefined, undefined, customPrompts.coverLetter !== defaultPrompts.coverLetter ? customPrompts.coverLetter : undefined)} disabled={generating.coverLetter}>↺ Redo</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => startEdit("coverLetter", artifacts.coverLetter || "")}>✏️ Edit</button>
           </>}
           {!artifacts.coverLetter && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter")} disabled={generating.coverLetter}>Generate</button>}
         </>}
       >
         {errors.coverLetter && <div className="banner banner-error">{errors.coverLetter}</div>}
         {artifacts.coverLetter
-          ? <pre style={preStyle}>{artifacts.coverLetter}</pre>
+          ? editing["coverLetter"]
+            ? <div>
+                <textarea value={editDraft["coverLetter"] ?? ""} onChange={e => setEditDraft(d => ({...d, coverLetter: e.target.value}))}
+                  rows={14} style={{width:"100%", fontFamily:"monospace", fontSize:12, resize:"vertical", borderRadius:6, border:"1px solid var(--border)", padding:"8px 10px", background:"var(--surface)", color:"var(--text)"}} />
+                <div style={{display:"flex", gap:6, marginTop:6}}>
+                  <button className="btn btn-primary btn-sm" onClick={() => saveEdit(proposalId, "coverLetter", "coverLetter")} disabled={saving["coverLetter"]}>{saving["coverLetter"] ? "Saving..." : "Save"}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => cancelEdit("coverLetter")}>Cancel</button>
+                </div>
+              </div>
+            : <pre style={preStyle}>{artifacts.coverLetter}</pre>
           : !generating.coverLetter && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
 
@@ -728,6 +767,7 @@ export default function ArtifactsView({
               Send Text (API)
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage", undefined, undefined, customPrompts.whatsapp !== defaultPrompts.whatsapp ? customPrompts.whatsapp : undefined)} disabled={generating.whatsapp}>↺ Redo</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => startEdit("whatsappMessage", artifacts.whatsappMessage || "")}>✏️ Edit</button>
           </>}
           {!artifacts.whatsappMessage && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage")} disabled={generating.whatsapp}>Generate</button>}
         </>}
@@ -739,7 +779,16 @@ export default function ArtifactsView({
           </div>
         )}
         {artifacts.whatsappMessage
-          ? <pre style={preStyle}>{artifacts.whatsappMessage}</pre>
+          ? editing["whatsappMessage"]
+            ? <div>
+                <textarea value={editDraft["whatsappMessage"] ?? ""} onChange={e => setEditDraft(d => ({...d, whatsappMessage: e.target.value}))}
+                  rows={6} style={{width:"100%", fontFamily:"monospace", fontSize:12, resize:"vertical", borderRadius:6, border:"1px solid var(--border)", padding:"8px 10px", background:"var(--surface)", color:"var(--text)"}} />
+                <div style={{display:"flex", gap:6, marginTop:6}}>
+                  <button className="btn btn-primary btn-sm" onClick={() => saveEdit(proposalId, "whatsappMessage", "whatsappMessage")} disabled={saving["whatsappMessage"]}>{saving["whatsappMessage"] ? "Saving..." : "Save"}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => cancelEdit("whatsappMessage")}>Cancel</button>
+                </div>
+              </div>
+            : <pre style={preStyle}>{artifacts.whatsappMessage}</pre>
           : !generating.whatsapp && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
 
@@ -758,12 +807,31 @@ export default function ArtifactsView({
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> Open in Outlook
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody", customPrompts.email !== defaultPrompts.email ? customPrompts.email : undefined)} disabled={generating.email}>↺ Redo</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { startEdit("emailSubject", artifacts.emailSubject || ""); startEdit("emailBody", artifacts.emailBody || ""); }}>✏️ Edit</button>
           </>}
           {!artifacts.emailSubject && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody")} disabled={generating.email}>Generate</button>}
         </>}
       >
         {errors.email && <div className="banner banner-error">{errors.email}</div>}
-        {artifacts.emailSubject ? <>
+        {artifacts.emailSubject
+          ? (editing["emailSubject"] || editing["emailBody"])
+            ? <div>
+                <div style={{marginBottom:8}}>
+                  <div className="field-label">Subject</div>
+                  <input value={editDraft["emailSubject"] ?? ""} onChange={e => setEditDraft(d => ({...d, emailSubject: e.target.value}))}
+                    style={{width:"100%", borderRadius:6, border:"1px solid var(--border)", padding:"6px 10px", background:"var(--surface)", color:"var(--text)", fontSize:13}} />
+                </div>
+                <div>
+                  <div className="field-label">Body</div>
+                  <textarea value={editDraft["emailBody"] ?? ""} onChange={e => setEditDraft(d => ({...d, emailBody: e.target.value}))}
+                    rows={14} style={{width:"100%", fontFamily:"monospace", fontSize:12, resize:"vertical", borderRadius:6, border:"1px solid var(--border)", padding:"8px 10px", background:"var(--surface)", color:"var(--text)"}} />
+                </div>
+                <div style={{display:"flex", gap:6, marginTop:6}}>
+                  <button className="btn btn-primary btn-sm" onClick={async () => { await saveEdit(proposalId, "emailSubject", "emailSubject"); await saveEdit(proposalId, "emailBody", "emailBody"); }} disabled={saving["emailSubject"] || saving["emailBody"]}>{saving["emailSubject"] ? "Saving..." : "Save"}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { cancelEdit("emailSubject"); cancelEdit("emailBody"); }}>Cancel</button>
+                </div>
+              </div>
+            : <>
           <div style={{ marginBottom: 8 }}>
             <div className="field-label">Subject</div>
             <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
@@ -774,7 +842,8 @@ export default function ArtifactsView({
             <div className="field-label">Body</div>
             <pre style={preStyle}>{artifacts.emailBody}</pre>
           </div>
-        </> : !generating.email && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
+        </>
+          : !generating.email && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
 
       {/* Follow-up Email 1 */}
@@ -799,12 +868,31 @@ export default function ArtifactsView({
             {artifacts.followUp1Subject && <>
               <CopyBtn text={`Subject: ${artifacts.followUp1Subject}\n\n${artifacts.followUp1Body}`} />
               <button className="btn btn-ghost btn-sm" onClick={() => generateOne("followUp1", "followup1", "followUp1Subject", "followUp1Subject", "followUp1Body", "followUp1Body", customPrompts.followUp1 !== defaultPrompts.followUp1 ? customPrompts.followUp1 : undefined)} disabled={generating.followUp1}>↺ Redo</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { startEdit("followUp1Subject", artifacts.followUp1Subject || ""); startEdit("followUp1Body", artifacts.followUp1Body || ""); }}>✏️ Edit</button>
             </>}
             {!artifacts.followUp1Subject && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("followUp1", "followup1", "followUp1Subject", "followUp1Subject", "followUp1Body", "followUp1Body")} disabled={generating.followUp1}>Generate</button>}
           </>}
         >
           {errors.followUp1 && <div className="banner banner-error">{errors.followUp1}</div>}
-          {artifacts.followUp1Subject ? <>
+          {artifacts.followUp1Subject
+            ? (editing["followUp1Subject"] || editing["followUp1Body"])
+              ? <div>
+                  <div style={{marginBottom:8}}>
+                    <div className="field-label">Subject</div>
+                    <input value={editDraft["followUp1Subject"] ?? ""} onChange={e => setEditDraft(d => ({...d, followUp1Subject: e.target.value}))}
+                      style={{width:"100%", borderRadius:6, border:"1px solid var(--border)", padding:"6px 10px", background:"var(--surface)", color:"var(--text)", fontSize:13}} />
+                  </div>
+                  <div>
+                    <div className="field-label">Body</div>
+                    <textarea value={editDraft["followUp1Body"] ?? ""} onChange={e => setEditDraft(d => ({...d, followUp1Body: e.target.value}))}
+                      rows={12} style={{width:"100%", fontFamily:"monospace", fontSize:12, resize:"vertical", borderRadius:6, border:"1px solid var(--border)", padding:"8px 10px", background:"var(--surface)", color:"var(--text)"}} />
+                  </div>
+                  <div style={{display:"flex", gap:6, marginTop:6}}>
+                    <button className="btn btn-primary btn-sm" onClick={async () => { await saveEdit(proposalId, "followUp1Subject", "followUp1Subject"); await saveEdit(proposalId, "followUp1Body", "followUp1Body"); }} disabled={saving["followUp1Subject"] || saving["followUp1Body"]}">{saving["followUp1Subject"] ? "Saving..." : "Save"}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { cancelEdit("followUp1Subject"); cancelEdit("followUp1Body"); }}>Cancel</button>
+                  </div>
+                </div>
+              : <>
             <div style={{ marginBottom: 8 }}>
               <div className="field-label">Subject</div>
               <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
@@ -815,7 +903,8 @@ export default function ArtifactsView({
               <div className="field-label">Body</div>
               <pre style={preStyle}>{artifacts.followUp1Body}</pre>
             </div>
-          </> : !generating.followUp1 && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
+          </>
+            : !generating.followUp1 && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
         </CardShell>
       )}
 
@@ -841,12 +930,31 @@ export default function ArtifactsView({
             {artifacts.followUp2Subject && <>
               <CopyBtn text={`Subject: ${artifacts.followUp2Subject}\n\n${artifacts.followUp2Body}`} />
               <button className="btn btn-ghost btn-sm" onClick={() => generateOne("followUp2", "followup2", "followUp2Subject", "followUp2Subject", "followUp2Body", "followUp2Body", customPrompts.followUp2 !== defaultPrompts.followUp2 ? customPrompts.followUp2 : undefined)} disabled={generating.followUp2}>↺ Redo</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { startEdit("followUp2Subject", artifacts.followUp2Subject || ""); startEdit("followUp2Body", artifacts.followUp2Body || ""); }}>✏️ Edit</button>
             </>}
             {!artifacts.followUp2Subject && <button className="btn btn-ghost btn-sm" onClick={() => generateOne("followUp2", "followup2", "followUp2Subject", "followUp2Subject", "followUp2Body", "followUp2Body")} disabled={generating.followUp2}>Generate</button>}
           </>}
         >
           {errors.followUp2 && <div className="banner banner-error">{errors.followUp2}</div>}
-          {artifacts.followUp2Subject ? <>
+          {artifacts.followUp2Subject
+            ? (editing["followUp2Subject"] || editing["followUp2Body"])
+              ? <div>
+                  <div style={{marginBottom:8}}>
+                    <div className="field-label">Subject</div>
+                    <input value={editDraft["followUp2Subject"] ?? ""} onChange={e => setEditDraft(d => ({...d, followUp2Subject: e.target.value}))}
+                      style={{width:"100%", borderRadius:6, border:"1px solid var(--border)", padding:"6px 10px", background:"var(--surface)", color:"var(--text)", fontSize:13}} />
+                  </div>
+                  <div>
+                    <div className="field-label">Body</div>
+                    <textarea value={editDraft["followUp2Body"] ?? ""} onChange={e => setEditDraft(d => ({...d, followUp2Body: e.target.value}))}
+                      rows={12} style={{width:"100%", fontFamily:"monospace", fontSize:12, resize:"vertical", borderRadius:6, border:"1px solid var(--border)", padding:"8px 10px", background:"var(--surface)", color:"var(--text)"}} />
+                  </div>
+                  <div style={{display:"flex", gap:6, marginTop:6}}>
+                    <button className="btn btn-primary btn-sm" onClick={async () => { await saveEdit(proposalId, "followUp2Subject", "followUp2Subject"); await saveEdit(proposalId, "followUp2Body", "followUp2Body"); }} disabled={saving["followUp2Subject"] || saving["followUp2Body"]}>{saving["followUp2Subject"] ? "Saving..." : "Save"}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { cancelEdit("followUp2Subject"); cancelEdit("followUp2Body"); }}>Cancel</button>
+                  </div>
+                </div>
+              : <>
             <div style={{ marginBottom: 8 }}>
               <div className="field-label">Subject</div>
               <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
@@ -857,7 +965,8 @@ export default function ArtifactsView({
               <div className="field-label">Body</div>
               <pre style={preStyle}>{artifacts.followUp2Body}</pre>
             </div>
-          </> : !generating.followUp2 && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
+          </>
+            : !generating.followUp2 && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
         </CardShell>
       )}
 

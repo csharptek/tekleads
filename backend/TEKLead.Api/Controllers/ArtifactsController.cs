@@ -85,6 +85,17 @@ public class ArtifactsController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpPatch("{proposalId}/artifact")]
+    public async Task<IActionResult> SaveArtifact(Guid proposalId, [FromBody] SaveArtifactRequest req)
+    {
+        try
+        {
+            var (ok, error) = await _svc.SaveArtifact(proposalId, req.Field, req.Value ?? "");
+            return ok ? Ok(new { ok }) : BadRequest(new { error });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     // ── Bulk send via backend queue ───────────────────────────────────────────
 
     [HttpPost("{proposalId}/send-bulk")]
@@ -183,6 +194,7 @@ public class ArtifactsController : ControllerBase
 }
 
 public class CustomPromptRequest  { public string? CustomPrompt { get; set; } public List<Guid>? PortfolioIds { get; set; } public string? Provider { get; set; } }
+public class SaveArtifactRequest  { public string Field { get; set; } = ""; public string? Value { get; set; } }
 public class SendEmailRequest     { public string ToEmail { get; set; } = ""; public string? ToName { get; set; } public string? Signature { get; set; } }
 public class BulkSendRecipient    { public string Email { get; set; } = ""; public string? Name { get; set; } }
 public class CancelFollowUpsRequest { public string? ContactEmail { get; set; } public int? Stage { get; set; } }
