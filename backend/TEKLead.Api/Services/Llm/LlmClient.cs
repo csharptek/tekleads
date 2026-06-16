@@ -70,7 +70,19 @@ public static class LlmClient
         client.Timeout = TimeSpan.FromSeconds(120);
 
         const string url = "https://api.groq.com/openai/v1/chat/completions";
-        var body = JsonSerializer.Serialize(new { model, messages, max_tokens = maxTokens, reasoning_effort = "none" });
+        // qwen3 models need reasoning_effort=none to suppress think blocks
+        // openai/gpt-oss models need low/medium/high or omit entirely
+        var isQwen = model.StartsWith("qwen/", StringComparison.OrdinalIgnoreCase);
+        var isOpenAiOss = model.StartsWith("openai/", StringComparison.OrdinalIgnoreCase);
+
+        object bodyObj = (isQwen, isOpenAiOss) switch
+        {
+            (true, _) => new { model, messages, max_tokens = maxTokens, reasoning_effort = "none" },
+            (_, true) => new { model, messages, max_tokens = maxTokens },
+            _         => new { model, messages, max_tokens = maxTokens },
+        };
+
+        var body = JsonSerializer.Serialize(bodyObj);
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var json = await resp.Content.ReadAsStringAsync();
