@@ -39,6 +39,17 @@ const KEYS = {
   GroqApiKey: "groq_api_key",
   GroqModel: "groq_model",
   VectorProvider: "vector_provider",
+  // Provider-specific prompt keys
+  ArtifactCoverLetterPromptAzure: "artifact_cover_letter_prompt_azure",
+  ArtifactWhatsappPromptAzure:    "artifact_whatsapp_prompt_azure",
+  ArtifactEmailPromptAzure:       "artifact_email_prompt_azure",
+  ArtifactFollowUp1PromptAzure:   "artifact_followup1_prompt_azure",
+  ArtifactFollowUp2PromptAzure:   "artifact_followup2_prompt_azure",
+  ArtifactCoverLetterPromptGroq:  "artifact_cover_letter_prompt_groq",
+  ArtifactWhatsappPromptGroq:     "artifact_whatsapp_prompt_groq",
+  ArtifactEmailPromptGroq:        "artifact_email_prompt_groq",
+  ArtifactFollowUp1PromptGroq:    "artifact_followup1_prompt_groq",
+  ArtifactFollowUp2PromptGroq:    "artifact_followup2_prompt_groq",
 };
 
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
@@ -130,15 +141,6 @@ const USER_GROUPS: Group[] = [
       { key: KEYS.WhatsappCloudTemplateName, label: "Default Template Name", placeholder: "hello_world" },
       { key: KEYS.WhatsappCloudTemplateLang, label: "Default Template Language", placeholder: "en_US" },
       { key: KEYS.WaSendIntervalSeconds, label: "Bulk/Scheduled WA Send Interval (seconds)", placeholder: "15" },
-    ],
-  },
-  {
-    title: "Artifact Prompts",
-    subtitle: "Saved prompts used for all cover letter, WhatsApp, and email generation. Leave blank to use the built-in default.",
-    fields: [
-      { key: KEYS.ArtifactCoverLetterPrompt, label: "Cover Letter Prompt", placeholder: "Leave blank to use built-in default…", full: true, textarea: true },
-      { key: KEYS.ArtifactWhatsappPrompt, label: "WhatsApp Prompt", placeholder: "Leave blank to use built-in default…", full: true, textarea: true },
-      { key: KEYS.ArtifactEmailPrompt, label: "Email Prompt", placeholder: "Leave blank to use built-in default…", full: true, textarea: true },
     ],
   },
 ];
@@ -263,6 +265,146 @@ function SignatureEditor({ value, onChange }: { value: string; onChange: (v: str
   );
 }
 
+// ── Artifact Prompts Section ─────────────────────────────────────────────────
+
+const PROMPT_FIELDS = [
+  { id: "cover_letter", label: "Cover Letter",  azureKey: KEYS.ArtifactCoverLetterPromptAzure, groqKey: KEYS.ArtifactCoverLetterPromptGroq },
+  { id: "whatsapp",     label: "WhatsApp",       azureKey: KEYS.ArtifactWhatsappPromptAzure,    groqKey: KEYS.ArtifactWhatsappPromptGroq    },
+  { id: "email",        label: "Email",           azureKey: KEYS.ArtifactEmailPromptAzure,       groqKey: KEYS.ArtifactEmailPromptGroq       },
+  { id: "followup1",    label: "Follow Up 1",     azureKey: KEYS.ArtifactFollowUp1PromptAzure,  groqKey: KEYS.ArtifactFollowUp1PromptGroq   },
+  { id: "followup2",    label: "Follow Up 2",     azureKey: KEYS.ArtifactFollowUp2PromptAzure,  groqKey: KEYS.ArtifactFollowUp2PromptGroq   },
+];
+
+function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, onProviderChange, defaultPrompts }: {
+  form: Record<string, string>;
+  setVal: (k: string, v: string) => void;
+  serverValues: Record<string, string>;
+  activeProvider: string;
+  onProviderChange: (v: string) => void;
+  defaultPrompts: Record<string, string>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [expandedField, setExpandedField] = useState<string | null>(null);
+
+  const isGroq = activeProvider === "groq";
+
+  const getKey = (f: typeof PROMPT_FIELDS[0]) => isGroq ? f.groqKey : f.azureKey;
+
+  const getValue = (f: typeof PROMPT_FIELDS[0]) => {
+    const k = getKey(f);
+    if (form[k] !== undefined) return form[k];
+    if (serverValues[k]) return serverValues[k];
+    return "";
+  };
+
+  const getPlaceholder = (f: typeof PROMPT_FIELDS[0]) =>
+    defaultPrompts[isGroq ? `groq_${f.id}` : `azure_${f.id}`] || "Leave blank to use built-in default…";
+
+  return (
+    <div className="card">
+      <button onClick={() => setOpen(p => !p)}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, textAlign: "left" }}>✏️ Artifact Prompts</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "left" }}>
+            Provider-specific prompts for Cover Letter, WhatsApp, Email, Follow-ups. Editing is locked for inactive provider.
+          </div>
+        </div>
+        <span style={{ fontSize: 18, color: "var(--muted)" }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+
+          {/* Provider toggle */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+            {["azure", "groq"].map(p => (
+              <button key={p}
+                onClick={() => onProviderChange(p)}
+                style={{
+                  padding: "6px 18px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "2px solid",
+                  borderColor: activeProvider === p ? "var(--accent)" : "var(--border)",
+                  background: activeProvider === p ? "var(--accent)" : "transparent",
+                  color: activeProvider === p ? "#fff" : "var(--text)",
+                  transition: "all 0.15s",
+                }}>
+                {p === "azure" ? "☁️ Azure OpenAI" : "⚡ Groq"}
+              </button>
+            ))}
+            <div style={{ marginLeft: 8, fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>
+              {isGroq ? "Editing Groq prompts. Azure prompts are read-only." : "Editing Azure prompts. Groq prompts are read-only."}
+            </div>
+          </div>
+
+          {/* Prompt fields */}
+          {PROMPT_FIELDS.map(f => {
+            const activeKey = getKey(f);
+            const inactiveKey = isGroq ? f.azureKey : f.groqKey;
+            const val = getValue(f);
+            const inactiveVal = form[inactiveKey] ?? serverValues[inactiveKey] ?? "";
+            const isExpanded = expandedField === f.id;
+
+            return (
+              <div key={f.id} style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{f.label}</div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setExpandedField(isExpanded ? null : f.id)}
+                    style={{ fontSize: 11 }}>
+                    {isExpanded ? "Collapse" : "Expand"}
+                  </button>
+                </div>
+
+                {/* Active provider — editable */}
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>
+                    {isGroq ? "⚡ Groq" : "☁️ Azure"} (active — editable)
+                  </div>
+                  <textarea
+                    value={val}
+                    onChange={e => setVal(activeKey, e.target.value)}
+                    placeholder={getPlaceholder(f)}
+                    rows={isExpanded ? 20 : 4}
+                    style={{
+                      width: "100%", fontFamily: "monospace", fontSize: 12, resize: "vertical",
+                      borderRadius: 6, border: "1px solid var(--border)", padding: "8px 10px",
+                      background: "var(--surface)", color: "var(--text)", lineHeight: 1.5,
+                    }}
+                  />
+                  {val && (
+                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 4, fontSize: 11 }}
+                      onClick={() => setVal(activeKey, "")}>
+                      Reset to default
+                    </button>
+                  )}
+                </div>
+
+                {/* Inactive provider — read only */}
+                {isExpanded && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--dim)", marginBottom: 3 }}>
+                      {isGroq ? "☁️ Azure" : "⚡ Groq"} (inactive — read only)
+                    </div>
+                    <textarea
+                      value={inactiveVal}
+                      readOnly
+                      rows={8}
+                      style={{
+                        width: "100%", fontFamily: "monospace", fontSize: 12, resize: "none",
+                        borderRadius: 6, border: "1px solid var(--border)", padding: "8px 10px",
+                        background: "var(--bg)", color: "var(--dim)", lineHeight: 1.5, cursor: "not-allowed", opacity: 0.6,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsView() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [serverValues, setServerValues] = useState<Record<string, string>>({});
@@ -279,6 +421,7 @@ export default function SettingsView() {
   const [apolloStatsLoading, setApolloStatsLoading] = useState(false);
   const [apolloStatsError, setApolloStatsError] = useState("");
   const [reindexing, setReindexing] = useState(false);
+  const [promptProvider, setPromptProvider] = useState("azure");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -287,6 +430,7 @@ export default function SettingsView() {
       setServerValues(data.values || {});
       setIsSet(data.isSet || {});
       setForm({});
+      setPromptProvider(data.values?.[KEYS.AiProvider] || "azure");
     } catch (e: any) { setBanner({ kind: "error", text: `Load failed: ${e.message}` }); }
     finally { setLoading(false); }
   }, []);
@@ -416,6 +560,16 @@ export default function SettingsView() {
           onChange={v => setVal(KEYS.EmailSignature, v)}
         />
       </div>
+
+      {/* Artifact Prompts — provider-specific, collapsible */}
+      <ArtifactPromptsSection
+        form={form}
+        setVal={setVal}
+        serverValues={serverValues}
+        activeProvider={promptProvider}
+        onProviderChange={setPromptProvider}
+        defaultPrompts={{}}
+      />
 
       {/* Tech config — collapsible */}
       <div className="card">

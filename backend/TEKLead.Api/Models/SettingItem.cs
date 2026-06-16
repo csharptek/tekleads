@@ -46,6 +46,18 @@ public static class SettingKeys
     // Vector store toggle
     public const string VectorProvider             = "vector_provider";      // "azure_search" | "pgvector"
 
+    // Provider-specific artifact prompts
+    public const string ArtifactCoverLetterPromptAzure = "artifact_cover_letter_prompt_azure";
+    public const string ArtifactWhatsappPromptAzure    = "artifact_whatsapp_prompt_azure";
+    public const string ArtifactEmailPromptAzure       = "artifact_email_prompt_azure";
+    public const string ArtifactFollowUp1PromptAzure   = "artifact_followup1_prompt_azure";
+    public const string ArtifactFollowUp2PromptAzure   = "artifact_followup2_prompt_azure";
+    public const string ArtifactCoverLetterPromptGroq  = "artifact_cover_letter_prompt_groq";
+    public const string ArtifactWhatsappPromptGroq     = "artifact_whatsapp_prompt_groq";
+    public const string ArtifactEmailPromptGroq        = "artifact_email_prompt_groq";
+    public const string ArtifactFollowUp1PromptGroq    = "artifact_followup1_prompt_groq";
+    public const string ArtifactFollowUp2PromptGroq    = "artifact_followup2_prompt_groq";
+
     // Proposal Settings
     public const string ProposalCompanyName         = "proposal_company_name";
     public const string ProposalTagline             = "proposal_tagline";
@@ -90,6 +102,8 @@ public static class SettingKeys
         WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion, WhatsappBlobContainer,
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
         AiProvider, GroqApiKey, GroqModel, VectorProvider,
+        ArtifactCoverLetterPromptAzure, ArtifactWhatsappPromptAzure, ArtifactEmailPromptAzure, ArtifactFollowUp1PromptAzure, ArtifactFollowUp2PromptAzure,
+        ArtifactCoverLetterPromptGroq,  ArtifactWhatsappPromptGroq,  ArtifactEmailPromptGroq,  ArtifactFollowUp1PromptGroq,  ArtifactFollowUp2PromptGroq,
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
         ProposalSignerName, ProposalSignerTitle, ProposalConfidentialityText, ProposalFooterText,
         ProposalLinkedIn, ProposalYouTube, ProposalGitHub, ProposalDefaultPrompt,

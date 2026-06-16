@@ -156,9 +156,9 @@ public class ArtifactsService
         string coverLetter, whatsapp, emailSubject, emailBody;
         try
         {
-            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(clPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, isGroq), context);
-            whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(waPrompt, WhatsappPrompt,    GroqWhatsappPrompt,    isGroq), context);
-            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt,       GroqEmailPrompt,       isGroq), context);
+            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(clPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, isGroq, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq), context);
+            whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(waPrompt, WhatsappPrompt, GroqWhatsappPrompt, isGroq, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq), context);
+            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt, GroqEmailPrompt, isGroq, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq), context);
             (emailSubject, emailBody) = ParseEmail(emailRaw);
         }
         catch (Exception ex)
@@ -201,7 +201,7 @@ public class ArtifactsService
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
         var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, isGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, isGroq, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_cover_letter", result);
         return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
@@ -214,7 +214,7 @@ public class ArtifactsService
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
         var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, WhatsappPrompt, GroqWhatsappPrompt, isGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, WhatsappPrompt, GroqWhatsappPrompt, isGroq, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_whatsapp", result);
         return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
@@ -227,7 +227,7 @@ public class ArtifactsService
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
         var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, EmailPrompt, GroqEmailPrompt, isGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, EmailPrompt, GroqEmailPrompt, isGroq, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
         await SaveField(proposalId, "artifact_email_subject", subject);
@@ -250,7 +250,7 @@ public class ArtifactsService
 
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactFollowUp1Prompt, "");
         var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp1Prompt, GroqFollowUp1Prompt, isGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp1Prompt, GroqFollowUp1Prompt, isGroq, settings, SettingKeys.ArtifactFollowUp1PromptAzure, SettingKeys.ArtifactFollowUp1PromptGroq);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
         // Force subject to match initial email for inbox threading
@@ -281,7 +281,7 @@ public class ArtifactsService
 
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactFollowUp2Prompt, "");
         var isGroq = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure") == "groq";
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp2Prompt, GroqFollowUp2Prompt, isGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp2Prompt, GroqFollowUp2Prompt, isGroq, settings, SettingKeys.ArtifactFollowUp2PromptAzure, SettingKeys.ArtifactFollowUp2PromptGroq);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
         // Force subject to match initial email for inbox threading
@@ -692,9 +692,22 @@ Return only the JSON.";
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /// Returns saved custom prompt if set; otherwise picks Azure or Groq default.
-    private static string GetPrompt(string savedPrompt, Func<string> azureDefault, Func<string> groqDefault, bool isGroq) =>
-        !string.IsNullOrWhiteSpace(savedPrompt) ? savedPrompt : (isGroq ? groqDefault() : azureDefault());
+    /// Returns saved prompt for active provider; falls back to shared key; then hardcoded default.
+    private static string GetPrompt(
+        string sharedSavedPrompt,
+        Func<string> azureDefault,
+        Func<string> groqDefault,
+        bool isGroq,
+        Dictionary<string, string> settings,
+        string azureKey,
+        string groqKey)
+    {
+        var providerKey = isGroq ? groqKey : azureKey;
+        var providerSaved = settings.GetValueOrDefault(providerKey, "");
+        if (!string.IsNullOrWhiteSpace(providerSaved)) return providerSaved;
+        if (!string.IsNullOrWhiteSpace(sharedSavedPrompt)) return sharedSavedPrompt;
+        return isGroq ? groqDefault() : azureDefault();
+    }
 
     /// Fallback ranking when AI Search is unavailable: industry-matched projects first.
     private static List<PortfolioProject> RankByIndustry(List<PortfolioProject> items, string? industry, int topK)
