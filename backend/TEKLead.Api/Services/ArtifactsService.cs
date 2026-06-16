@@ -550,53 +550,79 @@ Return only the JSON. No preamble.";
 
     public static string GroqCoverLetterPrompt() => @"You are ghostwriting an Upwork COVER LETTER for Bhanu Gupta — 15+ years full-stack dev, 40+ delivered projects.
 
-HARD RULES (violations = failure):
-- Do NOT start with ""I"". Never open with ""I have"", ""I am"", ""I'm excited"", ""I believe"", ""I'd love"".
-- Do NOT use: ""great fit"", ""passionate"", ""excited"", ""I'd love to"", ""I believe I can"", ""challenging"".
-- Do NOT write generic bullets like ""write clean code"" or ""ensure quality"".
-- Do NOT mention ""Csharptek"" or any company name of Bhanu.
-- Do NOT invent portfolio items, metrics, or links.
-- METRICS REQUIRED: every project reference needs a number (%, $, users, time saved).
-- LENGTH: exactly 180-230 words. Count them.
+CRITICAL OPENING RULE — READ FIRST:
+The FIRST WORD must NOT be ""I"". The first sentence must NOT start with ""I"".
+BAD: ""I understand your need..."" / ""I have reviewed..."" / ""I architected..."" / ""I will design...""
+GOOD: ""Ledger integrity at scale..."" / ""Real-money correctness..."" / ""Scaling a modular monolith...""
+If your first word is ""I"" — rewrite the entire opening.
 
-STRUCTURE — follow exactly, no section headers:
+BANNED WORDS AND PHRASES (never use any of these):
+""I will"", ""I am"", ""I have"", ""I'd love"", ""I believe"", ""I'd be"", ""I can help"",
+""great fit"", ""passionate"", ""excited"", ""challenging"", ""ensure quality"", ""write clean code"",
+""happy to help"", ""looking forward"", ""I hope"", ""pleased to"", ""thrilled"", ""love to"",
+""Csharptek"", any company name of Bhanu.
 
-1. HOOK (1 sentence): Restate the client's core problem in your own words. Prove you read the job post. If company details exist in context, weave in one specific detail.
-
-2. PROOF (1-2 sentences): One metric-backed outcome from the most industry-relevant portfolio project. Format: [What was built] — [measurable result].
-
-3. DONE = (1 sentence): ""Done = [specific deliverable the client can test/verify]"" — use their language.
-
-4. APPROACH (3 bullets): Each = one concrete technical decision + named technology. No vague bullets.
-
-5. PORTFOLIO (1 item): Most relevant project. Format: [Project Name] — [one sentence why relevant]. Demo: [YouTube link from context ONLY — MANDATORY if AVAILABLE YOUTUBE DEMOS section exists]
-
-6. QUESTIONS (2 max): Sharp, specific questions proving deep reading.
-
-7. SIGN-OFF: ""I'm Bhanu Gupta — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone] overlap."" then ""Bhanu Gupta""
-
-Return only the cover letter. No preamble. No markdown. No explanations.";
-
-    public static string GroqWhatsappPrompt() => @"Write a WhatsApp FIRST-TOUCH outreach message for Bhanu Gupta, freelance software developer.
-
-GOAL: Earn a reply. NOT to sell. NOT to pitch. NOT to explain pricing.
+BANNED SENTENCE PATTERNS:
+- Starting a sentence with ""I will [verb]"" — e.g. ""I will design"", ""I will implement"", ""I will set up""
+- Generic sign-off like ""Can we schedule a call to discuss..."" or ""What are your thoughts""
+- Ending questions that are vague or not tied to the specific job post
+- Repeating the same subject (""I"") in 3+ consecutive sentences
 
 HARD RULES:
-- MAX 5 lines, under 60 words total. Count them.
-- Do NOT use: ""I'd love to"", ""excited"", ""passionate"", ""great fit"", ""challenging"".
-- Do NOT start with ""Dear"". Use ""Hi [first name]"".
-- Do NOT include pricing, timeline, or bullet points.
+- Every project reference MUST include a metric (%, $, user count, time saved). No adjectives without numbers.
+- LENGTH: 180-230 words exactly. Count before returning.
+- Do NOT invent portfolio items, metrics, or YouTube links.
+- YouTube demo link: MANDATORY if AVAILABLE YOUTUBE DEMOS section exists in context. Use exactly the URL from context.
+
+STRUCTURE — follow exactly, no section headers, no labels:
+
+1. HOOK (1 sentence): Open with the client's core problem restated as a statement — not ""I"". Prove you read it. If company details exist, include one specific detail (industry, product, size).
+
+2. PROOF (1-2 sentences): Most industry-relevant past project + specific measurable outcome. Format: [What was built] — [measurable result].
+
+3. DONE = (1 sentence): ""Done = [specific deliverable the client can test/verify]"" — mirror their language from the job post.
+
+4. APPROACH (3 bullets): Each bullet = one named technology + one concrete decision. No generic bullets.
+BAD bullet: ""Ensure real-money correctness""
+GOOD bullet: ""Idempotent command handlers with Postgres advisory locks for all ledger mutations""
+
+5. PORTFOLIO (1 item only): [Project Name] — [one sentence why relevant to THIS job]. Demo: [YouTube URL from context — mandatory if available]
+
+6. QUESTIONS (2 max): Specific questions tied to details in the job post. Not generic.
+BAD: ""What is your timeline?""
+GOOD: ""Is the games aggregator integration using a webhook model or polling?""
+
+7. SIGN-OFF (exact format): ""I'm Bhanu Gupta — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone] overlap with [client timezone if known]."" then new line: ""Bhanu Gupta""
+
+Return ONLY the cover letter text. No preamble. No markdown. No labels. No explanation.";
+
+    public static string GroqWhatsappPrompt() => @"Write a SHORT VERSION of a cover letter for WhatsApp — same quality as the cover letter but compressed to fit mobile reading.
+
+This is NOT a generic outreach message. It is a mini cover letter: specific, proof-backed, confident.
+
+CRITICAL OPENING RULE:
+The FIRST WORD must NOT be ""I"". Must not start with ""I have"", ""I am"", ""I will"", ""I'd love"".
+BAD: ""I noticed your project..."" / ""I built..."" / ""I'd love to help...""
+GOOD: ""Real-money correctness at scale..."" / ""Ledger integrity..."" (restate their problem first)
+
+BANNED WORDS: ""excited"", ""passionate"", ""great fit"", ""challenging"", ""happy to help"", ""I will"", ""I'd love"", ""I believe"", ""Csharptek""
+
+HARD RULES:
+- MAX 80 words total. Count them.
+- No bullet points. Prose only.
+- No pricing, no timeline.
 - Do NOT sign with a name at the end.
 - Do NOT invent projects, outcomes, or links.
 - Max 1 emoji or none.
+- Start with: ""Hi [first name],"" on its own line.
 
-STRUCTURE (4 lines exactly):
-Line 1: ""Hi [first name],"" + one specific detail from their project (proves you read it, not spam).
-Line 2: One sentence — what Bhanu built for a similar client in THEIR industry + the concrete outcome.
-Line 3: Demo link from context ONLY. Format: ""Demo: [url]"" — MANDATORY if AVAILABLE YOUTUBE DEMOS exists in context. Skip only if NO YOUTUBE DEMOS AVAILABLE.
-Line 4: Soft CTA — ""Worth a quick 10-min call this week?"" or similar.
+STRUCTURE (4 short blocks):
+Block 1 (Hi line): ""Hi [first name],""
+Block 2 (Hook): Restate their core problem in one sentence — prove you read it.
+Block 3 (Proof): One sentence — what Bhanu built for a similar client + concrete metric outcome.
+Block 4 (Demo + CTA): Demo: [YouTube URL from context — MANDATORY if AVAILABLE YOUTUBE DEMOS exists]. Then: one soft CTA line.
 
-Return only the WhatsApp message. Nothing else.";
+Return only the WhatsApp message text. Nothing else.";
 
     public static string GroqEmailPrompt() => @"You are writing a PROPOSAL EMAIL for Bhanu Gupta — senior full-stack developer, 15+ years, 40+ projects.
 
