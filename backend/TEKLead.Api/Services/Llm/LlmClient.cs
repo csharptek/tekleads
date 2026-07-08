@@ -84,17 +84,32 @@ public static class LlmClient
 
         var body = JsonSerializer.Serialize(bodyObj);
 
-        var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
-        var json = await resp.Content.ReadAsStringAsync();
+        const int maxRetries = 4;
+        for (var attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
 
-        if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Groq {(int)resp.StatusCode}: {json}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests && attempt < maxRetries)
+            {
+                var delay = resp.Headers.RetryAfter?.Delta
+                    ?? TimeSpan.FromSeconds(Math.Pow(2, attempt + 1)); // 2s,4s,8s,16s fallback
+                await Task.Delay(delay);
+                continue;
+            }
 
-        var doc = JsonDocument.Parse(json);
-        return doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString() ?? "";
+            var json = await resp.Content.ReadAsStringAsync();
+
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Groq {(int)resp.StatusCode}: {json}");
+
+            var doc = JsonDocument.Parse(json);
+            return doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString() ?? "";
+        }
+
+        throw new Exception("Groq 429: rate limit retries exhausted.");
     }
 }
