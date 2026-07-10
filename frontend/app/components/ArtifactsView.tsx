@@ -31,14 +31,14 @@ type PromptModal = {
 function ProviderToggle({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div style={{ display: "flex", gap: 2, background: "var(--surface)", borderRadius: 6, padding: 2, border: "1px solid var(--border)" }}>
-      {["azure", "groq"].map(p => (
+      {["azure", "groq", "claude"].map(p => (
         <button key={p} onClick={() => onChange(p)} style={{
           padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none",
           background: value === p ? "var(--accent)" : "transparent",
           color: value === p ? "#fff" : "var(--muted)",
           transition: "all 0.15s",
         }}>
-          {p === "azure" ? "☁️ Azure" : "⚡ Groq"}
+          {p === "azure" ? "☁️ Azure" : p === "groq" ? "⚡ Groq" : "✳️ Claude"}
         </button>
       ))}
     </div>

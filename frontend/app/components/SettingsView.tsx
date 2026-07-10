@@ -38,6 +38,8 @@ const KEYS = {
   AiProvider: "ai_provider",
   GroqApiKey: "groq_api_key",
   GroqModel: "groq_model",
+  ClaudeApiKey: "claude_api_key",
+  ClaudeModel: "claude_model",
   VectorProvider: "vector_provider",
   // Provider-specific prompt keys
   ArtifactCoverLetterPromptAzure: "artifact_cover_letter_prompt_azure",
@@ -89,6 +91,14 @@ const TECH_GROUPS: Group[] = [
     fields: [
       { key: KEYS.GroqApiKey, label: "API Key", placeholder: "Enter to set / replace", secret: true, full: true },
       { key: KEYS.GroqModel, label: "Model", placeholder: "llama-3.3-70b-versatile" },
+    ],
+  },
+  {
+    title: "Claude (Anthropic)",
+    subtitle: "Used when AI Provider is set to Claude.",
+    fields: [
+      { key: KEYS.ClaudeApiKey, label: "API Key", placeholder: "Enter to set / replace", secret: true, full: true },
+      { key: KEYS.ClaudeModel, label: "Model", placeholder: "claude-sonnet-5" },
     ],
   },
   {
@@ -286,9 +296,9 @@ function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, on
   const [open, setOpen] = useState(false);
   const [expandedField, setExpandedField] = useState<string | null>(null);
 
-  const isGroq = activeProvider === "groq";
+  const isGroqOrClaude = activeProvider === "groq" || activeProvider === "claude";
 
-  const getKey = (f: typeof PROMPT_FIELDS[0]) => isGroq ? f.groqKey : f.azureKey;
+  const getKey = (f: typeof PROMPT_FIELDS[0]) => isGroqOrClaude ? f.groqKey : f.azureKey;
 
   const getValue = (f: typeof PROMPT_FIELDS[0]) => {
     const k = getKey(f);
@@ -298,7 +308,7 @@ function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, on
   };
 
   const getPlaceholder = (f: typeof PROMPT_FIELDS[0]) =>
-    defaultPrompts[isGroq ? `groq_${f.id}` : `azure_${f.id}`] || "Leave blank to use built-in default…";
+    defaultPrompts[isGroqOrClaude ? `groq_${f.id}` : `azure_${f.id}`] || "Leave blank to use built-in default…";
 
   return (
     <div className="card">
@@ -318,7 +328,7 @@ function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, on
 
           {/* Provider toggle */}
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-            {["azure", "groq"].map(p => (
+            {["azure", "groq", "claude"].map(p => (
               <button key={p}
                 onClick={() => onProviderChange(p)}
                 style={{
@@ -328,18 +338,18 @@ function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, on
                   color: activeProvider === p ? "#fff" : "var(--text)",
                   transition: "all 0.15s",
                 }}>
-                {p === "azure" ? "☁️ Azure OpenAI" : "⚡ Groq"}
+                {p === "azure" ? "☁️ Azure OpenAI" : p === "groq" ? "⚡ Groq" : "✳️ Claude"}
               </button>
             ))}
             <div style={{ marginLeft: 8, fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>
-              {isGroq ? "Editing Groq prompts. Azure prompts are read-only." : "Editing Azure prompts. Groq prompts are read-only."}
+              {isGroqOrClaude ? "Editing Groq/Claude prompts (shared slot). Azure prompts are read-only." : "Editing Azure prompts. Groq/Claude prompts are read-only."}
             </div>
           </div>
 
           {/* Prompt fields */}
           {PROMPT_FIELDS.map(f => {
             const activeKey = getKey(f);
-            const inactiveKey = isGroq ? f.azureKey : f.groqKey;
+            const inactiveKey = isGroqOrClaude ? f.azureKey : f.groqKey;
             const val = getValue(f);
             const inactiveVal = form[inactiveKey] ?? serverValues[inactiveKey] ?? "";
             const isExpanded = expandedField === f.id;
@@ -357,7 +367,7 @@ function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, on
                 {/* Active provider — editable */}
                 <div style={{ marginBottom: 6 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>
-                    {isGroq ? "⚡ Groq" : "☁️ Azure"} (active — editable)
+                    {isGroqOrClaude ? "⚡ Groq/Claude" : "☁️ Azure"} (active — editable)
                   </div>
                   <textarea
                     value={val}
@@ -382,7 +392,7 @@ function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, on
                 {isExpanded && (
                   <div>
                     <div style={{ fontSize: 11, color: "var(--dim)", marginBottom: 3 }}>
-                      {isGroq ? "☁️ Azure" : "⚡ Groq"} (inactive — read only)
+                      {isGroqOrClaude ? "☁️ Azure" : "⚡ Groq/Claude"} (inactive — read only)
                     </div>
                     <textarea
                       value={inactiveVal}
@@ -520,6 +530,7 @@ export default function SettingsView() {
           options={[
             { value: "azure", label: "Azure OpenAI" },
             { value: "groq", label: "Groq", hint: "open-source models, free tier" },
+            { value: "claude", label: "Claude", hint: "Anthropic, pay-as-you-go" },
           ]}
         />
 

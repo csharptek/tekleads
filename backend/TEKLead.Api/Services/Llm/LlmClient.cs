@@ -22,7 +22,62 @@ public static class LlmClient
         if (provider == "groq")
             return await CallGroq(http, settings, messages, maxTokens);
 
+        if (provider == "claude")
+            return await CallClaude(http, settings, messages, maxTokens);
+
         return await CallAzureOpenAI(http, settings, messages, maxTokens);
+    }
+
+    private static async Task<string> CallClaude(
+        IHttpClientFactory http, Dictionary<string, string> settings, List<object> messages, int maxTokens)
+    {
+        var key   = settings.GetValueOrDefault(SettingKeys.ClaudeApiKey, "");
+        var model = settings.GetValueOrDefault(SettingKeys.ClaudeModel, "claude-sonnet-5");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new Exception("Claude API key not configured in Settings.");
+
+        // Anthropic Messages API takes system prompt separately, not as a message.
+        string systemPrompt = "";
+        var userMessages = new List<object>();
+        foreach (var m in messages)
+        {
+            var prop = m.GetType().GetProperty("role");
+            var role = prop?.GetValue(m)?.ToString() ?? "";
+            var contentProp = m.GetType().GetProperty("content");
+            var content = contentProp?.GetValue(m)?.ToString() ?? "";
+            if (role == "system") systemPrompt = content;
+            else userMessages.Add(new { role, content });
+        }
+
+        var client = http.CreateClient();
+        client.DefaultRequestHeaders.Add("x-api-key", key);
+        client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+        client.Timeout = TimeSpan.FromSeconds(120);
+
+        const string url = "https://api.anthropic.com/v1/messages";
+        var body = JsonSerializer.Serialize(new
+        {
+            model,
+            max_tokens = maxTokens,
+            system = systemPrompt,
+            messages = userMessages
+        });
+
+        var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
+        var json = await resp.Content.ReadAsStringAsync();
+
+        if (!resp.IsSuccessStatusCode)
+            throw new Exception($"Claude {(int)resp.StatusCode}: {json}");
+
+        var doc = JsonDocument.Parse(json);
+        var sb = new StringBuilder();
+        foreach (var block in doc.RootElement.GetProperty("content").EnumerateArray())
+        {
+            if (block.TryGetProperty("type", out var t) && t.GetString() == "text")
+                sb.Append(block.GetProperty("text").GetString());
+        }
+        return sb.ToString();
     }
 
     private static async Task<string> CallAzureOpenAI(

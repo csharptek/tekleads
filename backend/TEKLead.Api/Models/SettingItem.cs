@@ -39,9 +39,11 @@ public static class SettingKeys
     public const string AzureOpenAiEmbeddingDeployment = "azure_openai_embedding_deployment";
 
     // LLM provider toggle
-    public const string AiProvider                 = "ai_provider";          // "azure" | "groq"
+    public const string AiProvider                 = "ai_provider";          // "azure" | "groq" | "claude"
     public const string GroqApiKey                 = "groq_api_key";
     public const string GroqModel                  = "groq_model";
+    public const string ClaudeApiKey               = "claude_api_key";
+    public const string ClaudeModel                = "claude_model";
 
     // Vector store toggle
     public const string VectorProvider             = "vector_provider";      // "azure_search" | "pgvector"
@@ -101,7 +103,7 @@ public static class SettingKeys
         WhatsappCloudPhoneNumberId, WhatsappCloudWabaId, WhatsappCloudAccessToken, WhatsappCloudVerifyToken,
         WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion, WhatsappBlobContainer,
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
-        AiProvider, GroqApiKey, GroqModel, VectorProvider,
+        AiProvider, GroqApiKey, GroqModel, ClaudeApiKey, ClaudeModel, VectorProvider,
         ArtifactCoverLetterPromptAzure, ArtifactWhatsappPromptAzure, ArtifactEmailPromptAzure, ArtifactFollowUp1PromptAzure, ArtifactFollowUp2PromptAzure,
         ArtifactCoverLetterPromptGroq,  ArtifactWhatsappPromptGroq,  ArtifactEmailPromptGroq,  ArtifactFollowUp1PromptGroq,  ArtifactFollowUp2PromptGroq,
         ProposalCompanyName, ProposalTagline, ProposalWebsite, ProposalEmail, ProposalPhone, ProposalAddress,
@@ -118,6 +120,6 @@ public static class SettingKeys
     public static readonly HashSet<string> Secrets = new()
     {
         AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey,
-        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey
+        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey, ClaudeApiKey
     };
 }
