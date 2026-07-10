@@ -724,7 +724,7 @@ Return only the JSON.";
         string azureKey,
         string groqKey)
     {
-        var isGroqOrClaude = provider == "groq" || provider == "claude";
+        var isGroqOrClaude = provider == "groq";
         var providerKey = isGroqOrClaude ? groqKey : azureKey;
         var providerSaved = settings.GetValueOrDefault(providerKey, "");
         if (!string.IsNullOrWhiteSpace(providerSaved)) return providerSaved;

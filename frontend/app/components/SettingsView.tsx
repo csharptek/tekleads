@@ -296,7 +296,7 @@ function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, on
   const [open, setOpen] = useState(false);
   const [expandedField, setExpandedField] = useState<string | null>(null);
 
-  const isGroqOrClaude = activeProvider === "groq" || activeProvider === "claude";
+  const isGroqOrClaude = activeProvider === "groq";
 
   const getKey = (f: typeof PROMPT_FIELDS[0]) => isGroqOrClaude ? f.groqKey : f.azureKey;
 
@@ -342,7 +342,7 @@ function ArtifactPromptsSection({ form, setVal, serverValues, activeProvider, on
               </button>
             ))}
             <div style={{ marginLeft: 8, fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>
-              {isGroqOrClaude ? "Editing Groq/Claude prompts (shared slot). Azure prompts are read-only." : "Editing Azure prompts. Groq/Claude prompts are read-only."}
+              {activeProvider === "claude" ? "Editing Azure prompts (shared with Claude)." : isGroqOrClaude ? "Editing Groq prompts. Azure prompts are read-only." : "Editing Azure prompts. Groq prompts are read-only."}
             </div>
           </div>
 
