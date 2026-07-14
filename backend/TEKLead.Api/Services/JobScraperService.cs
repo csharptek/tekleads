@@ -160,7 +160,7 @@ public class JobScraperService
                 throw new Exception("Apify API key not configured in Settings.");
 
             var keywords = GetKeywordList(all);
-            var datePosted = postedWithinDays <= 1 ? "past-24h" : postedWithinDays <= 7 ? "past-week" : "past-month";
+            var datePosted = postedWithinDays <= 1 ? "r86400" : postedWithinDays <= 7 ? "r604800" : "r2592000";
 
             foreach (var role in roles)
             {
@@ -186,8 +186,11 @@ public class JobScraperService
                         if (ExcludeCompanyKeywords.Any(kw => companyName.ToLowerInvariant().Contains(kw))) continue;
 
                         var jobTitle = GetStr(item, "title") ?? GetStr(item, "jobTitle") ?? "";
-                        var jobUrl = GetStr(item, "jobUrl") ?? GetStr(item, "url") ?? "";
-                        var description = GetStr(item, "description") ?? GetStr(item, "descriptionText") ?? GetStr(item, "jobDescription") ?? "";
+                        var jobUrl = GetStr(item, "link") ?? GetStr(item, "jobUrl") ?? GetStr(item, "url") ?? "";
+                        var description = GetStr(item, "descriptionText") ?? GetStr(item, "description") ?? StripHtml(GetStr(item, "descriptionHtml")) ?? "";
+                        var industry = GetStr(item, "industries") ?? GetStr(item, "industry") ?? "";
+                        var scrapedCompanySize = item.TryGetProperty("companyEmployeesCount", out var ce) && ce.ValueKind == JsonValueKind.Number && ce.TryGetInt32(out var ceInt)
+                            ? $"{ceInt:N0} employees" : "";
                         var postedAtRaw = GetStr(item, "postedAt");
                         DateTime? postedAt = DateTime.TryParse(postedAtRaw, out var pd) ? pd : null;
 
@@ -205,13 +208,13 @@ public class JobScraperService
                         await using var ic = new NpgsqlConnection(cs);
                         await ic.OpenAsync();
                         var leadId = await ic.QuerySingleAsync<Guid>(@"
-                            INSERT INTO job_leads (run_id, company, country, job_title, job_description, job_url,
+                            INSERT INTO job_leads (run_id, company, industry, company_size, country, job_title, job_description, job_url,
                                                     matched_keywords, missed_keywords, scraped_at, saved_at)
-                            VALUES (@runId, @company, @country, @title, @desc, @url, @matched, @missed, @scrapedAt, NOW())
+                            VALUES (@runId, @company, @industry, @companySize, @country, @title, @desc, @url, @matched, @missed, @scrapedAt, NOW())
                             RETURNING id",
                             new
                             {
-                                runId, company = companyName, country, title = jobTitle, desc = description, url = jobUrl,
+                                runId, company = companyName, industry, companySize = scrapedCompanySize, country, title = jobTitle, desc = description, url = jobUrl,
                                 matched, missed, scrapedAt = postedAt ?? DateTime.UtcNow,
                             });
                         await ic.ExecuteAsync("INSERT INTO job_lead_events (job_lead_id, label) VALUES (@id, 'Scraped from LinkedIn')", new { id = leadId });
@@ -241,27 +244,30 @@ public class JobScraperService
     }
 
     /// <summary>
-    /// Calls the Apify "curious_coder/linkedin-jobs-scraper" actor synchronously and
-    /// returns its dataset items. NOTE: field names on returned items (title/description
-    /// etc.) are inferred from the actor's published schema and should be verified
-    /// against a live run — LinkedIn scraper actors occasionally rename fields.
+    /// Calls the Apify "curious_coder/linkedin-jobs-scraper" actor synchronously and returns
+    /// its dataset items. This actor's ONLY input is `urls`: full LinkedIn public jobs-search
+    /// page URLs (confirmed against https://apify.com/curious_coder/linkedin-jobs-scraper/input-schema
+    /// after a prior version of this method sent a `searchQueries`-shaped payload the actor
+    /// rejected with "Field input.urls is required"). We build that search URL ourselves from
+    /// role/location/date-posted rather than accepting one from the person, since the UI only
+    /// collects structured filters. Output field names (title/companyName/link/descriptionText/
+    /// industries/companyEmployeesCount) are confirmed from the actor's own README sample output.
     /// </summary>
-    private async Task<List<JsonElement>> RunApifyActor(string token, string searchQuery, string location, string datePosted)
+    private async Task<List<JsonElement>> RunApifyActor(string token, string searchQuery, string location, string datePostedCode)
     {
         const string actorId = "curious_coder~linkedin-jobs-scraper";
-        var url = $"https://api.apify.com/v2/acts/{actorId}/run-sync-get-dataset-items?token={Uri.EscapeDataString(token)}&timeout=280";
+        var runUrl = $"https://api.apify.com/v2/acts/{actorId}/run-sync-get-dataset-items?token={Uri.EscapeDataString(token)}&timeout=280";
 
-        var payload = new
-        {
-            searchQueries = new[] { searchQuery },
-            location,
-            datePosted,
-            maxResults = 50,
-        };
+        var searchUrl = "https://www.linkedin.com/jobs/search/"
+            + $"?keywords={Uri.EscapeDataString(searchQuery)}"
+            + $"&location={Uri.EscapeDataString(location)}"
+            + $"&f_TPR={Uri.EscapeDataString(datePostedCode)}";
+
+        var payload = new { urls = new[] { searchUrl } };
 
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(290);
-        var res = await client.PostAsJsonAsync(url, payload);
+        var res = await client.PostAsJsonAsync(runUrl, payload);
         var body = await res.Content.ReadAsStringAsync();
         if (!res.IsSuccessStatusCode)
             throw new Exception($"Apify {(int)res.StatusCode}: {body[..Math.Min(500, body.Length)]}");
@@ -273,6 +279,9 @@ public class JobScraperService
 
     private static string? GetStr(JsonElement e, string prop) =>
         e.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static string? StripHtml(string? html) =>
+        string.IsNullOrEmpty(html) ? html : System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ").Trim();
 
     // ── Keyword matching ────────────────────────────────────────────────
 
