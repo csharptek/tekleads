@@ -14,7 +14,7 @@ public class ScrapeRunRequest
     public int PostedWithinDays { get; set; } = 7;
 }
 
-public class SendEmailRequest
+public class JobLeadSendEmailRequest
 {
     public string Sender { get; set; } = "all"; // specific email, or "all" for round-robin
     public DateTime? ScheduledAt { get; set; } // null = send now
@@ -36,7 +36,7 @@ public class BulkIdsRequest
     public List<Guid> Ids { get; set; } = new();
 }
 
-public class BulkSendRequest
+public class JobLeadBulkSendRequest
 {
     public List<Guid> Ids { get; set; } = new();
     public string Sender { get; set; } = "all";
@@ -135,7 +135,7 @@ public class JobLeadsController : ControllerBase
     }
 
     [HttpPost("{id}/send")]
-    public async Task<IActionResult> Send(Guid id, [FromBody] SendEmailRequest req)
+    public async Task<IActionResult> Send(Guid id, [FromBody] JobLeadSendEmailRequest req)
     {
         var lead = await _jobs.GetById(id);
         if (lead == null) return NotFound();
@@ -188,7 +188,7 @@ public class JobLeadsController : ControllerBase
     }
 
     [HttpPost("bulk/send")]
-    public async Task<IActionResult> BulkSend([FromBody] BulkSendRequest req)
+    public async Task<IActionResult> BulkSend([FromBody] JobLeadBulkSendRequest req)
     {
         var results = new List<object>();
         foreach (var id in req.Ids)
