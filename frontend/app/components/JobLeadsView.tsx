@@ -6,6 +6,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 type LeadStatus = "scraped" | "enriched" | "email_ready" | "scheduled" | "sent" | "replied";
 type DrawerTab = "job" | "contact" | "email" | "fu1" | "fu2" | "activity";
 type Provider = "azure" | "groq" | "claude";
+type GroupBy = "none" | "scraped" | "activity";
 
 interface ActivityEvent { label: string; at: string; }
 
@@ -14,12 +15,13 @@ interface JobLead {
   company: string;
   industry: string;
   companySize: string;
+  country: string;
   jobTitle: string;
   jobDescription: string;
   jobUrl: string;
-  postedAt: string;
-  score: number;
   status: LeadStatus;
+  matchedKeywords: string[];
+  missedKeywords: string[];
   contactName?: string;
   contactTitle?: string;
   contactEmail?: string;
@@ -32,6 +34,14 @@ interface JobLead {
   fu2Subject?: string;
   fu2Body?: string;
   sender?: string;
+  scrapedAt: string;
+  savedAt: string;
+  enrichedAt?: string;
+  emailGeneratedAt?: string;
+  sentAt?: string;
+  fu1SentAt?: string;
+  fu2SentAt?: string;
+  repliedAt?: string;
   activity: ActivityEvent[];
 }
 
@@ -58,6 +68,7 @@ const ROLE_OPTIONS = ["Software Engineer", "Full Stack Engineer", "Backend Engin
 const COUNTRIES = ["United States", "United Kingdom", "Canada", "Australia", "India"];
 const COMPANY_SIZES = ["1–9 employees", "10–50 employees", "51–200 employees", "Any size"];
 const POSTED_WITHIN = [1, 3, 7, 14, 30];
+const PER_PAGE = 20;
 
 /* ─── Mock data (UI-only phase — replaced by API in next pass) ───────── */
 
@@ -66,61 +77,73 @@ const daysAgo = (n: number) => new Date(now - n * 864e5).toISOString();
 
 const MOCK: JobLead[] = [
   {
-    id: "1", company: "Northwind Analytics", industry: "SaaS / Data", companySize: "12 employees",
+    id: "1", company: "Northwind Analytics", industry: "SaaS / Data", companySize: "12 employees", country: "United States",
     jobTitle: "Senior Full Stack Engineer", jobUrl: "https://linkedin.com/jobs/1",
     jobDescription: "We're looking for a senior full stack engineer to help us scale our analytics platform. You'll work across our Next.js frontend and .NET backend, own features end to end, and collaborate directly with the founding team. 3+ years experience with React and C# required.",
-    postedAt: daysAgo(2), score: 3, status: "scraped",
-    activity: [{ label: "Scraped from LinkedIn", at: daysAgo(2) }],
+    status: "scraped",
+    matchedKeywords: ["Next.js", "React", ".NET", "C#"], missedKeywords: ["PostgreSQL", "Azure"],
+    scrapedAt: daysAgo(0), savedAt: daysAgo(0),
+    activity: [{ label: "Scraped from LinkedIn", at: daysAgo(0) }],
   },
   {
-    id: "2", company: "Fernbridge Health", industry: "Healthtech", companySize: "34 employees",
+    id: "2", company: "Fernbridge Health", industry: "Healthtech", companySize: "34 employees", country: "United States",
     jobTitle: "Backend Engineer (Node.js)", jobUrl: "https://linkedin.com/jobs/2",
     jobDescription: "Fernbridge Health is building patient scheduling infra for clinics. Looking for a backend engineer comfortable with Node.js, PostgreSQL, and HIPAA-aware system design. Remote friendly.",
-    postedAt: daysAgo(4), score: 3, status: "enriched",
+    status: "enriched",
+    matchedKeywords: ["PostgreSQL", "Remote"], missedKeywords: ["React", ".NET", "Next.js"],
     contactName: "Priya Shah", contactTitle: "Head of Engineering", contactEmail: "priya@fernbridgehealth.com", contactLinkedin: "https://linkedin.com/in/priyashah",
-    activity: [{ label: "Scraped from LinkedIn", at: daysAgo(4) }, { label: "Enriched via Apollo", at: daysAgo(3) }],
+    scrapedAt: daysAgo(1), savedAt: daysAgo(1), enrichedAt: daysAgo(1),
+    activity: [{ label: "Scraped from LinkedIn", at: daysAgo(1) }, { label: "Enriched via Apollo", at: daysAgo(1) }],
   },
   {
-    id: "3", company: "Cursive Robotics", industry: "AI / Robotics", companySize: "8 employees",
+    id: "3", company: "Cursive Robotics", industry: "AI / Robotics", companySize: "8 employees", country: "United States",
     jobTitle: "AI Engineer", jobUrl: "https://linkedin.com/jobs/3",
     jobDescription: "Small robotics team looking for an AI engineer to work on perception models. Python, PyTorch, and a genuine interest in shipping fast.",
-    postedAt: daysAgo(5), score: 4, status: "email_ready",
+    status: "email_ready",
+    matchedKeywords: ["Python", "Remote"], missedKeywords: ["React", ".NET", "Next.js", "TypeScript"],
     contactName: "Dan Ferreira", contactTitle: "Co-founder", contactEmail: "dan@cursiverobotics.ai",
     emailSubject: "Quick thought on Cursive's AI Engineer role",
     emailBody: "Hi Dan,\n\nSaw Cursive Robotics is hiring an AI Engineer — congrats on the momentum. We recently helped a similarly-sized robotics team ship a perception pipeline in half the usual timeline.\n\nWorth a quick chat?\n\nBest,\nManjika",
-    activity: [{ label: "Scraped from LinkedIn", at: daysAgo(5) }, { label: "Enriched via Apollo", at: daysAgo(4) }, { label: "Email generated", at: daysAgo(3) }],
+    scrapedAt: daysAgo(2), savedAt: daysAgo(2), enrichedAt: daysAgo(2), emailGeneratedAt: daysAgo(1),
+    activity: [{ label: "Scraped from LinkedIn", at: daysAgo(2) }, { label: "Enriched via Apollo", at: daysAgo(2) }, { label: "Email generated", at: daysAgo(1) }],
   },
   {
-    id: "4", company: "Loomvale Studio", industry: "Design Tech", companySize: "6 employees",
+    id: "4", company: "Loomvale Studio", industry: "Design Tech", companySize: "6 employees", country: "Canada",
     jobTitle: "Frontend Engineer (React)", jobUrl: "https://linkedin.com/jobs/4",
     jobDescription: "Loomvale is a design tooling startup. We need a frontend engineer who's obsessed with interaction detail — React, Tailwind, Framer Motion.",
-    postedAt: daysAgo(6), score: 3, status: "scheduled",
+    status: "scheduled",
+    matchedKeywords: ["React", "Tailwind CSS"], missedKeywords: [".NET", "PostgreSQL"],
     contactName: "Wren Okafor", contactTitle: "Founder", contactEmail: "wren@loomvale.studio",
     emailSubject: "Loomvale's Frontend Engineer search",
     emailBody: "Hi Wren,\n\nNoticed Loomvale is hiring for frontend. We've built pixel-precise interaction-heavy UIs for a few design tools recently — happy to share examples.\n\nBest,\nManjika",
     sender: "manjika.tantia@csharptek.com",
+    scrapedAt: daysAgo(6), savedAt: daysAgo(6), enrichedAt: daysAgo(5), emailGeneratedAt: daysAgo(4),
     activity: [{ label: "Scraped from LinkedIn", at: daysAgo(6) }, { label: "Enriched via Apollo", at: daysAgo(5) }, { label: "Email generated", at: daysAgo(4) }, { label: "Scheduled to send", at: daysAgo(1) }],
   },
   {
-    id: "5", company: "Portside Logistics", industry: "Logistics Tech", companySize: "21 employees",
+    id: "5", company: "Portside Logistics", industry: "Logistics Tech", companySize: "21 employees", country: "United Kingdom",
     jobTitle: "Full Stack Engineer", jobUrl: "https://linkedin.com/jobs/5",
     jobDescription: "Portside is digitizing port logistics. Full stack engineer needed, Next.js + .NET, fleet tracking dashboards.",
-    postedAt: daysAgo(9), score: 2, status: "sent",
+    status: "sent",
+    matchedKeywords: ["Next.js", ".NET", "TypeScript"], missedKeywords: ["PostgreSQL"],
     contactName: "Marcus Lin", contactTitle: "CTO", contactEmail: "marcus@portsidelogistics.com",
     emailSubject: "Portside's Full Stack Engineer opening",
     emailBody: "Hi Marcus,\n\nSaw the Full Stack Engineer opening at Portside. We've shipped a few fleet/logistics dashboards on the exact Next.js + .NET stack you're running.\n\nOpen to a quick intro call?\n\nBest,\nAmrita",
     sender: "amrita.rani@csharptek.com",
+    scrapedAt: daysAgo(9), savedAt: daysAgo(9), enrichedAt: daysAgo(8), emailGeneratedAt: daysAgo(7), sentAt: daysAgo(6),
     activity: [{ label: "Scraped from LinkedIn", at: daysAgo(9) }, { label: "Enriched via Apollo", at: daysAgo(8) }, { label: "Email generated", at: daysAgo(7) }, { label: "Sent", at: daysAgo(6) }],
   },
   {
-    id: "6", company: "Amberloop", industry: "Fintech", companySize: "15 employees",
+    id: "6", company: "Amberloop", industry: "Fintech", companySize: "15 employees", country: "Australia",
     jobTitle: "Senior Backend Engineer", jobUrl: "https://linkedin.com/jobs/6",
     jobDescription: "Amberloop is building embedded payments infra. Senior backend engineer, C#/.NET, strong security fundamentals expected.",
-    postedAt: daysAgo(11), score: 3, status: "replied",
+    status: "replied",
+    matchedKeywords: [".NET", "C#"], missedKeywords: ["React", "PostgreSQL"],
     contactName: "Sofia Reyes", contactTitle: "VP Engineering", contactEmail: "sofia@amberloop.io",
     emailSubject: "Amberloop's Senior Backend Engineer search",
     emailBody: "Hi Sofia,\n\nSaw Amberloop is hiring a senior backend engineer. We specialize in exactly this — .NET teams building payments-grade infra.\n\nBest,\nManjika",
     sender: "manjika.tantia@csharptek.com",
+    scrapedAt: daysAgo(11), savedAt: daysAgo(11), enrichedAt: daysAgo(10), emailGeneratedAt: daysAgo(9), sentAt: daysAgo(8), repliedAt: daysAgo(6),
     activity: [{ label: "Scraped from LinkedIn", at: daysAgo(11) }, { label: "Enriched via Apollo", at: daysAgo(10) }, { label: "Email generated", at: daysAgo(9) }, { label: "Sent", at: daysAgo(8) }, { label: "Replied", at: daysAgo(6) }],
   },
 ];
@@ -141,10 +164,26 @@ function fmtDate(iso?: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function ScoreChip({ score }: { score: number }) {
-  const cls = score >= 3 ? "chip chip-green" : score === 2 ? "chip chip-orange" : "chip";
-  return <span className={cls}>{score}</span>;
+function KeywordSummary({ matched, missed }: { matched: string[]; missed: string[] }) {
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11 }}>
+      <span style={{ color: "var(--green)", fontWeight: 600 }}>✓{matched.length}</span>
+      <span style={{ color: "var(--dim)" }}>✗{missed.length}</span>
+    </div>
+  );
 }
+
+function bucketFor(iso?: string): string {
+  if (!iso) return "Older";
+  const d = new Date(iso);
+  const diffDays = Math.floor((now - d.getTime()) / 864e5);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays <= 7) return "This week";
+  if (diffDays <= 14) return "Last week";
+  return "Older";
+}
+const BUCKET_ORDER = ["Today", "Yesterday", "This week", "Last week", "Older"];
 
 /* ─── Main view ──────────────────────────────────────────────────────── */
 
@@ -152,7 +191,16 @@ export default function JobLeadsView() {
   const [leads, setLeads] = useState<JobLead[]>(MOCK);
   const [statusFilter, setStatusFilter] = useState<"all" | LeadStatus>("all");
   const [search, setSearch] = useState("");
-  const [minScore, setMinScore] = useState(0);
+  const [keywordFilter, setKeywordFilter] = useState("");
+  const [industryFilter, setIndustryFilter] = useState("all");
+  const [sizeFilter, setSizeFilter] = useState("all");
+  const [countryFilter, setCountryFilter] = useState("all");
+  const [needsFollowUp, setNeedsFollowUp] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [page, setPage] = useState(1);
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("job");
@@ -177,21 +225,52 @@ export default function JobLeadsView() {
 
   const drawer = leads.find(l => l.id === drawerId) || null;
 
+  const industries = useMemo(() => Array.from(new Set(leads.map(l => l.industry))).sort(), [leads]);
+  const sizes = useMemo(() => Array.from(new Set(leads.map(l => l.companySize))).sort(), [leads]);
+  const countries = useMemo(() => Array.from(new Set(leads.map(l => l.country))).sort(), [leads]);
+
   const stats = useMemo(() => ({
     scraped: leads.length,
-    qualified: leads.filter(l => l.score >= 2).length,
     enriched: leads.filter(l => ["enriched", "email_ready", "scheduled", "sent", "replied"].includes(l.status)).length,
     emailReady: leads.filter(l => l.status === "email_ready").length,
     sent: leads.filter(l => ["sent", "replied"].includes(l.status)).length,
     replied: leads.filter(l => l.status === "replied").length,
+    needsFollowUp: leads.filter(l => l.status === "sent" && !l.repliedAt).length,
   }), [leads]);
 
-  const filtered = leads.filter(l => {
+  const filtered = useMemo(() => leads.filter(l => {
     if (statusFilter !== "all" && l.status !== statusFilter) return false;
-    if (l.score < minScore) return false;
     if (search && !`${l.company} ${l.jobTitle}`.toLowerCase().includes(search.toLowerCase())) return false;
+    if (keywordFilter && !l.matchedKeywords.some(k => k.toLowerCase().includes(keywordFilter.toLowerCase()))) return false;
+    if (industryFilter !== "all" && l.industry !== industryFilter) return false;
+    if (sizeFilter !== "all" && l.companySize !== sizeFilter) return false;
+    if (countryFilter !== "all" && l.country !== countryFilter) return false;
+    if (needsFollowUp && !(l.status === "sent" && !l.repliedAt)) return false;
+    if (dateFrom && new Date(l.scrapedAt) < new Date(dateFrom)) return false;
+    if (dateTo && new Date(l.scrapedAt) > new Date(dateTo + "T23:59:59")) return false;
     return true;
-  });
+  }), [leads, statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo]);
+
+  useEffect(() => { setPage(1); }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, groupBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  const grouped = useMemo(() => {
+    if (groupBy === "none") return null;
+    const map = new Map<string, JobLead[]>();
+    for (const l of filtered) {
+      const key = bucketFor(groupBy === "scraped" ? l.scrapedAt : (l.activity[l.activity.length - 1]?.at));
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(l);
+    }
+    return BUCKET_ORDER.map(b => ({ label: b, rows: map.get(b) || [] })).filter(g => g.rows.length > 0);
+  }, [filtered, groupBy]);
+
+  const clearFilters = () => {
+    setStatusFilter("all"); setSearch(""); setKeywordFilter(""); setIndustryFilter("all");
+    setSizeFilter("all"); setCountryFilter("all"); setNeedsFollowUp(false); setDateFrom(""); setDateTo("");
+  };
 
   const patch = (id: string, fields: Partial<JobLead>, activityLabel?: string) => {
     setLeads(ls => ls.map(l => l.id === id
@@ -217,12 +296,12 @@ export default function JobLeadsView() {
 
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleSelectAll = () =>
-    setSelected(s => s.size === filtered.length ? new Set() : new Set(filtered.map(l => l.id)));
+  const toggleSelectAll = (rows: JobLead[]) =>
+    setSelected(s => s.size === rows.length ? new Set() : new Set(rows.map(l => l.id)));
 
   const enrichOne = (id: string) => {
     patch(id, {
-      status: "enriched",
+      status: "enriched", enrichedAt: new Date().toISOString(),
       contactName: "Alex Rivera", contactTitle: "Engineering Manager",
       contactEmail: "alex@" + leads.find(l => l.id === id)?.company.toLowerCase().replace(/\s+/g, "") + ".com",
     }, "Enriched via Apollo");
@@ -232,7 +311,7 @@ export default function JobLeadsView() {
     const lead = leads.find(l => l.id === id);
     if (!lead) return;
     patch(id, {
-      status: "email_ready",
+      status: "email_ready", emailGeneratedAt: new Date().toISOString(),
       emailSubject: `Quick note on ${lead.company}'s ${lead.jobTitle} search`,
       emailBody: `Hi ${lead.contactName?.split(" ")[0] || "there"},\n\nSaw ${lead.company} is hiring a ${lead.jobTitle}. We've shipped similar work recently — happy to share examples if useful.\n\nBest,\nManjika`,
     }, "Email generated");
@@ -253,6 +332,68 @@ export default function JobLeadsView() {
     { id: "fu2", label: "Follow-up 2" },
     { id: "activity", label: "Activity" },
   ];
+
+  const activeFilterCount = [
+    statusFilter !== "all", !!search, !!keywordFilter, industryFilter !== "all",
+    sizeFilter !== "all", countryFilter !== "all", needsFollowUp, !!dateFrom, !!dateTo,
+  ].filter(Boolean).length;
+
+  /* Shared table renderer, used both flat (paginated) and grouped (no pagination) */
+  const renderTable = (rows: JobLead[]) => (
+    <div className="table-wrap" style={{ marginBottom: groupBy === "none" ? 0 : 16 }}>
+      {rows.length === 0 ? (
+        <div className="empty">
+          <div className="empty-title">No leads match your filters</div>
+          <div>Run a new scrape or widen your filters.</div>
+        </div>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: 32 }}><input type="checkbox" checked={selected.size > 0 && rows.every(r => selected.has(r.id))} onChange={() => toggleSelectAll(rows)} /></th>
+              <th>Company</th>
+              <th>Job Title</th>
+              <th>Keywords</th>
+              <th>Status</th>
+              <th>Contact</th>
+              <th>Scraped</th>
+              <th>Last Action</th>
+              <th style={{ width: 24 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(l => (
+              <tr key={l.id} style={{ cursor: "pointer" }} onClick={() => openDrawer(l.id)}>
+                <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleSelect(l.id)} /></td>
+                <td>
+                  <div style={{ fontWeight: 600 }}>{l.company}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{l.industry} · {l.companySize} · {l.country}</div>
+                </td>
+                <td style={{ maxWidth: 220 }}>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.jobTitle}</div>
+                </td>
+                <td><KeywordSummary matched={l.matchedKeywords} missed={l.missedKeywords} /></td>
+                <td><span className={STATUS_CHIP[l.status]}>{STATUS_LABEL[l.status]}</span></td>
+                <td onClick={e => e.stopPropagation()}>
+                  {l.contactName ? (
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: 12 }}>{l.contactName}</div>
+                      <div style={{ fontSize: 11, color: "var(--muted)" }}>{l.contactTitle}</div>
+                    </div>
+                  ) : (
+                    <button className="icon-btn" style={{ color: "var(--accent)" }} onClick={() => enrichOne(l.id)}>Enrich</button>
+                  )}
+                </td>
+                <td style={{ fontSize: 12, color: "var(--muted)" }}>{fmtDate(l.scrapedAt)}</td>
+                <td style={{ fontSize: 12, color: "var(--muted)" }}>{fmtDate(l.activity[l.activity.length - 1]?.at)}</td>
+                <td style={{ color: "var(--dim)" }}>›</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
 
   return (
     <div className="page">
@@ -306,29 +447,58 @@ export default function JobLeadsView() {
       {/* Stat pills */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
         <StatPill label="Scraped" value={stats.scraped} />
-        <StatPill label="Qualified" value={stats.qualified} />
         <StatPill label="Enriched" value={stats.enriched} />
         <StatPill label="Email Ready" value={stats.emailReady} />
         <StatPill label="Sent" value={stats.sent} />
         <StatPill label="Replied" value={stats.replied} />
+        <StatPill label="Needs Follow-up" value={stats.needsFollowUp} />
       </div>
 
-      {/* Filter row */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <button onClick={() => setStatusFilter("all")} className={statusFilter === "all" ? "chip chip-blue" : "chip"} style={{ cursor: "pointer", padding: "5px 12px" }}>All</button>
-          {STATUS_ORDER.map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)} className={statusFilter === s ? "chip chip-blue" : "chip"} style={{ cursor: "pointer", padding: "5px 12px" }}>
-              {STATUS_LABEL[s]}
-            </button>
-          ))}
+      {/* Status tabs */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        <button onClick={() => setStatusFilter("all")} className={statusFilter === "all" ? "chip chip-blue" : "chip"} style={{ cursor: "pointer", padding: "5px 12px" }}>All</button>
+        {STATUS_ORDER.map(s => (
+          <button key={s} onClick={() => setStatusFilter(s)} className={statusFilter === s ? "chip chip-blue" : "chip"} style={{ cursor: "pointer", padding: "5px 12px" }}>
+            {STATUS_LABEL[s]}
+          </button>
+        ))}
+      </div>
+
+      {/* Filter bar */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input className="input" placeholder="Search company or title…" value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 200 }} />
+          <input className="input" placeholder="Keyword (e.g. React)" value={keywordFilter} onChange={e => setKeywordFilter(e.target.value)} style={{ maxWidth: 170 }} />
+          <select className="input" value={industryFilter} onChange={e => setIndustryFilter(e.target.value)} style={{ maxWidth: 160 }}>
+            <option value="all">All industries</option>
+            {industries.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
+          <select className="input" value={sizeFilter} onChange={e => setSizeFilter(e.target.value)} style={{ maxWidth: 150 }}>
+            <option value="all">All sizes</option>
+            {sizes.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select className="input" value={countryFilter} onChange={e => setCountryFilter(e.target.value)} style={{ maxWidth: 150 }}>
+            <option value="all">All countries</option>
+            {countries.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
+            <input type="checkbox" checked={needsFollowUp} onChange={e => setNeedsFollowUp(e.target.checked)} />
+            Needs follow-up
+          </label>
+          {activeFilterCount > 0 && <button className="icon-btn" onClick={clearFilters}>Clear filters ({activeFilterCount})</button>}
         </div>
-        <input className="input" placeholder="Search company or title…" value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 220, marginLeft: "auto" }} />
-        <select className="input" value={minScore} onChange={e => setMinScore(+e.target.value)} style={{ maxWidth: 130 }}>
-          <option value={0}>Any score</option>
-          <option value={2}>Score ≥ 2</option>
-          <option value={3}>Score ≥ 3</option>
-        </select>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+          <span className="field-label" style={{ margin: 0 }}>Scraped</span>
+          <input type="date" className="input" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ maxWidth: 150 }} />
+          <span style={{ color: "var(--muted)", fontSize: 12 }}>to</span>
+          <input type="date" className="input" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ maxWidth: 150 }} />
+          <span className="field-label" style={{ margin: "0 0 0 12px" }}>Group by</span>
+          <select className="input" value={groupBy} onChange={e => setGroupBy(e.target.value as GroupBy)} style={{ maxWidth: 160 }}>
+            <option value="none">None (paginated)</option>
+            <option value="scraped">Scraped date</option>
+            <option value="activity">Last activity</option>
+          </select>
+        </div>
       </div>
 
       {/* Bulk bar */}
@@ -344,58 +514,33 @@ export default function JobLeadsView() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="table-wrap">
-        {filtered.length === 0 ? (
-          <div className="empty">
-            <div className="empty-title">No leads match your filters</div>
-            <div>Run a new scrape or widen your filters.</div>
+      {/* Table(s) */}
+      {groupBy === "none" ? (
+        <>
+          {renderTable(paged)}
+          {filtered.length > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, fontSize: 12, color: "var(--muted)" }}>
+              <span>{filtered.length} lead{filtered.length !== 1 ? "s" : ""} · page {page} of {totalPages}</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+                <button className="btn btn-ghost btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        (grouped || []).map(g => (
+          <div key={g.label} style={{ marginBottom: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 8px 2px" }}>
+              {g.label} <span style={{ fontWeight: 500, color: "var(--dim)" }}>({g.rows.length})</span>
+            </div>
+            {renderTable(g.rows)}
           </div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 32 }}><input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleSelectAll} /></th>
-                <th>Company</th>
-                <th>Job Title</th>
-                <th>Score</th>
-                <th>Status</th>
-                <th>Contact</th>
-                <th>Last Action</th>
-                <th style={{ width: 24 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(l => (
-                <tr key={l.id} style={{ cursor: "pointer" }} onClick={() => openDrawer(l.id)}>
-                  <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleSelect(l.id)} /></td>
-                  <td>
-                    <div style={{ fontWeight: 600 }}>{l.company}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{l.industry} · {l.companySize}</div>
-                  </td>
-                  <td style={{ maxWidth: 240 }}>
-                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.jobTitle}</div>
-                  </td>
-                  <td><ScoreChip score={l.score} /></td>
-                  <td><span className={STATUS_CHIP[l.status]}>{STATUS_LABEL[l.status]}</span></td>
-                  <td onClick={e => e.stopPropagation()}>
-                    {l.contactName ? (
-                      <div>
-                        <div style={{ fontWeight: 500, fontSize: 12 }}>{l.contactName}</div>
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{l.contactTitle}</div>
-                      </div>
-                    ) : (
-                      <button className="icon-btn" style={{ color: "var(--accent)" }} onClick={() => enrichOne(l.id)}>Enrich</button>
-                    )}
-                  </td>
-                  <td style={{ fontSize: 12, color: "var(--muted)" }}>{fmtDate(l.activity[l.activity.length - 1]?.at)}</td>
-                  <td style={{ color: "var(--dim)" }}>›</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+        ))
+      )}
+      {groupBy !== "none" && grouped && grouped.length === 0 && (
+        <div className="table-wrap"><div className="empty"><div className="empty-title">No leads match your filters</div></div></div>
+      )}
 
       {/* Drawer */}
       {drawer && (
@@ -424,7 +569,16 @@ export default function JobLeadsView() {
             <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
               {drawerTab === "job" && (
                 <div>
-                  <div className="chip" style={{ marginBottom: 12 }}>{fmtDate(drawer.postedAt)} · {drawer.industry} · {drawer.companySize}</div>
+                  <div className="chip" style={{ marginBottom: 12 }}>Scraped {fmtDate(drawer.scrapedAt)} · {drawer.industry} · {drawer.companySize} · {drawer.country}</div>
+                  <div className="field-label">Matched keywords</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                    {drawer.matchedKeywords.length > 0 ? drawer.matchedKeywords.map(k => <span key={k} className="chip chip-green">{k}</span>) : <span style={{ fontSize: 12, color: "var(--muted)" }}>None</span>}
+                  </div>
+                  <div className="field-label">Missing keywords</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+                    {drawer.missedKeywords.length > 0 ? drawer.missedKeywords.map(k => <span key={k} className="chip">{k}</span>) : <span style={{ fontSize: 12, color: "var(--muted)" }}>None</span>}
+                  </div>
+                  <div className="field-label">Description</div>
                   <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{drawer.jobDescription}</div>
                   <a href={drawer.jobUrl} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 16, fontSize: 12, color: "var(--accent)" }}>View original posting ↗</a>
                 </div>
@@ -455,7 +609,7 @@ export default function JobLeadsView() {
                   onGenerate={() => generateEmailOne(drawer.id)}
                   onChange={(subject, body) => patch(drawer.id, { emailSubject: subject, emailBody: body })}
                   onSetSender={sender => patch(drawer.id, { sender })}
-                  onSend={sender => patch(drawer.id, { status: "sent", sender }, "Sent")}
+                  onSend={sender => patch(drawer.id, { status: "sent", sender, sentAt: new Date().toISOString() }, "Sent")}
                   onSchedule={sender => patch(drawer.id, { status: "scheduled", sender }, "Scheduled to send")}
                 />
               )}
