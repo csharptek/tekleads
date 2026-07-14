@@ -99,6 +99,12 @@ public class JobLeadsController : ControllerBase
         return run == null ? NotFound() : Ok(run);
     }
 
+    [HttpGet("diag")]
+    public async Task<IActionResult> Diag([FromQuery] Guid? runId)
+    {
+        return Ok(await _jobs.Diagnose(runId));
+    }
+
     [HttpPost("{id}/enrich")]
     public async Task<IActionResult> Enrich(Guid id)
     {

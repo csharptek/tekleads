@@ -406,4 +406,77 @@ public class JobScraperService
         SentAt = r.sent_at, Fu1SentAt = r.fu1_sent_at, Fu2SentAt = r.fu2_sent_at, RepliedAt = r.replied_at,
         CreatedAt = r.created_at, UpdatedAt = r.updated_at,
     };
+
+    // ── Diagnostics ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Direct DB introspection, independent of any cached/computed state — for verifying
+    /// whether scrape runs actually persisted rows, and confirming which database instance
+    /// this API process is talking to (host/db name), which is the usual culprit when a
+    /// run reports N leads found but a later list call returns 0.
+    /// </summary>
+    public async Task<JobScraperDiag> Diagnose(Guid? runId)
+    {
+        var info = new JobScraperDiag { ConnStringSet = !string.IsNullOrEmpty(_settings.ConnectionString) };
+        if (!info.ConnStringSet) return info;
+
+        var cs = _settings.ConnectionString;
+        try
+        {
+            var b = new NpgsqlConnectionStringBuilder(cs);
+            info.DbHost = b.Host ?? "";
+            info.DbName = b.Database ?? "";
+        }
+        catch { /* host/db stay blank if the conn string can't be parsed */ }
+
+        try
+        {
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+            info.DbReachable = true;
+
+            info.JobLeadsTableExists = await c.QuerySingleOrDefaultAsync<bool>(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='job_leads')");
+            if (info.JobLeadsTableExists)
+                info.JobLeadsRowCount = await c.QuerySingleOrDefaultAsync<int>("SELECT COUNT(*) FROM job_leads");
+
+            info.JobScraperRunsTableExists = await c.QuerySingleOrDefaultAsync<bool>(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='job_scraper_runs')");
+            if (info.JobScraperRunsTableExists)
+                info.JobScraperRunsRowCount = await c.QuerySingleOrDefaultAsync<int>("SELECT COUNT(*) FROM job_scraper_runs");
+
+            dynamic? runRow = runId.HasValue
+                ? await c.QueryFirstOrDefaultAsync<dynamic>("SELECT * FROM job_scraper_runs WHERE id=@id", new { id = runId })
+                : await c.QueryFirstOrDefaultAsync<dynamic>("SELECT * FROM job_scraper_runs ORDER BY started_at DESC LIMIT 1");
+            if (runRow != null)
+            {
+                info.RequestedRun = MapRun(runRow);
+                info.LeadsForThatRunNow = await c.QuerySingleOrDefaultAsync<int>(
+                    "SELECT COUNT(*) FROM job_leads WHERE run_id=@id", new { id = info.RequestedRun.Id });
+            }
+        }
+        catch (Exception ex)
+        {
+            info.Error = ex.Message;
+            _log.LogError(ex, "JobScraper diagnose failed");
+        }
+
+        return info;
+    }
+}
+
+public class JobScraperDiag
+{
+    public bool ConnStringSet { get; set; }
+    public string DbHost { get; set; } = "";
+    public string DbName { get; set; } = "";
+    public bool DbReachable { get; set; }
+    public bool JobLeadsTableExists { get; set; }
+    public int JobLeadsRowCount { get; set; }
+    public bool JobScraperRunsTableExists { get; set; }
+    public int JobScraperRunsRowCount { get; set; }
+    public JobScraperRun? RequestedRun { get; set; }
+    /// <summary>Rows currently in job_leads whose run_id matches RequestedRun.Id — compare against RequestedRun.LeadsFound.</summary>
+    public int LeadsForThatRunNow { get; set; }
+    public string? Error { get; set; }
 }
