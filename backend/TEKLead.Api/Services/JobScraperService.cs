@@ -318,6 +318,30 @@ public class JobScraperService
 
     // ── List / filter / CRUD ────────────────────────────────────────────
 
+    /// <summary>
+    /// company_size is stored as free text ("36,275 employees"). To filter by a range
+    /// bucket we strip it down to digits in SQL and compare. Buckets match EMPLOYEE_BUCKETS
+    /// on the frontend exactly: 1–9, 10–50, 51–200, 201–1000, 1000+, Unknown.
+    /// </summary>
+    private static void ApplySizeBucket(List<string> where, DynamicParameters p, string bucket)
+    {
+        const string sizeExpr = "NULLIF(regexp_replace(company_size, '[^0-9]', '', 'g'), '')::int";
+        if (bucket == "Unknown") { where.Add($"{sizeExpr} IS NULL"); return; }
+
+        var (min, max) = bucket switch
+        {
+            "1–9" => (1, 9),
+            "10–50" => (10, 50),
+            "51–200" => (51, 200),
+            "201–1000" => (201, 1000),
+            "1000+" => (1000, (int?)null),
+            _ => (0, (int?)null),
+        };
+        p.Add("sizeMin", min);
+        if (max.HasValue) { where.Add($"{sizeExpr} BETWEEN @sizeMin AND @sizeMax"); p.Add("sizeMax", max.Value); }
+        else { where.Add($"{sizeExpr} >= @sizeMin"); }
+    }
+
     public async Task<JobLeadListResult> List(
         string? status, string? search, string? keyword, string? industry, string? size, string? country,
         bool needsFollowUp, DateTime? dateFrom, DateTime? dateTo, int page, int perPage)
@@ -333,7 +357,7 @@ public class JobScraperService
         if (!string.IsNullOrWhiteSpace(search)) { where.Add("(company ILIKE @search OR job_title ILIKE @search)"); p.Add("search", $"%{search}%"); }
         if (!string.IsNullOrWhiteSpace(keyword)) { where.Add("EXISTS (SELECT 1 FROM unnest(matched_keywords) k WHERE k ILIKE @keyword)"); p.Add("keyword", $"%{keyword}%"); }
         if (!string.IsNullOrWhiteSpace(industry) && industry != "all") { where.Add("industry=@industry"); p.Add("industry", industry); }
-        if (!string.IsNullOrWhiteSpace(size) && size != "all") { where.Add("company_size=@size"); p.Add("size", size); }
+        if (!string.IsNullOrWhiteSpace(size) && size != "all") ApplySizeBucket(where, p, size);
         if (!string.IsNullOrWhiteSpace(country) && country != "all") { where.Add("country=@country"); p.Add("country", country); }
         if (needsFollowUp) { where.Add("status='sent' AND replied_at IS NULL"); }
         if (dateFrom.HasValue) { where.Add("scraped_at >= @dateFrom"); p.Add("dateFrom", dateFrom.Value); }

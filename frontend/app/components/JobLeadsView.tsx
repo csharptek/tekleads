@@ -335,6 +335,13 @@ export default function JobLeadsView() {
     await refreshLead(id);
   });
 
+  const generateAll = (id: string) => withBusy(id, async () => {
+    await api.post(`/api/job-leads/${id}/generate-email`, { provider });
+    await api.post(`/api/job-leads/${id}/generate-followup1`, { provider });
+    await api.post(`/api/job-leads/${id}/generate-followup2`, { provider });
+    await refreshLead(id);
+  });
+
   const saveEmailEdits = (id: string, subject: string, body: string) => withBusy(id, async () => {
     await api.put(`/api/job-leads/${id}/email`, { subject, body });
     setLeads(ls => ls.map(l => l.id === id ? { ...l, emailSubject: subject, emailBody: body } : l));
@@ -555,7 +562,7 @@ export default function JobLeadsView() {
           </select>
           <select className="input" value={sizeFilter} onChange={e => setSizeFilter(e.target.value)} style={{ maxWidth: 150 }}>
             <option value="all">All sizes</option>
-            {filterOptions.sizes.map(s => <option key={s} value={s}>{s}</option>)}
+            {EMPLOYEE_BUCKETS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <select className="input" value={countryFilter} onChange={e => setCountryFilter(e.target.value)} style={{ maxWidth: 150 }}>
             <option value="all">All countries</option>
@@ -652,6 +659,17 @@ export default function JobLeadsView() {
                       }}>{t.label}</button>
                     ))}
                   </div>
+                  <div style={{ padding: "10px 0" }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={!drawerLead.contactEmail || busy.has(drawerLead.id)}
+                      onClick={() => generateAll(drawerLead.id)}
+                      style={{ width: "100%" }}
+                    >
+                      {busy.has(drawerLead.id) ? "Generating…" : "⚡ Generate All — Email + Follow-up 1 + Follow-up 2"}
+                    </button>
+                    {!drawerLead.contactEmail && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textAlign: "center" }}>Enrich the contact first (Contact tab)</div>}
+                  </div>
                 </div>
 
                 <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
@@ -718,7 +736,7 @@ export default function JobLeadsView() {
                       stage={drawerTab === "fu1" ? 1 : 2}
                       subject={drawerTab === "fu1" ? drawerLead.fu1Subject : drawerLead.fu2Subject}
                       body={drawerTab === "fu1" ? drawerLead.fu1Body : drawerLead.fu2Body}
-                      enabled={["sent", "replied"].includes(drawerLead.status)}
+                      enabled={!!drawerLead.emailSubject}
                       busy={busy.has(drawerLead.id)}
                       onGenerate={() => generateFollowUp(drawerLead.id, drawerTab === "fu1" ? 1 : 2)}
                     />
@@ -820,7 +838,7 @@ function FollowUpPanel({ stage, subject, body, enabled, busy, onGenerate }: { st
     return (
       <div className="empty" style={{ padding: "40px 0" }}>
         <div className="empty-title">Not available yet</div>
-        <div>Follow-up {stage} unlocks once the outreach email has been sent.</div>
+        <div>Follow-up {stage} unlocks once the initial email is generated.</div>
       </div>
     );
   }
