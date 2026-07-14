@@ -63,14 +63,16 @@ public class JobLeadContactService
                 UPDATE job_leads SET
                     status = CASE WHEN status='scraped' THEN 'enriched' ELSE status END,
                     apollo_person_id=@apolloId, contact_name=@name, contact_title=@title,
-                    contact_email=@email, contact_linkedin=@linkedin, enriched_at=NOW(), updated_at=NOW()
+                    contact_email=@email, contact_linkedin=@linkedin,
+                    industry = CASE WHEN industry='' OR industry IS NULL THEN @industry ELSE industry END,
+                    enriched_at=NOW(), updated_at=NOW()
                 WHERE id=@id",
                 new
                 {
                     id = leadId, apolloId = candidate.ApolloId,
                     name = string.IsNullOrWhiteSpace(enriched.FullName) ? candidate.Name : enriched.FullName,
                     title = string.IsNullOrWhiteSpace(enriched.Title) ? candidate.Title : enriched.Title,
-                    email, linkedin = enriched.LinkedinUrl,
+                    email, linkedin = enriched.LinkedinUrl, industry = candidate.Industry ?? "",
                 });
             await _jobs.AddEvent(leadId, "Enriched via Apollo");
             return (true, "Enriched.");

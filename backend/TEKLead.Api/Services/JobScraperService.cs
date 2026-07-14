@@ -68,6 +68,9 @@ public class JobScraperService
                 job_title TEXT NOT NULL DEFAULT '',
                 job_description TEXT NOT NULL DEFAULT '',
                 job_url TEXT NOT NULL DEFAULT '',
+                poster_name TEXT,
+                poster_title TEXT,
+                poster_linkedin TEXT,
                 status TEXT NOT NULL DEFAULT 'scraped',
                 matched_keywords TEXT[] NOT NULL DEFAULT '{}',
                 missed_keywords TEXT[] NOT NULL DEFAULT '{}',
@@ -98,6 +101,10 @@ public class JobScraperService
             CREATE INDEX IF NOT EXISTS idx_job_leads_status ON job_leads(status);
             CREATE INDEX IF NOT EXISTS idx_job_leads_scraped ON job_leads(scraped_at);
             CREATE INDEX IF NOT EXISTS idx_job_leads_run ON job_leads(run_id);
+
+            ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS poster_name TEXT;
+            ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS poster_title TEXT;
+            ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS poster_linkedin TEXT;
 
             CREATE TABLE IF NOT EXISTS job_lead_events (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -189,8 +196,12 @@ public class JobScraperService
                         var jobUrl = GetStr(item, "link") ?? GetStr(item, "jobUrl") ?? GetStr(item, "url") ?? "";
                         var description = GetStr(item, "descriptionText") ?? GetStr(item, "description") ?? StripHtml(GetStr(item, "descriptionHtml")) ?? "";
                         var industry = GetStr(item, "industries") ?? GetStr(item, "industry") ?? "";
-                        var scrapedCompanySize = item.TryGetProperty("companyEmployeesCount", out var ce) && ce.ValueKind == JsonValueKind.Number && ce.TryGetInt32(out var ceInt)
-                            ? $"{ceInt:N0} employees" : "";
+                        var posterName = GetStr(item, "jobPosterName");
+                        var posterTitle = GetStr(item, "jobPosterTitle");
+                        var posterLinkedin = GetStr(item, "jobPosterProfileUrl");
+                        int? employeeCount = item.TryGetProperty("companyEmployeesCount", out var ce) && ce.ValueKind == JsonValueKind.Number && ce.TryGetInt32(out var ceInt)
+                            ? ceInt : null;
+                        var scrapedCompanySize = employeeCount.HasValue ? $"{employeeCount:N0} employees" : "";
                         var postedAtRaw = GetStr(item, "postedAt");
                         DateTime? postedAt = DateTime.TryParse(postedAtRaw, out var pd) ? pd : null;
 
@@ -209,12 +220,16 @@ public class JobScraperService
                         await ic.OpenAsync();
                         var leadId = await ic.QuerySingleAsync<Guid>(@"
                             INSERT INTO job_leads (run_id, company, industry, company_size, country, job_title, job_description, job_url,
+                                                    poster_name, poster_title, poster_linkedin,
                                                     matched_keywords, missed_keywords, scraped_at, saved_at)
-                            VALUES (@runId, @company, @industry, @companySize, @country, @title, @desc, @url, @matched, @missed, @scrapedAt, NOW())
+                            VALUES (@runId, @company, @industry, @companySize, @country, @title, @desc, @url,
+                                    @posterName, @posterTitle, @posterLinkedin,
+                                    @matched, @missed, @scrapedAt, NOW())
                             RETURNING id",
                             new
                             {
                                 runId, company = companyName, industry, companySize = scrapedCompanySize, country, title = jobTitle, desc = description, url = jobUrl,
+                                posterName, posterTitle, posterLinkedin,
                                 matched, missed, scrapedAt = postedAt ?? DateTime.UtcNow,
                             });
                         await ic.ExecuteAsync("INSERT INTO job_lead_events (job_lead_id, label) VALUES (@id, 'Scraped from LinkedIn')", new { id = leadId });
@@ -407,6 +422,7 @@ public class JobScraperService
     {
         Id = r.id, RunId = r.run_id, Company = r.company ?? "", Industry = r.industry ?? "", CompanySize = r.company_size ?? "",
         Country = r.country ?? "", JobTitle = r.job_title ?? "", JobDescription = r.job_description ?? "", JobUrl = r.job_url ?? "",
+        PosterName = r.poster_name, PosterTitle = r.poster_title, PosterLinkedin = r.poster_linkedin,
         Status = r.status ?? "scraped", MatchedKeywords = r.matched_keywords ?? Array.Empty<string>(), MissedKeywords = r.missed_keywords ?? Array.Empty<string>(),
         ApolloPersonId = r.apollo_person_id, ContactName = r.contact_name, ContactTitle = r.contact_title, ContactEmail = r.contact_email,
         ContactPhone = r.contact_phone, ContactLinkedin = r.contact_linkedin, EmailSubject = r.email_subject, EmailBody = r.email_body,

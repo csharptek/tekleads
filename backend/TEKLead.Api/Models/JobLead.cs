@@ -11,6 +11,9 @@ public class JobLead
     public string JobTitle { get; set; } = "";
     public string JobDescription { get; set; } = "";
     public string JobUrl { get; set; } = "";
+    public string? PosterName { get; set; }
+    public string? PosterTitle { get; set; }
+    public string? PosterLinkedin { get; set; }
     public string Status { get; set; } = "scraped"; // scraped | enriched | email_ready | scheduled | sent | replied
     public string[] MatchedKeywords { get; set; } = Array.Empty<string>();
     public string[] MissedKeywords { get; set; } = Array.Empty<string>();

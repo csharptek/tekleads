@@ -7,7 +7,7 @@ import { api } from "../../lib/api";
 type LeadStatus = "scraped" | "enriched" | "email_ready" | "scheduled" | "sent" | "replied";
 type DrawerTab = "job" | "contact" | "email" | "fu1" | "fu2" | "activity";
 type Provider = "azure" | "groq" | "claude";
-type GroupBy = "none" | "scraped" | "activity";
+type GroupBy = "none" | "scraped" | "activity" | "size";
 
 interface ActivityEvent { id: string; jobLeadId: string; label: string; at: string; }
 
@@ -21,6 +21,9 @@ interface JobLead {
   jobTitle: string;
   jobDescription: string;
   jobUrl: string;
+  posterName?: string | null;
+  posterTitle?: string | null;
+  posterLinkedin?: string | null;
   status: LeadStatus;
   matchedKeywords: string[];
   missedKeywords: string[];
@@ -76,7 +79,7 @@ const STATUS_CHIP: Record<LeadStatus, string> = {
 
 const ROLE_OPTIONS = ["Software Engineer", "Full Stack Engineer", "Backend Engineer", "Frontend Engineer", "AI Engineer", "ML Engineer"];
 const COUNTRIES = ["United States", "United Kingdom", "Canada", "Australia", "India"];
-const COMPANY_SIZES = ["1–9 employees", "10–50 employees", "51–200 employees", "Any size"];
+const EMPLOYEE_BUCKETS = ["1–9", "10–50", "51–200", "201–1000", "1000+", "Unknown"];
 const POSTED_WITHIN = [1, 3, 7, 14, 30];
 const PER_PAGE = 20;
 const GROUPED_FETCH_SIZE = 500;
@@ -118,6 +121,17 @@ function bucketFor(iso?: string | null): string {
 }
 const BUCKET_ORDER = ["Today", "Yesterday", "This week", "Last week", "Older"];
 
+function sizeBucket(companySize?: string | null): string {
+  if (!companySize) return "Unknown";
+  const n = parseInt(companySize.replace(/[^0-9]/g, ""), 10);
+  if (!n || isNaN(n)) return "Unknown";
+  if (n <= 9) return "1–9";
+  if (n <= 50) return "10–50";
+  if (n <= 200) return "51–200";
+  if (n <= 1000) return "201–1000";
+  return "1000+";
+}
+
 /* ─── Main view ──────────────────────────────────────────────────────── */
 
 export default function JobLeadsView() {
@@ -153,12 +167,14 @@ export default function JobLeadsView() {
   const [scrapeOpen, setScrapeOpen] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [scrapeParams, setScrapeParams] = useState({
-    country: COUNTRIES[0], companySize: COMPANY_SIZES[0], postedWithin: 7,
+    country: COUNTRIES[0], postedWithin: 7,
     roles: [ROLE_OPTIONS[0], ROLE_OPTIONS[1]],
   });
   const [scrapeRun, setScrapeRun] = useState<ScrapeRun | null>(null);
+  const [scrapeElapsed, setScrapeElapsed] = useState(0);
   const scrapeBtnRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -229,11 +245,14 @@ export default function JobLeadsView() {
     if (groupBy === "none") return null;
     const map = new Map<string, JobLead[]>();
     for (const l of leads) {
-      const key = bucketFor(groupBy === "scraped" ? l.scrapedAt : (l.activity[l.activity.length - 1]?.at ?? l.scrapedAt));
+      const key = groupBy === "size"
+        ? sizeBucket(l.companySize)
+        : bucketFor(groupBy === "scraped" ? l.scrapedAt : (l.activity[l.activity.length - 1]?.at ?? l.scrapedAt));
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(l);
     }
-    return BUCKET_ORDER.map(b => ({ label: b, rows: map.get(b) || [] })).filter(g => g.rows.length > 0);
+    const order = groupBy === "size" ? EMPLOYEE_BUCKETS : BUCKET_ORDER;
+    return order.map(b => ({ label: b, rows: map.get(b) || [] })).filter(g => g.rows.length > 0);
   }, [leads, groupBy]);
 
   const clearFilters = () => {
@@ -248,10 +267,13 @@ export default function JobLeadsView() {
   const runScrape = async () => {
     setScraping(true);
     setScrapeRun(null);
+    setScrapeElapsed(0);
     setActionError("");
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
+    elapsedRef.current = setInterval(() => setScrapeElapsed(s => s + 1), 1000);
     try {
       const { runId } = await api.post<{ runId: string }>("/api/job-leads/scrape", {
-        roles: scrapeParams.roles, country: scrapeParams.country, companySize: scrapeParams.companySize, postedWithinDays: scrapeParams.postedWithin,
+        roles: scrapeParams.roles, country: scrapeParams.country, postedWithinDays: scrapeParams.postedWithin,
       });
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
@@ -260,6 +282,7 @@ export default function JobLeadsView() {
           setScrapeRun(run);
           if (run.status !== "running") {
             if (pollRef.current) clearInterval(pollRef.current);
+            if (elapsedRef.current) clearInterval(elapsedRef.current);
             setScraping(false);
             fetchLeads();
             refreshFilterOptions();
@@ -269,10 +292,11 @@ export default function JobLeadsView() {
     } catch (e: any) {
       setActionError(e.message || "Failed to start scrape.");
       setScraping(false);
+      if (elapsedRef.current) clearInterval(elapsedRef.current);
     }
   };
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); if (elapsedRef.current) clearInterval(elapsedRef.current); }, []);
 
   // ── Selection ──────────────────────────────────────────────────────
   const toggleSelect = (id: string) =>
@@ -381,6 +405,8 @@ export default function JobLeadsView() {
               <th style={{ width: 32 }}><input type="checkbox" checked={selected.size > 0 && rows.every(r => selected.has(r.id))} onChange={() => toggleSelectAll(rows)} /></th>
               <th>Company</th>
               <th>Job Title</th>
+              <th>Posted By</th>
+              <th>Employees</th>
               <th>Keywords</th>
               <th>Status</th>
               <th>Contact</th>
@@ -399,6 +425,16 @@ export default function JobLeadsView() {
                 </td>
                 <td style={{ maxWidth: 220 }}>
                   <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.jobTitle}</div>
+                </td>
+                <td style={{ fontSize: 12 }}>
+                  {l.posterName ? (
+                    l.posterLinkedin
+                      ? <a href={l.posterLinkedin} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: "var(--accent)" }}>{l.posterName}</a>
+                      : <span>{l.posterName}</span>
+                  ) : <span style={{ color: "var(--dim)" }}>—</span>}
+                  {l.posterTitle && <div style={{ fontSize: 11, color: "var(--muted)" }}>{l.posterTitle}</div>}
+                </td>
+                <td style={{ fontSize: 12, color: l.companySize ? "var(--text)" : "var(--dim)" }}>{l.companySize || "—"}
                 </td>
                 <td><KeywordSummary matched={l.matchedKeywords} missed={l.missedKeywords} /></td>
                 <td><span className={STATUS_CHIP[l.status]}>{STATUS_LABEL[l.status]}</span></td>
@@ -438,10 +474,6 @@ export default function JobLeadsView() {
               <select className="input" value={scrapeParams.country} onChange={e => setScrapeParams(p => ({ ...p, country: e.target.value }))} style={{ marginBottom: 10 }}>
                 {COUNTRIES.map(c => <option key={c}>{c}</option>)}
               </select>
-              <div className="field-label">Company Size</div>
-              <select className="input" value={scrapeParams.companySize} onChange={e => setScrapeParams(p => ({ ...p, companySize: e.target.value }))} style={{ marginBottom: 10 }}>
-                {COMPANY_SIZES.map(c => <option key={c}>{c}</option>)}
-              </select>
               <div className="field-label">Posted Within</div>
               <select className="input" value={scrapeParams.postedWithin} onChange={e => setScrapeParams(p => ({ ...p, postedWithin: +e.target.value }))} style={{ marginBottom: 10 }}>
                 {POSTED_WITHIN.map(d => <option key={d} value={d}>Last {d} day{d > 1 ? "s" : ""}</option>)}
@@ -460,8 +492,13 @@ export default function JobLeadsView() {
                 })}
               </div>
               <button className="btn btn-primary" style={{ width: "100%" }} disabled={scraping || scrapeParams.roles.length === 0} onClick={runScrape}>
-                {scraping ? <><span className="spinner" style={{ marginRight: 6 }} />Running…</> : "Run Scraper"}
+                {scraping ? <><span className="spinner" style={{ marginRight: 6 }} />Running… {String(Math.floor(scrapeElapsed / 60)).padStart(2, "0")}:{String(scrapeElapsed % 60).padStart(2, "0")}</> : "Run Scraper"}
               </button>
+              {scraping && (
+                <div style={{ marginTop: 8, height: 4, borderRadius: 2, background: "var(--bg)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.min(100, (scrapeElapsed / 280) * 100)}%`, background: "var(--accent)", transition: "width 1s linear" }} />
+                </div>
+              )}
               {scrapeRun && (
                 <div style={{ marginTop: 10, fontSize: 11, color: "var(--muted)", lineHeight: 1.8, maxHeight: 140, overflowY: "auto" }}>
                   {scrapeRun.logLines.map((s, i) => <div key={i}>· {s}</div>)}
@@ -540,6 +577,7 @@ export default function JobLeadsView() {
             <option value="none">None (paginated)</option>
             <option value="scraped">Scraped date</option>
             <option value="activity">Last activity</option>
+            <option value="size">Company size</option>
           </select>
         </div>
       </div>
@@ -630,7 +668,15 @@ export default function JobLeadsView() {
                       </div>
                       <div className="field-label">Description</div>
                       <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{drawerLead.jobDescription}</div>
-                      {drawerLead.jobUrl && <a href={drawerLead.jobUrl} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 16, fontSize: 12, color: "var(--accent)" }}>View original posting ↗</a>}
+                      {drawerLead.posterName && (
+                        <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
+                          Posted by {drawerLead.posterLinkedin
+                            ? <a href={drawerLead.posterLinkedin} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>{drawerLead.posterName}</a>
+                            : drawerLead.posterName}
+                          {drawerLead.posterTitle && ` — ${drawerLead.posterTitle}`}
+                        </div>
+                      )}
+                      {drawerLead.jobUrl && <a href={drawerLead.jobUrl} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 8, fontSize: 12, color: "var(--accent)" }}>View original posting ↗</a>}
                     </div>
                   )}
 
@@ -727,7 +773,7 @@ function EmailPanel({
     return (
       <div className="empty" style={{ padding: "40px 0" }}>
         <div className="empty-title">No email generated yet</div>
-        <div style={{ marginBottom: 14 }}>{canGenerate ? "Generate a personalized email using portfolio context." : "Enrich the contact first."}</div>
+        <div style={{ marginBottom: 14 }}>{canGenerate ? "Not auto-generated — click below." : "Contact not enriched yet — go to the Contact tab first."}</div>
         <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 14 }}>
           {PROVIDERS.map(p => (
             <button key={p.id} onClick={() => setProvider(p.id)} className={provider === p.id ? "chip chip-blue" : "chip"} style={{ cursor: "pointer" }}>{p.label}</button>
