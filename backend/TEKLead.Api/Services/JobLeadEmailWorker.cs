@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using TEKLead.Api.Models;
 
 namespace TEKLead.Api.Services;
 

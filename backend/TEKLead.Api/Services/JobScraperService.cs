@@ -323,7 +323,7 @@ public class JobScraperService
         var rows = await c.QueryAsync<dynamic>($"SELECT * FROM job_leads {whereSql} ORDER BY scraped_at DESC LIMIT @limit OFFSET @offset", p);
         var total = await c.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM job_leads {whereSql}", p);
 
-        return new JobLeadListResult { Leads = rows.Select(r => MapLead(r)).ToList(), Total = total };
+        return new JobLeadListResult { Leads = rows.Select(MapLead).ToList(), Total = total };
     }
 
     public async Task<JobLeadStats> GetStats()
