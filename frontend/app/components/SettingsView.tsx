@@ -57,7 +57,7 @@ const KEYS = {
   EmailSendersJson: "email_senders_json",
 };
 
-interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
+interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; defaultValue?: string; }
 interface Group { title: string; subtitle: string; fields: Field[]; }
 
 // Technical API keys — collapsible, hidden by default
@@ -158,11 +158,14 @@ const USER_GROUPS: Group[] = [
   },
   {
     title: "Job Leads — LinkedIn Scraper",
-    subtitle: "Apify-powered LinkedIn job scraping, keyword matching, and outreach sender pool for the Job Leads tab.",
+    subtitle: "Apify-powered LinkedIn job scraping and keyword matching for the Job Leads tab. Outreach senders are managed below.",
     fields: [
       { key: KEYS.ApifyApiKey, label: "Apify API Key", placeholder: "Enter to set / replace", secret: true, full: true },
-      { key: KEYS.JobScraperKeywords, label: "Match Keywords (comma-separated)", placeholder: "React, Next.js, .NET, C#, TypeScript, PostgreSQL, Azure — leave blank for default stack list", full: true, textarea: true },
-      { key: KEYS.EmailSendersJson, label: "Outreach Senders (JSON array)", placeholder: '[{"name":"Manjika","email":"manjika.tantia@csharptek.com"},{"name":"Amrita","email":"amrita.rani@csharptek.com"}]', full: true, textarea: true },
+      {
+        key: KEYS.JobScraperKeywords, label: "Match Keywords (comma-separated)", placeholder: "React, Next.js, .NET, C#...",
+        full: true, textarea: true,
+        defaultValue: "React, Next.js, .NET, C#, TypeScript, Node.js, PostgreSQL, Azure, Tailwind CSS, Python, AWS, Docker, JavaScript, SQL",
+      },
     ],
   },
 ];
@@ -185,7 +188,8 @@ function FieldGroup({ group, form, setVal, serverValues, isSet, reveal, setRevea
   const valueShown = (f: Field) => {
     if (f.key in form) return form[f.key];
     if (f.secret) return "";
-    return serverValues[f.key] || "";
+    if (serverValues[f.key]) return serverValues[f.key];
+    return f.defaultValue ?? "";
   };
 
   return (
@@ -282,6 +286,56 @@ function SignatureEditor({ value, onChange }: { value: string; onChange: (v: str
       )}
       <div style={{ marginTop: 6, fontSize: 11, color: "var(--dim)" }}>
         Supports HTML (links, images, colors) or plain text. Auto-appended to all outreach emails.
+      </div>
+    </div>
+  );
+}
+
+interface Sender { name: string; email: string; }
+
+function parseSenders(raw: string): Sender[] {
+  if (!raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((p: any) => ({ name: p?.name || "", email: p?.email || "" })).filter(s => s.name || s.email);
+  } catch { return []; }
+}
+
+function SenderListEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [senders, setSenders] = useState<Sender[]>(() => parseSenders(value));
+
+  // Re-sync if the underlying value changes from outside (e.g. Reload button).
+  useEffect(() => { setSenders(parseSenders(value)); }, [value]);
+
+  const commit = (next: Sender[]) => {
+    setSenders(next);
+    onChange(JSON.stringify(next.filter(s => s.name.trim() || s.email.trim())));
+  };
+
+  const update = (i: number, field: "name" | "email", v: string) =>
+    commit(senders.map((s, idx) => idx === i ? { ...s, [field]: v } : s));
+
+  const remove = (i: number) => commit(senders.filter((_, idx) => idx !== i));
+  const add = () => commit([...senders, { name: "", email: "" }]);
+
+  return (
+    <div>
+      {senders.length === 0 && (
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>No senders yet — add one below.</div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+        {senders.map((s, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input className="input" placeholder="Name" value={s.name} onChange={e => update(i, "name", e.target.value)} style={{ maxWidth: 180 }} />
+            <input className="input" placeholder="email@csharptek.com" value={s.email} onChange={e => update(i, "email", e.target.value)} style={{ flex: 1 }} />
+            <button className="icon-btn" style={{ color: "var(--red)" }} onClick={() => remove(i)}>Remove</button>
+          </div>
+        ))}
+      </div>
+      <button className="btn btn-ghost btn-sm" onClick={add}>+ Add sender</button>
+      <div style={{ marginTop: 8, fontSize: 11, color: "var(--dim)" }}>
+        Each must be a Graph-authorized mailbox. When sending, "All senders — round robin" cycles through this list.
       </div>
     </div>
   );
@@ -526,6 +580,18 @@ export default function SettingsView() {
       {/* User config — always visible */}
       <div className="card">
         {USER_GROUPS.map(g => <FieldGroup key={g.title} group={g} {...sharedProps} />)}
+      </div>
+
+      {/* Job Leads outreach senders */}
+      <div className="card">
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>📤 Job Leads — Outreach Senders</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Mailboxes outreach emails can send from. Pick one per lead, or round-robin across all of them.</div>
+        </div>
+        <SenderListEditor
+          value={form[KEYS.EmailSendersJson] ?? serverValues[KEYS.EmailSendersJson] ?? ""}
+          onChange={v => setVal(KEYS.EmailSendersJson, v)}
+        />
       </div>
 
       {/* AI & Vector Provider toggles */}
