@@ -95,6 +95,10 @@ public static class SettingKeys
     public const string WaSendEnabled               = "wa_send_enabled";
     public const string WaSendIntervalSeconds       = "wa_send_interval_seconds";
 
+    public const string ApifyApiKey                = "apify_api_key";
+    public const string JobScraperKeywords         = "job_scraper_keywords";
+    public const string EmailSendersJson           = "email_senders_json";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -115,11 +119,12 @@ public static class SettingKeys
         PhoneWebhookWorkerEnabled,
         WaSendEnabled,
         WaSendIntervalSeconds,
+        ApifyApiKey, JobScraperKeywords, EmailSendersJson,
     };
 
     public static readonly HashSet<string> Secrets = new()
     {
         AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey,
-        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey, ClaudeApiKey
+        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey, ClaudeApiKey, ApifyApiKey
     };
 }
