@@ -52,6 +52,9 @@ const KEYS = {
   ArtifactEmailPromptGroq:        "artifact_email_prompt_groq",
   ArtifactFollowUp1PromptGroq:    "artifact_followup1_prompt_groq",
   ArtifactFollowUp2PromptGroq:    "artifact_followup2_prompt_groq",
+  ApifyApiKey: "apify_api_key",
+  JobScraperKeywords: "job_scraper_keywords",
+  EmailSendersJson: "email_senders_json",
 };
 
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; }
@@ -151,6 +154,15 @@ const USER_GROUPS: Group[] = [
       { key: KEYS.WhatsappCloudTemplateName, label: "Default Template Name", placeholder: "hello_world" },
       { key: KEYS.WhatsappCloudTemplateLang, label: "Default Template Language", placeholder: "en_US" },
       { key: KEYS.WaSendIntervalSeconds, label: "Bulk/Scheduled WA Send Interval (seconds)", placeholder: "15" },
+    ],
+  },
+  {
+    title: "Job Leads — LinkedIn Scraper",
+    subtitle: "Apify-powered LinkedIn job scraping, keyword matching, and outreach sender pool for the Job Leads tab.",
+    fields: [
+      { key: KEYS.ApifyApiKey, label: "Apify API Key", placeholder: "Enter to set / replace", secret: true, full: true },
+      { key: KEYS.JobScraperKeywords, label: "Match Keywords (comma-separated)", placeholder: "React, Next.js, .NET, C#, TypeScript, PostgreSQL, Azure — leave blank for default stack list", full: true, textarea: true },
+      { key: KEYS.EmailSendersJson, label: "Outreach Senders (JSON array)", placeholder: '[{"name":"Manjika","email":"manjika.tantia@csharptek.com"},{"name":"Amrita","email":"amrita.rani@csharptek.com"}]', full: true, textarea: true },
     ],
   },
 ];
