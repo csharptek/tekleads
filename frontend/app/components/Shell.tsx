@@ -17,8 +17,9 @@ import ProductsView from "./ProductsView";
 import WhatsAppInboxView from "./WhatsAppInboxView";
 import HRWhatsAppInboxView from "./HRWhatsAppInboxView";
 import ContactsWAInboxView from "./ContactsWAInboxView";
+import JobLeadsView from "./JobLeadsView";
 
-type Page = "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox";
+type Page = "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
 type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; };
@@ -34,6 +35,12 @@ const CATEGORIES: NavCategory[] = [
       { id: "proposal-list", label: "All Prospects", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> },
       { id: "wa-inbox", label: "WhatsApp Inbox", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> },
       { id: "proposal-settings", label: "Proposal Settings", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="10" cy="15" r="2"/></svg> },
+    ],
+  },
+  {
+    label: "Job Leads",
+    items: [
+      { id: "job-leads", label: "Job Leads", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="12.01"/></svg> },
     ],
   },
   {
@@ -187,6 +194,7 @@ export default function Shell() {
         {page === "wa-inbox"          && <WhatsAppInboxView />}
         {page === "hr-inbox"          && <HRWhatsAppInboxView />}
         {page === "contacts-wa-inbox"  && <ContactsWAInboxView />}
+        {page === "job-leads"         && <JobLeadsView />}
       </div>
     </div>
   );
