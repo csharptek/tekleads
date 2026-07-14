@@ -25,6 +25,8 @@ public class JobLeadContactService
         if (lead == null) return (false, "Lead not found.");
         if (string.IsNullOrWhiteSpace(lead.Company)) return (false, "Lead has no company name.");
 
+        var foundAnyCandidate = false;
+
         foreach (var title in JobScraperService.ContactTitlePriority)
         {
             List<Lead> candidates;
@@ -39,8 +41,14 @@ public class JobLeadContactService
                 continue;
             }
 
-            var candidate = candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.ApolloId));
+            // Apollo occasionally returns the company's own placeholder/unclaimed page as a
+            // "person" (name literally equals the company name) — skip those, don't waste
+            // an enrich-email credit on them.
+            var candidate = candidates.FirstOrDefault(c =>
+                !string.IsNullOrWhiteSpace(c.ApolloId) &&
+                !string.Equals(c.Name?.Trim(), lead.Company.Trim(), StringComparison.OrdinalIgnoreCase));
             if (candidate == null) continue;
+            foundAnyCandidate = true;
 
             EnrichResult enriched;
             try
@@ -79,6 +87,8 @@ public class JobLeadContactService
         }
 
         await _jobs.AddEvent(leadId, "Apollo enrichment found no contact");
-        return (false, "No matching contact found at this company.");
+        return (false, foundAnyCandidate
+            ? "Found a contact but Apollo has no email on file for them."
+            : "No matching contact found at this company.");
     }
 }
