@@ -29,6 +29,7 @@ builder.Services.AddScoped<WaScheduleService>();
 builder.Services.AddScoped<ProductsDbInitializer>();
 builder.Services.AddScoped<JobScraperService>();
 builder.Services.AddScoped<JobLeadContactService>();
+builder.Services.AddScoped<JobLeadContactPickerService>();
 builder.Services.AddScoped<JobLeadArtifactsService>();
 builder.Services.AddScoped<JobLeadEmailQueueService>();
 builder.Services.AddHostedService<EmailSendWorker>();
@@ -93,6 +94,7 @@ using (var scope = app.Services.CreateScope())
     try { var prodDb = scope.ServiceProvider.GetRequiredService<ProductsDbInitializer>(); await prodDb.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Products schema failed"); }
     try { var jobsSvc = scope.ServiceProvider.GetRequiredService<JobScraperService>(); await jobsSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "JobScraper schema failed"); }
     try { var jleQueue = scope.ServiceProvider.GetRequiredService<JobLeadEmailQueueService>(); await jleQueue.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "JobLeadEmailQueue schema failed"); }
+    try { var pickerSvc = scope.ServiceProvider.GetRequiredService<JobLeadContactPickerService>(); await pickerSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "JobLeadContactPicker schema failed"); }
 }
 
 app.MapControllers();

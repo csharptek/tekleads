@@ -37,6 +37,11 @@ public class BulkIdsRequest
     public List<Guid> Ids { get; set; } = new();
 }
 
+public class ContactIdsRequest
+{
+    public List<Guid> ContactIds { get; set; } = new();
+}
+
 public class JobLeadBulkSendRequest
 {
     public List<Guid> Ids { get; set; } = new();
@@ -49,17 +54,19 @@ public class JobLeadsController : ControllerBase
 {
     private readonly JobScraperService _jobs;
     private readonly JobLeadContactService _contacts;
+    private readonly JobLeadContactPickerService _picker;
     private readonly JobLeadArtifactsService _artifacts;
     private readonly JobLeadEmailQueueService _emailQueue;
     private readonly SettingsService _settings;
     private readonly ILogger<JobLeadsController> _log;
 
     public JobLeadsController(
-        JobScraperService jobs, JobLeadContactService contacts, JobLeadArtifactsService artifacts,
+        JobScraperService jobs, JobLeadContactService contacts, JobLeadContactPickerService picker, JobLeadArtifactsService artifacts,
         JobLeadEmailQueueService emailQueue, SettingsService settings, ILogger<JobLeadsController> log)
     {
         _jobs = jobs;
         _contacts = contacts;
+        _picker = picker;
         _artifacts = artifacts;
         _emailQueue = emailQueue;
         _settings = settings;
@@ -119,6 +126,29 @@ public class JobLeadsController : ControllerBase
     {
         var (ok, message) = await _contacts.Enrich(id);
         return ok ? Ok(new { ok, message }) : BadRequest(new { ok, error = message });
+    }
+
+    [HttpPost("{id}/contacts/find")]
+    public async Task<IActionResult> FindContacts(Guid id)
+    {
+        var (ok, message) = await _picker.FindCandidates(id);
+        var list = await _picker.GetForLead(id);
+        return ok ? Ok(new { ok, message, contacts = list }) : BadRequest(new { ok, error = message, contacts = list });
+    }
+
+    [HttpGet("{id}/contacts")]
+    public async Task<IActionResult> GetContacts(Guid id)
+    {
+        var list = await _picker.GetForLead(id);
+        return Ok(new { contacts = list });
+    }
+
+    [HttpPost("{id}/contacts/enrich")]
+    public async Task<IActionResult> EnrichContacts(Guid id, [FromBody] ContactIdsRequest req)
+    {
+        var (ok, message) = await _picker.EnrichSelected(id, req.ContactIds);
+        var list = await _picker.GetForLead(id);
+        return ok ? Ok(new { ok, message, contacts = list }) : BadRequest(new { ok, error = message, contacts = list });
     }
 
     [HttpPost("{id}/generate-email")]

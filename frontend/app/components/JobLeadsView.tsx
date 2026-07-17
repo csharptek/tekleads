@@ -11,6 +11,20 @@ type GroupBy = "none" | "scraped" | "activity" | "size";
 
 interface ActivityEvent { id: string; jobLeadId: string; label: string; at: string; }
 
+interface JobLeadContact {
+  id: string;
+  jobLeadId: string;
+  apolloId?: string | null;
+  name: string;
+  title: string;
+  linkedinUrl?: string | null;
+  email?: string | null;
+  source: "poster" | "priority" | string;
+  selected: boolean;
+  enriched: boolean;
+  creditsUsed: number;
+}
+
 interface JobLead {
   id: string;
   runId?: string | null;
@@ -167,6 +181,9 @@ export default function JobLeadsView() {
   const [promptModal, setPromptModal] = useState<{ type: "email" | "followUp1" | "followUp2"; title: string } | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
   const [busy, setBusy] = useState<Set<string>>(new Set()); // ids with an in-flight action
+  const [candidates, setCandidates] = useState<JobLeadContact[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [pickedContactIds, setPickedContactIds] = useState<Set<string>>(new Set());
 
   const [scrapeOpen, setScrapeOpen] = useState(false);
   const [scraping, setScraping] = useState(false);
@@ -330,6 +347,43 @@ export default function JobLeadsView() {
     await refreshLead(id);
   });
 
+  const findCandidates = (id: string) => withBusy(id, async () => {
+    setCandidatesLoading(true);
+    try {
+      const res = await api.post<{ contacts: JobLeadContact[] }>(`/api/job-leads/${id}/contacts/find`, {});
+      setCandidates(res.contacts);
+      setPickedContactIds(new Set(res.contacts.filter(c => c.source === "poster").map(c => c.id)));
+    } finally {
+      setCandidatesLoading(false);
+    }
+  });
+
+  const loadCandidates = async (id: string) => {
+    setCandidatesLoading(true);
+    try {
+      const res = await api.get<{ contacts: JobLeadContact[] }>(`/api/job-leads/${id}/contacts`);
+      setCandidates(res.contacts);
+    } finally {
+      setCandidatesLoading(false);
+    }
+  };
+
+  const enrichPicked = (id: string) => withBusy(id, async () => {
+    const res = await api.post<{ contacts: JobLeadContact[] }>(`/api/job-leads/${id}/contacts/enrich`, {
+      contactIds: Array.from(pickedContactIds),
+    });
+    setCandidates(res.contacts);
+    await refreshLead(id);
+  });
+
+  const toggleCandidate = (id: string) => {
+    setPickedContactIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -423,6 +477,7 @@ export default function JobLeadsView() {
 
   const openDrawer = async (id: string) => {
     setDrawerId(id); setDrawerTab("job"); setDrawerLead(null); setDrawerLoading(true);
+    setCandidates([]); setPickedContactIds(new Set());
     try { setDrawerLead(await api.get<JobLead>(`/api/job-leads/${id}`)); }
     catch (e: any) { setActionError(e.message || "Failed to load lead."); }
     finally { setDrawerLoading(false); }
@@ -726,7 +781,7 @@ export default function JobLeadsView() {
                   </div>
                   <div style={{ display: "flex", gap: 4, overflowX: "auto", paddingBottom: 2 }}>
                     {tabDef.map(t => (
-                      <button key={t.id} onClick={() => setDrawerTab(t.id)} style={{
+                      <button key={t.id} onClick={() => { setDrawerTab(t.id); if (t.id === "contact" && drawerLead) loadCandidates(drawerLead.id); }} style={{
                         background: "none", border: "none", borderBottom: drawerTab === t.id ? "2px solid var(--accent)" : "2px solid transparent",
                         color: drawerTab === t.id ? "var(--accent)" : "var(--muted)", fontWeight: 600, fontSize: 12.5,
                         padding: "8px 10px", cursor: "pointer", whiteSpace: "nowrap",
@@ -773,22 +828,73 @@ export default function JobLeadsView() {
                   )}
 
                   {drawerTab === "contact" && (
-                    drawerLead.contactName ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        <div><div className="field-label">Name</div><div>{drawerLead.contactName}</div></div>
-                        <div><div className="field-label">Title</div><div>{drawerLead.contactTitle}</div></div>
-                        <div><div className="field-label">Email</div><div>{drawerLead.contactEmail}</div></div>
-                        {drawerLead.contactPhone && <div><div className="field-label">Phone</div><div>{drawerLead.contactPhone}</div></div>}
-                        {drawerLead.contactLinkedin && <div><div className="field-label">LinkedIn</div><a href={drawerLead.contactLinkedin} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>{drawerLead.contactLinkedin}</a></div>}
-                      </div>
-                    ) : (
-                      <div className="empty" style={{ padding: "40px 0" }}>
-                        <div className="empty-title">No contact yet</div>
-                        <button className="btn btn-primary btn-sm" disabled={busy.has(drawerLead.id)} onClick={() => enrichOne(drawerLead.id)}>
-                          {busy.has(drawerLead.id) ? "Enriching…" : "Enrich via Apollo"}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                      {drawerLead.contactName && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}>
+                          <div className="field-label">Current saved contact</div>
+                          <div><div className="field-label">Name</div><div>{drawerLead.contactName}</div></div>
+                          <div><div className="field-label">Title</div><div>{drawerLead.contactTitle}</div></div>
+                          <div><div className="field-label">Email</div><div>{drawerLead.contactEmail}</div></div>
+                          {drawerLead.contactPhone && <div><div className="field-label">Phone</div><div>{drawerLead.contactPhone}</div></div>}
+                          {drawerLead.contactLinkedin && <div><div className="field-label">LinkedIn</div><a href={drawerLead.contactLinkedin} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>{drawerLead.contactLinkedin}</a></div>}
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div className="field-label" style={{ margin: 0 }}>Candidates</div>
+                        <button className="btn btn-ghost btn-sm" disabled={busy.has(drawerLead.id)} onClick={() => findCandidates(drawerLead.id)}>
+                          {busy.has(drawerLead.id) ? "Finding…" : "Find Candidates"}
                         </button>
                       </div>
-                    )
+
+                      {candidatesLoading ? (
+                        <div style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</div>
+                      ) : candidates.length === 0 ? (
+                        <div className="empty" style={{ padding: "24px 0" }}>
+                          <div className="empty-title">No candidates yet</div>
+                          <div style={{ fontSize: 12, color: "var(--muted)" }}>Click "Find Candidates" to search the poster and likely titles at this company (free search, no credits spent).</div>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {candidates.map(c => (
+                            <label key={c.id} style={{
+                              display: "flex", gap: 10, alignItems: "flex-start", padding: 10,
+                              border: "1px solid var(--border)", borderRadius: 8,
+                              background: pickedContactIds.has(c.id) ? "var(--accent-bg, #f0f6ff)" : "transparent",
+                              cursor: "pointer",
+                            }}>
+                              <input type="checkbox" checked={pickedContactIds.has(c.id)} onChange={() => toggleCandidate(c.id)} style={{ marginTop: 3 }} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                  <span style={{ fontWeight: 600, fontSize: 13 }}>{c.name || "(name pending)"}</span>
+                                  <span className={c.source === "poster" ? "chip chip-green" : "chip"} style={{ fontSize: 10 }}>
+                                    {c.source === "poster" ? "Job Poster" : "Title Match"}
+                                  </span>
+                                  {c.enriched && <span className="chip" style={{ fontSize: 10 }}>Enriched</span>}
+                                </div>
+                                <div style={{ fontSize: 12, color: "var(--muted)" }}>{c.title}</div>
+                                {c.email && <div style={{ fontSize: 12, marginTop: 2 }}>{c.email}</div>}
+                                {c.linkedinUrl && <a href={c.linkedinUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 11, color: "var(--accent)" }}>LinkedIn ↗</a>}
+                              </div>
+                            </label>
+                          ))}
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={busy.has(drawerLead.id) || pickedContactIds.size === 0}
+                            onClick={() => enrichPicked(drawerLead.id)}
+                            style={{ marginTop: 4 }}
+                          >
+                            {busy.has(drawerLead.id) ? "Enriching…" : `Enrich Selected (${pickedContactIds.size})`}
+                          </button>
+                        </div>
+                      )}
+
+                      {!drawerLead.contactName && candidates.length === 0 && !candidatesLoading && (
+                        <button className="btn btn-ghost btn-sm" disabled={busy.has(drawerLead.id)} onClick={() => enrichOne(drawerLead.id)}>
+                          {busy.has(drawerLead.id) ? "Enriching…" : "Or: Quick Auto-Enrich (old behavior)"}
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {drawerTab === "email" && (
