@@ -175,7 +175,7 @@ public class JobScraperService
                 List<JsonElement> items;
                 try
                 {
-                    items = await RunApifyActor(token, role, country, datePosted);
+                    items = await RunApifyActor(token, role, country, datePosted, companySize);
                 }
                 catch (Exception ex)
                 {
@@ -268,7 +268,7 @@ public class JobScraperService
     /// collects structured filters. Output field names (title/companyName/link/descriptionText/
     /// industries/companyEmployeesCount) are confirmed from the actor's own README sample output.
     /// </summary>
-    private async Task<List<JsonElement>> RunApifyActor(string token, string searchQuery, string location, string datePostedCode)
+    private async Task<List<JsonElement>> RunApifyActor(string token, string searchQuery, string location, string datePostedCode, string companySizeCode)
     {
         const string actorId = "curious_coder~linkedin-jobs-scraper";
         var runUrl = $"https://api.apify.com/v2/acts/{actorId}/run-sync-get-dataset-items?token={Uri.EscapeDataString(token)}&timeout=280";
@@ -277,6 +277,8 @@ public class JobScraperService
             + $"?keywords={Uri.EscapeDataString(searchQuery)}"
             + $"&location={Uri.EscapeDataString(location)}"
             + $"&f_TPR={Uri.EscapeDataString(datePostedCode)}";
+        if (!string.IsNullOrWhiteSpace(companySizeCode))
+            searchUrl += $"&f_CS={Uri.EscapeDataString(companySizeCode)}";
 
         var payload = new { urls = new[] { searchUrl } };
 

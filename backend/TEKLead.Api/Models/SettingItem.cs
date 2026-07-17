@@ -99,6 +99,11 @@ public static class SettingKeys
     public const string JobScraperKeywords         = "job_scraper_keywords";
     public const string EmailSendersJson           = "email_senders_json";
 
+    // Job Lead artifact prompts
+    public const string JobLeadEmailPrompt         = "job_lead_email_prompt";
+    public const string JobLeadFollowUp1Prompt     = "job_lead_followup1_prompt";
+    public const string JobLeadFollowUp2Prompt     = "job_lead_followup2_prompt";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -120,6 +125,7 @@ public static class SettingKeys
         WaSendEnabled,
         WaSendIntervalSeconds,
         ApifyApiKey, JobScraperKeywords, EmailSendersJson,
+        JobLeadEmailPrompt, JobLeadFollowUp1Prompt, JobLeadFollowUp2Prompt,
     };
 
     public static readonly HashSet<string> Secrets = new()
