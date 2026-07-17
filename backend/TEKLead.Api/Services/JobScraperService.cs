@@ -105,6 +105,8 @@ public class JobScraperService
             ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS poster_name TEXT;
             ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS poster_title TEXT;
             ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS poster_linkedin TEXT;
+            ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ;
+            CREATE INDEX IF NOT EXISTS idx_job_leads_posted ON job_leads(posted_at);
 
             CREATE TABLE IF NOT EXISTS job_lead_events (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -221,16 +223,16 @@ public class JobScraperService
                         var leadId = await ic.QuerySingleAsync<Guid>(@"
                             INSERT INTO job_leads (run_id, company, industry, company_size, country, job_title, job_description, job_url,
                                                     poster_name, poster_title, poster_linkedin,
-                                                    matched_keywords, missed_keywords, scraped_at, saved_at)
+                                                    matched_keywords, missed_keywords, scraped_at, posted_at, saved_at)
                             VALUES (@runId, @company, @industry, @companySize, @country, @title, @desc, @url,
                                     @posterName, @posterTitle, @posterLinkedin,
-                                    @matched, @missed, @scrapedAt, NOW())
+                                    @matched, @missed, @scrapedAt, @postedAt, NOW())
                             RETURNING id",
                             new
                             {
                                 runId, company = companyName, industry, companySize = scrapedCompanySize, country, title = jobTitle, desc = description, url = jobUrl,
                                 posterName, posterTitle, posterLinkedin,
-                                matched, missed, scrapedAt = postedAt ?? DateTime.UtcNow,
+                                matched, missed, scrapedAt = DateTime.UtcNow, postedAt,
                             });
                         await ic.ExecuteAsync("INSERT INTO job_lead_events (job_lead_id, label) VALUES (@id, 'Scraped from LinkedIn')", new { id = leadId });
                         leadsCreated++;
@@ -344,9 +346,18 @@ public class JobScraperService
         else { where.Add($"{sizeExpr} >= @sizeMin"); }
     }
 
+    private static readonly Dictionary<string, string> SortColumns = new()
+    {
+        ["scraped"] = "scraped_at",
+        ["posted"] = "posted_at",
+        ["emailSent"] = "sent_at",
+        ["company"] = "company",
+    };
+
     public async Task<JobLeadListResult> List(
         string? status, string? search, string? keyword, string? industry, string? size, string? country,
-        bool needsFollowUp, DateTime? dateFrom, DateTime? dateTo, int page, int perPage)
+        bool needsFollowUp, DateTime? dateFrom, DateTime? dateTo, int page, int perPage,
+        string? sortBy = null, string? sortDir = null)
     {
         var cs = _settings.ConnectionString;
         await using var c = new NpgsqlConnection(cs);
@@ -370,7 +381,12 @@ public class JobScraperService
         p.Add("limit", perPage);
         p.Add("offset", (page - 1) * perPage);
 
-        var rows = await c.QueryAsync<dynamic>($"SELECT * FROM job_leads {whereSql} ORDER BY scraped_at DESC LIMIT @limit OFFSET @offset", p);
+        var sortCol = (sortBy != null && SortColumns.TryGetValue(sortBy, out var col)) ? col : "scraped_at";
+        var dir = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
+        // NULLS LAST so leads without posted_at/sent_at don't dominate the top when sorting by those.
+        var orderSql = $"ORDER BY {sortCol} {dir} NULLS LAST";
+
+        var rows = await c.QueryAsync<dynamic>($"SELECT * FROM job_leads {whereSql} {orderSql} LIMIT @limit OFFSET @offset", p);
         var total = await c.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM job_leads {whereSql}", p);
 
         return new JobLeadListResult { Leads = rows.Select(MapLead).ToList(), Total = total };
@@ -453,7 +469,7 @@ public class JobScraperService
         ApolloPersonId = r.apollo_person_id, ContactName = r.contact_name, ContactTitle = r.contact_title, ContactEmail = r.contact_email,
         ContactPhone = r.contact_phone, ContactLinkedin = r.contact_linkedin, EmailSubject = r.email_subject, EmailBody = r.email_body,
         Fu1Subject = r.fu1_subject, Fu1Body = r.fu1_body, Fu2Subject = r.fu2_subject, Fu2Body = r.fu2_body, SenderEmail = r.sender_email,
-        ScrapedAt = r.scraped_at, SavedAt = r.saved_at, EnrichedAt = r.enriched_at, EmailGeneratedAt = r.email_generated_at,
+        ScrapedAt = r.scraped_at, PostedAt = r.posted_at, SavedAt = r.saved_at, EnrichedAt = r.enriched_at, EmailGeneratedAt = r.email_generated_at,
         SentAt = r.sent_at, Fu1SentAt = r.fu1_sent_at, Fu2SentAt = r.fu2_sent_at, RepliedAt = r.replied_at,
         CreatedAt = r.created_at, UpdatedAt = r.updated_at,
     };

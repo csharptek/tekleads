@@ -31,6 +31,7 @@ public class JobLead
     public string? Fu2Body { get; set; }
     public string? SenderEmail { get; set; }
     public DateTime ScrapedAt { get; set; }
+    public DateTime? PostedAt { get; set; }
     public DateTime SavedAt { get; set; }
     public DateTime? EnrichedAt { get; set; }
     public DateTime? EmailGeneratedAt { get; set; }

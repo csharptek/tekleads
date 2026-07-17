@@ -98,9 +98,10 @@ public class JobLeadsController : ControllerBase
         [FromQuery] string? status, [FromQuery] string? search, [FromQuery] string? keyword,
         [FromQuery] string? industry, [FromQuery] string? size, [FromQuery] string? country,
         [FromQuery] bool needsFollowUp = false, [FromQuery] DateTime? dateFrom = null, [FromQuery] DateTime? dateTo = null,
-        [FromQuery] int page = 1, [FromQuery] int perPage = 20)
+        [FromQuery] int page = 1, [FromQuery] int perPage = 20,
+        [FromQuery] string? sortBy = null, [FromQuery] string? sortDir = null)
     {
-        var result = await _jobs.List(status, search, keyword, industry, size, country, needsFollowUp, dateFrom, dateTo, page, perPage);
+        var result = await _jobs.List(status, search, keyword, industry, size, country, needsFollowUp, dateFrom, dateTo, page, perPage, sortBy, sortDir);
         var stats = await _jobs.GetStats();
         return Ok(new { leads = result.Leads, total = result.Total, stats });
     }
@@ -153,6 +154,16 @@ public class JobLeadsController : ControllerBase
     {
         var list = await _picker.GetForLead(id);
         return Ok(new { contacts = list });
+    }
+
+    [HttpGet("contacts/all")]
+    public async Task<IActionResult> GetAllContacts(
+        [FromQuery] string? search, [FromQuery] string? source,
+        [FromQuery] int page = 1, [FromQuery] int perPage = 20,
+        [FromQuery] string? sortBy = null, [FromQuery] string? sortDir = null)
+    {
+        var (contacts, total) = await _picker.GetAllEnriched(search, source, page, perPage, sortBy, sortDir);
+        return Ok(new { contacts, total });
     }
 
     [HttpPost("{id}/contacts/enrich")]

@@ -59,6 +59,66 @@ public class JobLeadContactPickerService
         }).ToList();
     }
 
+    // All enriched contacts across every job lead, with lead context joined in — powers the Job Contacts page.
+    public async Task<(List<JobLeadContactWithLead> Contacts, int Total)> GetAllEnriched(
+        string? search, string? source, int page, int perPage, string? sortBy, string? sortDir)
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var where = new List<string> { "jlc.enriched = TRUE" };
+        var p = new DynamicParameters();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            where.Add("(jlc.name ILIKE @search OR jlc.email ILIKE @search OR jl.company ILIKE @search)");
+            p.Add("search", $"%{search}%");
+        }
+        if (!string.IsNullOrWhiteSpace(source) && source != "all")
+        {
+            where.Add("jlc.source = @source");
+            p.Add("source", source);
+        }
+
+        var whereSql = "WHERE " + string.Join(" AND ", where);
+
+        var sortCol = sortBy switch
+        {
+            "name" => "jlc.name",
+            "company" => "jl.company",
+            "createdAt" => "jlc.created_at",
+            _ => "jlc.created_at",
+        };
+        var dir = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
+
+        p.Add("limit", perPage);
+        p.Add("offset", (page - 1) * perPage);
+
+        var rows = await c.QueryAsync<dynamic>($@"
+            SELECT jlc.id, jlc.job_lead_id, jlc.apollo_id, jlc.name, jlc.title, jlc.linkedin_url, jlc.email,
+                   jlc.source, jlc.selected, jlc.enriched, jlc.credits_used, jlc.created_at,
+                   jl.company AS lead_company, jl.job_title AS lead_job_title, jl.status AS lead_status
+            FROM job_lead_contacts jlc
+            JOIN job_leads jl ON jl.id = jlc.job_lead_id
+            {whereSql}
+            ORDER BY {sortCol} {dir} NULLS LAST
+            LIMIT @limit OFFSET @offset", p);
+
+        var total = await c.ExecuteScalarAsync<int>($@"
+            SELECT COUNT(*) FROM job_lead_contacts jlc JOIN job_leads jl ON jl.id = jlc.job_lead_id {whereSql}", p);
+
+        var contacts = rows.Select(r => new JobLeadContactWithLead
+        {
+            Id = r.id, JobLeadId = r.job_lead_id, ApolloId = r.apollo_id, Name = r.name, Title = r.title,
+            LinkedinUrl = r.linkedin_url, Email = r.email, Source = r.source, Selected = r.selected,
+            Enriched = r.enriched, CreditsUsed = r.credits_used, CreatedAt = r.created_at,
+            LeadCompany = r.lead_company ?? "", LeadJobTitle = r.lead_job_title ?? "", LeadStatus = r.lead_status ?? "",
+        }).ToList();
+
+        return (contacts, total);
+    }
+
     public async Task<(bool ok, string message)> FindCandidates(Guid leadId)
     {
         var lead = await _jobs.GetById(leadId);

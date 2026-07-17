@@ -18,8 +18,9 @@ import WhatsAppInboxView from "./WhatsAppInboxView";
 import HRWhatsAppInboxView from "./HRWhatsAppInboxView";
 import ContactsWAInboxView from "./ContactsWAInboxView";
 import JobLeadsView from "./JobLeadsView";
+import JobContactsView from "./JobContactsView";
 
-type Page = "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads";
+type Page = "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads" | "job-contacts";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
 type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; };
@@ -41,6 +42,7 @@ const CATEGORIES: NavCategory[] = [
     label: "Job Leads",
     items: [
       { id: "job-leads", label: "Job Leads", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="12.01"/></svg> },
+      { id: "job-contacts", label: "Job Contacts", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
     ],
   },
   {
@@ -195,6 +197,7 @@ export default function Shell() {
         {page === "hr-inbox"          && <HRWhatsAppInboxView />}
         {page === "contacts-wa-inbox"  && <ContactsWAInboxView />}
         {page === "job-leads"         && <JobLeadsView />}
+        {page === "job-contacts"      && <JobContactsView />}
       </div>
     </div>
   );

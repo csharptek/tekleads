@@ -15,3 +15,10 @@ public class JobLeadContact
     public int CreditsUsed { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+public class JobLeadContactWithLead : JobLeadContact
+{
+    public string LeadCompany { get; set; } = "";
+    public string LeadJobTitle { get; set; } = "";
+    public string LeadStatus { get; set; } = "";
+}

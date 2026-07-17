@@ -7,7 +7,9 @@ import { api } from "../../lib/api";
 type LeadStatus = "scraped" | "enriched" | "email_ready" | "scheduled" | "sent" | "replied";
 type DrawerTab = "job" | "contact" | "artifacts" | "activity";
 type Provider = "azure" | "groq" | "claude";
-type GroupBy = "none" | "scraped" | "activity" | "size";
+type GroupBy = "none" | "scraped" | "posted" | "emailSent" | "company" | "activity" | "size";
+type SortBy = "scraped" | "posted" | "emailSent" | "company";
+type SortDir = "asc" | "desc";
 
 interface ActivityEvent { id: string; jobLeadId: string; label: string; at: string; }
 
@@ -55,6 +57,7 @@ interface JobLead {
   fu2Body?: string | null;
   senderEmail?: string | null;
   scrapedAt: string;
+  postedAt?: string | null;
   savedAt: string;
   enrichedAt?: string | null;
   emailGeneratedAt?: string | null;
@@ -166,6 +169,8 @@ export default function JobLeadsView() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [sortBy, setSortBy] = useState<SortBy>("scraped");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
 
   const [filterOptions, setFilterOptions] = useState<{ industries: string[]; sizes: string[]; countries: string[] }>({ industries: [], sizes: [], countries: [] });
@@ -218,10 +223,12 @@ export default function JobLeadsView() {
     if (needsFollowUp) p.set("needsFollowUp", "true");
     if (dateFrom) p.set("dateFrom", dateFrom);
     if (dateTo) p.set("dateTo", dateTo);
+    p.set("sortBy", sortBy);
+    p.set("sortDir", sortDir);
     p.set("page", forGrouping ? "1" : String(page));
     p.set("perPage", forGrouping ? String(GROUPED_FETCH_SIZE) : String(PER_PAGE));
     return p;
-  }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, page]);
+  }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, page, sortBy, sortDir]);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -256,19 +263,36 @@ export default function JobLeadsView() {
     fetchDebounceRef.current = setTimeout(() => { fetchLeads(); }, 300);
     return () => { if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, groupBy, page]);
+  }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, groupBy, sortBy, sortDir, page]);
 
-  useEffect(() => { setPage(1); }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, groupBy]);
+  useEffect(() => { setPage(1); }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, groupBy, sortBy, sortDir]);
 
   useEffect(() => { refreshFilterOptions(); }, [refreshFilterOptions]);
 
   const grouped = useMemo(() => {
     if (groupBy === "none") return null;
+
+    if (groupBy === "company") {
+      const map = new Map<string, JobLead[]>();
+      for (const l of leads) {
+        const key = (l.company || "Unknown").trim() || "Unknown";
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(l);
+      }
+      const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
+      return keys.map(k => ({ label: k, rows: map.get(k)! }));
+    }
+
     const map = new Map<string, JobLead[]>();
     for (const l of leads) {
       const key = groupBy === "size"
         ? sizeBucket(l.companySize)
-        : bucketFor(groupBy === "scraped" ? l.scrapedAt : (l.activity[l.activity.length - 1]?.at ?? l.scrapedAt));
+        : bucketFor(
+            groupBy === "scraped" ? l.scrapedAt
+            : groupBy === "posted" ? l.postedAt
+            : groupBy === "emailSent" ? l.sentAt
+            : (l.activity[l.activity.length - 1]?.at ?? l.scrapedAt)
+          );
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(l);
     }
@@ -710,9 +734,22 @@ export default function JobLeadsView() {
           <select className="input" value={groupBy} onChange={e => setGroupBy(e.target.value as GroupBy)} style={{ maxWidth: 160 }}>
             <option value="none">None (paginated)</option>
             <option value="scraped">Scraped date</option>
+            <option value="posted">Date posted</option>
+            <option value="emailSent">Email sent date</option>
+            <option value="company">Company name</option>
             <option value="activity">Last activity</option>
             <option value="size">Company size</option>
           </select>
+          <span className="field-label" style={{ margin: "0 0 0 12px" }}>Sort by</span>
+          <select className="input" value={sortBy} onChange={e => setSortBy(e.target.value as SortBy)} style={{ maxWidth: 150 }}>
+            <option value="scraped">Scraped date</option>
+            <option value="posted">Date posted</option>
+            <option value="emailSent">Email sent date</option>
+            <option value="company">Company name</option>
+          </select>
+          <button className="icon-btn" onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")} title={sortDir === "asc" ? "Ascending" : "Descending"}>
+            {sortDir === "asc" ? "↑ Asc" : "↓ Desc"}
+          </button>
         </div>
       </div>
 
