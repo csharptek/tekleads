@@ -31,7 +31,7 @@ public class JobLeadArtifactsService
         _log = log;
     }
 
-    public async Task<JobLeadArtifactResult> GenerateEmail(Guid leadId, string? providerOverride = null)
+    public async Task<JobLeadArtifactResult> GenerateEmail(Guid leadId, string? providerOverride = null, string? customPrompt = null)
     {
         var lead = await _jobs.GetById(leadId);
         if (lead == null) return Fail("Lead not found.");
@@ -39,7 +39,7 @@ public class JobLeadArtifactsService
 
         var portfolio = await GetPortfolio(lead);
         var context = BuildContext(lead, portfolio);
-        var raw = await CallAI(EmailPrompt(), context, providerOverride);
+        var raw = await CallAI(!string.IsNullOrWhiteSpace(customPrompt) ? customPrompt : await EmailPrompt(), context, providerOverride);
         var (subject, body) = ParseEmail(raw);
 
         var cs = _settings.ConnectionString;
@@ -53,7 +53,7 @@ public class JobLeadArtifactsService
         return new JobLeadArtifactResult { Ok = true, Subject = subject, Body = body };
     }
 
-    public async Task<JobLeadArtifactResult> GenerateFollowUp(Guid leadId, int stage, string? providerOverride = null)
+    public async Task<JobLeadArtifactResult> GenerateFollowUp(Guid leadId, int stage, string? providerOverride = null, string? customPrompt = null)
     {
         if (stage != 1 && stage != 2) return Fail("Invalid follow-up stage.");
         var lead = await _jobs.GetById(leadId);
@@ -66,7 +66,8 @@ public class JobLeadArtifactsService
         if (stage == 2 && !string.IsNullOrWhiteSpace(lead.Fu1Subject))
             context += $"\n\n## FOLLOW-UP 1 ALREADY SENT\nSubject: {lead.Fu1Subject}\nBody:\n{lead.Fu1Body}\n";
 
-        var raw = await CallAI(stage == 1 ? FollowUp1Prompt() : FollowUp2Prompt(), context, providerOverride);
+        var defaultForStage = stage == 1 ? await FollowUp1Prompt() : await FollowUp2Prompt();
+        var raw = await CallAI(!string.IsNullOrWhiteSpace(customPrompt) ? customPrompt : defaultForStage, context, providerOverride);
         var (_, body) = ParseEmail(raw);
         var subject = "Re: " + lead.EmailSubject;
 
@@ -190,7 +191,28 @@ public class JobLeadArtifactsService
 
     // ── Prompts ──────────────────────────────────────────────────────────
 
-    private static string EmailPrompt() => @"You are writing a short, personalized cold outreach email on behalf of CSharpTek, a software development consultancy, to the hiring contact at a company that just posted a job listing. The goal is to start a conversation about CSharpTek helping fill this need as a contracted dev team, not to apply for the job as a candidate.
+    private async Task<string> EmailPrompt()
+    {
+        var all = await _settings.GetAll();
+        var v = all.GetValueOrDefault(SettingKeys.JobLeadEmailPrompt, "");
+        return !string.IsNullOrWhiteSpace(v) ? v : DefaultEmailPrompt();
+    }
+
+    private async Task<string> FollowUp1Prompt()
+    {
+        var all = await _settings.GetAll();
+        var v = all.GetValueOrDefault(SettingKeys.JobLeadFollowUp1Prompt, "");
+        return !string.IsNullOrWhiteSpace(v) ? v : DefaultFollowUp1Prompt();
+    }
+
+    private async Task<string> FollowUp2Prompt()
+    {
+        var all = await _settings.GetAll();
+        var v = all.GetValueOrDefault(SettingKeys.JobLeadFollowUp2Prompt, "");
+        return !string.IsNullOrWhiteSpace(v) ? v : DefaultFollowUp2Prompt();
+    }
+
+    public static string DefaultEmailPrompt() => @"You are writing a short, personalized cold outreach email on behalf of CSharpTek, a software development consultancy, to the hiring contact at a company that just posted a job listing. The goal is to start a conversation about CSharpTek helping fill this need as a contracted dev team, not to apply for the job as a candidate.
 
 Rules:
 - Reference the JOB POST and COMPANY naturally — prove you read it.
@@ -203,11 +225,11 @@ Rules:
 
 Return ONLY a JSON object: {""subject"": ""..."", ""body"": ""...""} — no markdown, no code fences, no commentary.";
 
-    private static string FollowUp1Prompt() => @"You are writing a brief, friendly follow-up email. An initial outreach email (shown in INITIAL EMAIL ALREADY SENT) was sent and got no reply. Write a short follow-up — 40-70 words — that adds one new piece of value or a different angle, not just ""just checking in"". Reference the job/company naturally. Sign off as ""Best,\nManjika"".
+    public static string DefaultFollowUp1Prompt() => @"You are writing a brief, friendly follow-up email. An initial outreach email (shown in INITIAL EMAIL ALREADY SENT) was sent and got no reply. Write a short follow-up — 40-70 words — that adds one new piece of value or a different angle, not just ""just checking in"". Reference the job/company naturally. Sign off as ""Best,\nManjika"".
 
 Return ONLY a JSON object: {""subject"": ""..."", ""body"": ""...""} — no markdown, no code fences, no commentary.";
 
-    private static string FollowUp2Prompt() => @"You are writing a final, low-pressure follow-up email. Both the initial email and a first follow-up (shown in context) went unanswered. Write a short, graceful close-the-loop message — 30-50 words — that makes it easy to say no and leaves the door open. Sign off as ""Best,\nManjika"".
+    public static string DefaultFollowUp2Prompt() => @"You are writing a final, low-pressure follow-up email. Both the initial email and a first follow-up (shown in context) went unanswered. Write a short, graceful close-the-loop message — 30-50 words — that makes it easy to say no and leaves the door open. Sign off as ""Best,\nManjika"".
 
 Return ONLY a JSON object: {""subject"": ""..."", ""body"": ""...""} — no markdown, no code fences, no commentary.";
 }

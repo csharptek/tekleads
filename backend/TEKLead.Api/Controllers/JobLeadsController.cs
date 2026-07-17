@@ -29,6 +29,7 @@ public class SaveEmailRequest
 public class GenerateRequest
 {
     public string? Provider { get; set; }
+    public string? CustomPrompt { get; set; }
 }
 
 public class BulkIdsRequest
@@ -64,6 +65,14 @@ public class JobLeadsController : ControllerBase
         _settings = settings;
         _log = log;
     }
+
+    [HttpGet("prompts")]
+    public IActionResult GetPrompts() => Ok(new
+    {
+        email = JobLeadArtifactsService.DefaultEmailPrompt(),
+        followUp1 = JobLeadArtifactsService.DefaultFollowUp1Prompt(),
+        followUp2 = JobLeadArtifactsService.DefaultFollowUp2Prompt(),
+    });
 
     [HttpGet]
     public async Task<IActionResult> List(
@@ -115,21 +124,21 @@ public class JobLeadsController : ControllerBase
     [HttpPost("{id}/generate-email")]
     public async Task<IActionResult> GenerateEmail(Guid id, [FromBody] GenerateRequest req)
     {
-        var result = await _artifacts.GenerateEmail(id, req.Provider);
+        var result = await _artifacts.GenerateEmail(id, req.Provider, req.CustomPrompt);
         return result.Ok ? Ok(result) : BadRequest(new { error = result.Error });
     }
 
     [HttpPost("{id}/generate-followup1")]
     public async Task<IActionResult> GenerateFollowUp1(Guid id, [FromBody] GenerateRequest req)
     {
-        var result = await _artifacts.GenerateFollowUp(id, 1, req.Provider);
+        var result = await _artifacts.GenerateFollowUp(id, 1, req.Provider, req.CustomPrompt);
         return result.Ok ? Ok(result) : BadRequest(new { error = result.Error });
     }
 
     [HttpPost("{id}/generate-followup2")]
     public async Task<IActionResult> GenerateFollowUp2(Guid id, [FromBody] GenerateRequest req)
     {
-        var result = await _artifacts.GenerateFollowUp(id, 2, req.Provider);
+        var result = await _artifacts.GenerateFollowUp(id, 2, req.Provider, req.CustomPrompt);
         return result.Ok ? Ok(result) : BadRequest(new { error = result.Error });
     }
 

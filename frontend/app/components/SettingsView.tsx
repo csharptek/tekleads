@@ -55,6 +55,9 @@ const KEYS = {
   ApifyApiKey: "apify_api_key",
   JobScraperKeywords: "job_scraper_keywords",
   EmailSendersJson: "email_senders_json",
+  JobLeadEmailPrompt: "job_lead_email_prompt",
+  JobLeadFollowUp1Prompt: "job_lead_followup1_prompt",
+  JobLeadFollowUp2Prompt: "job_lead_followup2_prompt",
 };
 
 interface Field { key: string; label: string; placeholder: string; secret?: boolean; full?: boolean; textarea?: boolean; defaultValue?: string; }

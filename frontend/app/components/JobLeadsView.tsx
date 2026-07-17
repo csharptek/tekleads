@@ -162,12 +162,16 @@ export default function JobLeadsView() {
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("job");
   const [provider, setProvider] = useState<Provider>("azure");
+  const [defaultPrompts, setDefaultPrompts] = useState<{ email: string; followUp1: string; followUp2: string }>({ email: "", followUp1: "", followUp2: "" });
+  const [customPrompts, setCustomPrompts] = useState<{ email: string; followUp1: string; followUp2: string }>({ email: "", followUp1: "", followUp2: "" });
+  const [promptModal, setPromptModal] = useState<{ type: "email" | "followUp1" | "followUp2"; title: string } | null>(null);
+  const [promptDraft, setPromptDraft] = useState("");
   const [busy, setBusy] = useState<Set<string>>(new Set()); // ids with an in-flight action
 
   const [scrapeOpen, setScrapeOpen] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [scrapeParams, setScrapeParams] = useState({
-    country: COUNTRIES[0], postedWithin: 7,
+    country: COUNTRIES[0], postedWithin: 7, companySize: "",
     roles: [ROLE_OPTIONS[0], ROLE_OPTIONS[1]],
   });
   const [scrapeRun, setScrapeRun] = useState<ScrapeRun | null>(null);
@@ -274,6 +278,7 @@ export default function JobLeadsView() {
     try {
       const { runId } = await api.post<{ runId: string }>("/api/job-leads/scrape", {
         roles: scrapeParams.roles, country: scrapeParams.country, postedWithinDays: scrapeParams.postedWithin,
+        companySize: scrapeParams.companySize,
       });
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
@@ -325,15 +330,72 @@ export default function JobLeadsView() {
     await refreshLead(id);
   });
 
-  const generateEmailOne = (id: string) => withBusy(id, async () => {
-    await api.post(`/api/job-leads/${id}/generate-email`, { provider });
+  useEffect(() => {
+    (async () => {
+      try {
+        const [defaults, saved] = await Promise.all([
+          api.get<{ email: string; followUp1: string; followUp2: string }>("/api/job-leads/prompts"),
+          api.get<{ values: Record<string, string> }>("/api/settings"),
+        ]);
+        setDefaultPrompts(defaults);
+        const s = saved.values || {};
+        setCustomPrompts({
+          email:     s["job_lead_email_prompt"]     || defaults.email,
+          followUp1: s["job_lead_followup1_prompt"] || defaults.followUp1,
+          followUp2: s["job_lead_followup2_prompt"] || defaults.followUp2,
+        });
+      } catch { /* non-critical */ }
+    })();
+  }, []);
+
+  const promptKeyMap: Record<"email" | "followUp1" | "followUp2", string> = {
+    email: "job_lead_email_prompt", followUp1: "job_lead_followup1_prompt", followUp2: "job_lead_followup2_prompt",
+  };
+
+  const savePromptToDb = async (type: "email" | "followUp1" | "followUp2", value: string) => {
+    try { await api.post("/api/settings", { values: { [promptKeyMap[type]]: value } }); } catch { /* non-critical */ }
+  };
+
+  const openPromptModal = (type: "email" | "followUp1" | "followUp2") => {
+    const titles = { email: "Outreach Email Prompt", followUp1: "Follow-up 1 Prompt", followUp2: "Follow-up 2 Prompt" };
+    const current = customPrompts[type] || defaultPrompts[type];
+    setPromptDraft(current);
+    setPromptModal({ type, title: titles[type] });
+  };
+
+  const resetPrompt = (type: "email" | "followUp1" | "followUp2") => {
+    setPromptDraft(defaultPrompts[type]);
+    savePromptToDb(type, "");
+  };
+
+  const handlePromptSaveOnly = () => {
+    if (!promptModal) return;
+    setCustomPrompts(p => ({ ...p, [promptModal.type]: promptDraft }));
+    savePromptToDb(promptModal.type, promptDraft);
+    setPromptModal(null);
+  };
+
+  const handlePromptRegenerate = () => {
+    if (!promptModal || !drawerId) return;
+    const { type } = promptModal;
+    setCustomPrompts(p => ({ ...p, [type]: promptDraft }));
+    savePromptToDb(type, promptDraft);
+    setPromptModal(null);
+    if (type === "email") generateEmailOne(drawerId, promptDraft);
+    if (type === "followUp1") generateFollowUp(drawerId, 1, promptDraft);
+    if (type === "followUp2") generateFollowUp(drawerId, 2, promptDraft);
+  };
+
+  const generateEmailOne = (id: string, customPrompt?: string) => withBusy(id, async () => {
+    await api.post(`/api/job-leads/${id}/generate-email`, { provider, customPrompt });
     await refreshLead(id);
   });
 
-  const generateFollowUp = (id: string, stage: 1 | 2) => withBusy(id, async () => {
-    await api.post(`/api/job-leads/${id}/generate-followup${stage}`, { provider });
+  const generateFollowUp = (id: string, stage: 1 | 2, customPrompt?: string) => withBusy(id, async () => {
+    await api.post(`/api/job-leads/${id}/generate-followup${stage}`, { provider, customPrompt });
     await refreshLead(id);
   });
+
 
   const generateAll = (id: string) => withBusy(id, async () => {
     await api.post(`/api/job-leads/${id}/generate-email`, { provider });
@@ -484,6 +546,18 @@ export default function JobLeadsView() {
               <div className="field-label">Posted Within</div>
               <select className="input" value={scrapeParams.postedWithin} onChange={e => setScrapeParams(p => ({ ...p, postedWithin: +e.target.value }))} style={{ marginBottom: 10 }}>
                 {POSTED_WITHIN.map(d => <option key={d} value={d}>Last {d} day{d > 1 ? "s" : ""}</option>)}
+              </select>
+              <div className="field-label">Company Size</div>
+              <select className="input" value={scrapeParams.companySize} onChange={e => setScrapeParams(p => ({ ...p, companySize: e.target.value }))} style={{ marginBottom: 10 }}>
+                <option value="">Any size</option>
+                <option value="1">1-10</option>
+                <option value="2">11-50</option>
+                <option value="3">51-200</option>
+                <option value="4">201-500</option>
+                <option value="5">501-1000</option>
+                <option value="6">1001-5000</option>
+                <option value="7">5001-10000</option>
+                <option value="8">10001+</option>
               </select>
               <div className="field-label">Roles</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
@@ -727,6 +801,7 @@ export default function JobLeadsView() {
                       onGenerate={() => generateEmailOne(drawerLead.id)}
                       onSave={(subject, body) => saveEmailEdits(drawerLead.id, subject, body)}
                       onSend={(sender, scheduledAt) => sendEmail(drawerLead.id, sender, scheduledAt)}
+                      onPromptClick={() => openPromptModal("email")}
                     />
                   )}
 
@@ -739,6 +814,7 @@ export default function JobLeadsView() {
                       enabled={!!drawerLead.emailSubject}
                       busy={busy.has(drawerLead.id)}
                       onGenerate={() => generateFollowUp(drawerLead.id, drawerTab === "fu1" ? 1 : 2)}
+                      onPromptClick={() => openPromptModal(drawerTab === "fu1" ? "followUp1" : "followUp2")}
                     />
                   )}
 
@@ -762,18 +838,80 @@ export default function JobLeadsView() {
           </div>
         </>
       )}
+
+      {/* Prompt Modal */}
+      {promptModal && (
+        <>
+          <div onClick={() => setPromptModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 300 }} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+            width: "min(700px, 94vw)", background: "white", borderRadius: 12,
+            boxShadow: "0 8px 40px rgba(0,0,0,0.18)", zIndex: 301, display: "flex", flexDirection: "column", maxHeight: "90vh",
+          }}>
+            <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{promptModal.title}</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                  Edit the system prompt sent to AI. Job post + contact + portfolio context is appended automatically.
+                </div>
+              </div>
+              <button className="icon-btn" onClick={() => setPromptModal(null)}>✕</button>
+            </div>
+            <div style={{ padding: "16px 24px", flex: 1, overflowY: "auto" }}>
+              <textarea
+                value={promptDraft}
+                onChange={e => setPromptDraft(e.target.value)}
+                style={{
+                  width: "100%", minHeight: 320, fontFamily: "monospace", fontSize: 13, lineHeight: 1.6,
+                  padding: 14, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)",
+                  color: "var(--text)", resize: "vertical", boxSizing: "border-box",
+                }}
+              />
+              {promptDraft !== defaultPrompts[promptModal.type] && (
+                <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>● Custom prompt active</span>
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => resetPrompt(promptModal.type)}>
+                    Reset to default
+                  </button>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "14px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPromptModal(null)}>Cancel</button>
+              <button className="btn btn-ghost btn-sm" onClick={handlePromptSaveOnly}>Save (no regenerate)</button>
+              <button className="btn btn-primary btn-sm" onClick={handlePromptRegenerate}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Save & Regenerate
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
+  );
+}
+
+/* ─── Prompt button ──────────────────────────────────────────────────── */
+
+function PromptBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="icon-btn" onClick={onClick} title="View / edit prompt" style={{ fontSize: 11 }}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+      </svg>
+      Prompt
+    </button>
   );
 }
 
 /* ─── Email tab ──────────────────────────────────────────────────────── */
 
 function EmailPanel({
-  subject, body, sender, provider, setProvider, canGenerate, busy, onGenerate, onSave, onSend,
+  subject, body, sender, provider, setProvider, canGenerate, busy, onGenerate, onSave, onSend, onPromptClick,
 }: {
   subject?: string | null; body?: string | null; sender?: string | null; provider: Provider; setProvider: (p: Provider) => void;
   canGenerate: boolean; busy: boolean; onGenerate: () => void; onSave: (subject: string, body: string) => void;
-  onSend: (sender: string, scheduledAt?: string) => void;
+  onSend: (sender: string, scheduledAt?: string) => void; onPromptClick: () => void;
 }) {
   const [localSubject, setLocalSubject] = useState(subject || "");
   const [localBody, setLocalBody] = useState(body || "");
@@ -797,7 +935,10 @@ function EmailPanel({
             <button key={p.id} onClick={() => setProvider(p.id)} className={provider === p.id ? "chip chip-blue" : "chip"} style={{ cursor: "pointer" }}>{p.label}</button>
           ))}
         </div>
-        <button className="btn btn-primary btn-sm" disabled={!canGenerate || busy} onClick={onGenerate}>{busy ? "Generating…" : "Generate Email"}</button>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <button className="btn btn-primary btn-sm" disabled={!canGenerate || busy} onClick={onGenerate}>{busy ? "Generating…" : "Generate Email"}</button>
+          <PromptBtn onClick={onPromptClick} />
+        </div>
       </div>
     );
   }
@@ -825,6 +966,7 @@ function EmailPanel({
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onSend(localSender)}>{busy ? "Sending…" : "Send Now"}</button>
         <button className="btn btn-ghost btn-sm" disabled={busy || !scheduleAt} onClick={() => onSend(localSender, new Date(scheduleAt).toISOString())}>Schedule</button>
+        <PromptBtn onClick={onPromptClick} />
         <button className="icon-btn" style={{ marginLeft: "auto" }} disabled={busy} onClick={onGenerate}>Regenerate</button>
       </div>
     </div>
@@ -833,7 +975,7 @@ function EmailPanel({
 
 /* ─── Follow-up tab ──────────────────────────────────────────────────── */
 
-function FollowUpPanel({ stage, subject, body, enabled, busy, onGenerate }: { stage: 1 | 2; subject?: string | null; body?: string | null; enabled: boolean; busy: boolean; onGenerate: () => void; }) {
+function FollowUpPanel({ stage, subject, body, enabled, busy, onGenerate, onPromptClick }: { stage: 1 | 2; subject?: string | null; body?: string | null; enabled: boolean; busy: boolean; onGenerate: () => void; onPromptClick: () => void; }) {
   if (!enabled) {
     return (
       <div className="empty" style={{ padding: "40px 0" }}>
@@ -846,7 +988,10 @@ function FollowUpPanel({ stage, subject, body, enabled, busy, onGenerate }: { st
     return (
       <div className="empty" style={{ padding: "40px 0" }}>
         <div className="empty-title">No follow-up {stage} yet</div>
-        <button className="btn btn-primary btn-sm" disabled={busy} onClick={onGenerate}>{busy ? "Generating…" : `Generate Follow-up ${stage}`}</button>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={onGenerate}>{busy ? "Generating…" : `Generate Follow-up ${stage}`}</button>
+          <PromptBtn onClick={onPromptClick} />
+        </div>
       </div>
     );
   }
@@ -854,7 +999,10 @@ function FollowUpPanel({ stage, subject, body, enabled, busy, onGenerate }: { st
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div><div className="field-label">Subject</div><div className="input" style={{ background: "var(--bg)" }}>{subject}</div></div>
       <div><div className="field-label">Body</div><div className="input" style={{ background: "var(--bg)", whiteSpace: "pre-wrap", minHeight: 140 }}>{body}</div></div>
-      <button className="icon-btn" disabled={busy} onClick={onGenerate}>Regenerate</button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="icon-btn" disabled={busy} onClick={onGenerate}>Regenerate</button>
+        <PromptBtn onClick={onPromptClick} />
+      </div>
     </div>
   );
 }
