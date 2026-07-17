@@ -106,6 +106,42 @@ public class JobLeadsController : ControllerBase
         return Ok(new { leads = result.Leads, total = result.Total, stats });
     }
 
+    // Cheap group-header summary (label + count only) — no lead rows fetched.
+    [HttpGet("filter-options")]
+    public async Task<IActionResult> GetFilterOptions()
+    {
+        var (industries, sizes, countries) = await _jobs.GetFilterOptions();
+        return Ok(new { industries, sizes, countries });
+    }
+
+    [HttpGet("groups")]
+    public async Task<IActionResult> GetGroups(
+        [FromQuery] string groupBy, [FromQuery] string? status, [FromQuery] string? search, [FromQuery] string? keyword,
+        [FromQuery] string? industry, [FromQuery] string? size, [FromQuery] string? country,
+        [FromQuery] bool needsFollowUp = false, [FromQuery] DateTime? dateFrom = null, [FromQuery] DateTime? dateTo = null)
+    {
+        if (string.IsNullOrWhiteSpace(groupBy) || groupBy == "none") return BadRequest(new { error = "groupBy is required." });
+        var groups = await _jobs.GetGroupCounts(groupBy, status, search, keyword, industry, size, country, needsFollowUp, dateFrom, dateTo);
+        var stats = await _jobs.GetStats();
+        return Ok(new { groups, stats });
+    }
+
+    // Paginated rows for exactly one expanded group.
+    [HttpGet("by-group")]
+    public async Task<IActionResult> GetByGroup(
+        [FromQuery] string groupBy, [FromQuery] string groupValue,
+        [FromQuery] string? status, [FromQuery] string? search, [FromQuery] string? keyword,
+        [FromQuery] string? industry, [FromQuery] string? size, [FromQuery] string? country,
+        [FromQuery] bool needsFollowUp = false, [FromQuery] DateTime? dateFrom = null, [FromQuery] DateTime? dateTo = null,
+        [FromQuery] int page = 1, [FromQuery] int perPage = 20,
+        [FromQuery] string? sortBy = null, [FromQuery] string? sortDir = null)
+    {
+        if (string.IsNullOrWhiteSpace(groupBy) || string.IsNullOrWhiteSpace(groupValue))
+            return BadRequest(new { error = "groupBy and groupValue are required." });
+        var result = await _jobs.ListByGroup(groupBy, groupValue, status, search, keyword, industry, size, country, needsFollowUp, dateFrom, dateTo, page, perPage, sortBy, sortDir);
+        return Ok(new { leads = result.Leads, total = result.Total });
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {

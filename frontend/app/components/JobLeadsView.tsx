@@ -99,7 +99,6 @@ const COUNTRIES = ["United States", "United Kingdom", "Canada", "Australia", "In
 const EMPLOYEE_BUCKETS = ["1–9", "10–50", "51–200", "201–1000", "1000+", "Unknown"];
 const POSTED_WITHIN = [1, 3, 7, 14, 30];
 const PER_PAGE = 20;
-const GROUPED_FETCH_SIZE = 500;
 
 /* ─── Small building blocks ─────────────────────────────────────────── */
 
@@ -171,6 +170,11 @@ export default function JobLeadsView() {
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [sortBy, setSortBy] = useState<SortBy>("scraped");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [groupSummaries, setGroupSummaries] = useState<{ label: string; count: number }[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [groupRows, setGroupRows] = useState<Record<string, JobLead[]>>({});
+  const [groupPages, setGroupPages] = useState<Record<string, number>>({});
+  const [groupLoading, setGroupLoading] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
 
   const [filterOptions, setFilterOptions] = useState<{ industries: string[]; sizes: string[]; countries: string[] }>({ industries: [], sizes: [], countries: [] });
@@ -211,8 +215,8 @@ export default function JobLeadsView() {
     return () => document.removeEventListener("mousedown", onClick);
   }, [scrapeOpen]);
 
-  // ── Fetch leads (filters + pagination or grouped bulk fetch) ─────────
-  const buildParams = useCallback((forGrouping: boolean) => {
+  // ── Fetch leads (flat, always paginated) ──────────────────────────────
+  const buildParams = useCallback(() => {
     const p = new URLSearchParams();
     if (statusFilter !== "all") p.set("status", statusFilter);
     if (search) p.set("search", search);
@@ -225,16 +229,17 @@ export default function JobLeadsView() {
     if (dateTo) p.set("dateTo", dateTo);
     p.set("sortBy", sortBy);
     p.set("sortDir", sortDir);
-    p.set("page", forGrouping ? "1" : String(page));
-    p.set("perPage", forGrouping ? String(GROUPED_FETCH_SIZE) : String(PER_PAGE));
+    p.set("page", String(page));
+    p.set("perPage", String(PER_PAGE));
     return p;
   }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, page, sortBy, sortDir]);
 
   const fetchLeads = useCallback(async () => {
+    if (groupBy !== "none") return; // grouped mode fetches group summaries instead, see below
     setLoading(true);
     setError("");
     try {
-      const params = buildParams(groupBy !== "none");
+      const params = buildParams();
       const res = await api.get<{ leads: JobLead[]; total: number; stats: JobLeadStats }>(`/api/job-leads?${params.toString()}`);
       setLeads(res.leads);
       setTotal(res.total);
@@ -246,21 +251,88 @@ export default function JobLeadsView() {
     }
   }, [buildParams, groupBy]);
 
+  // ── Group mode: cheap label+count summaries, rows fetched per-group on expand ──
+  const buildGroupBaseParams = useCallback(() => {
+    const p = new URLSearchParams();
+    if (statusFilter !== "all") p.set("status", statusFilter);
+    if (search) p.set("search", search);
+    if (keywordFilter) p.set("keyword", keywordFilter);
+    if (industryFilter !== "all") p.set("industry", industryFilter);
+    if (sizeFilter !== "all") p.set("size", sizeFilter);
+    if (countryFilter !== "all") p.set("country", countryFilter);
+    if (needsFollowUp) p.set("needsFollowUp", "true");
+    if (dateFrom) p.set("dateFrom", dateFrom);
+    if (dateTo) p.set("dateTo", dateTo);
+    return p;
+  }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo]);
+
+  const fetchGroupSummaries = useCallback(async () => {
+    if (groupBy === "none") return;
+    setLoading(true);
+    setError("");
+    try {
+      const params = buildGroupBaseParams();
+      params.set("groupBy", groupBy);
+      const res = await api.get<{ groups: { label: string; count: number }[]; stats: JobLeadStats }>(`/api/job-leads/groups?${params.toString()}`);
+      setGroupSummaries(res.groups);
+      setStats(res.stats);
+      setExpandedGroups(new Set());
+      setGroupRows({});
+      setGroupPages({});
+    } catch (e: any) {
+      setError(e.message || "Failed to load groups.");
+    } finally {
+      setLoading(false);
+    }
+  }, [buildGroupBaseParams, groupBy]);
+
+  const fetchGroupPage = useCallback(async (label: string, p: number) => {
+    setGroupLoading(prev => new Set(prev).add(label));
+    try {
+      const params = buildGroupBaseParams();
+      params.set("groupBy", groupBy);
+      params.set("groupValue", label);
+      params.set("sortBy", sortBy);
+      params.set("sortDir", sortDir);
+      params.set("page", String(p));
+      params.set("perPage", String(PER_PAGE));
+      const res = await api.get<{ leads: JobLead[]; total: number }>(`/api/job-leads/by-group?${params.toString()}`);
+      setGroupRows(prev => ({ ...prev, [label]: res.leads }));
+      setGroupPages(prev => ({ ...prev, [label]: p }));
+    } catch (e: any) {
+      setError(e.message || "Failed to load group rows.");
+    } finally {
+      setGroupLoading(prev => { const n = new Set(prev); n.delete(label); return n; });
+    }
+  }, [buildGroupBaseParams, groupBy, sortBy, sortDir]);
+
+  const toggleGroup = (label: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+        if (!groupRows[label]) fetchGroupPage(label, 1);
+      }
+      return next;
+    });
+  };
+
   const refreshFilterOptions = useCallback(async () => {
     try {
-      const res = await api.get<{ leads: JobLead[] }>(`/api/job-leads?page=1&perPage=${GROUPED_FETCH_SIZE}`);
-      setFilterOptions({
-        industries: Array.from(new Set(res.leads.map(l => l.industry).filter(Boolean))).sort(),
-        sizes: Array.from(new Set(res.leads.map(l => l.companySize).filter(Boolean))).sort(),
-        countries: Array.from(new Set(res.leads.map(l => l.country).filter(Boolean))).sort(),
-      });
+      const res = await api.get<{ industries: string[]; sizes: string[]; countries: string[] }>("/api/job-leads/filter-options");
+      setFilterOptions(res);
     } catch { /* non-critical */ }
   }, []);
 
   // Debounced refetch whenever any filter/page/groupBy changes
   useEffect(() => {
     if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
-    fetchDebounceRef.current = setTimeout(() => { fetchLeads(); }, 300);
+    fetchDebounceRef.current = setTimeout(() => {
+      if (groupBy === "none") fetchLeads();
+      else fetchGroupSummaries();
+    }, 300);
     return () => { if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, groupBy, sortBy, sortDir, page]);
@@ -268,37 +340,6 @@ export default function JobLeadsView() {
   useEffect(() => { setPage(1); }, [statusFilter, search, keywordFilter, industryFilter, sizeFilter, countryFilter, needsFollowUp, dateFrom, dateTo, groupBy, sortBy, sortDir]);
 
   useEffect(() => { refreshFilterOptions(); }, [refreshFilterOptions]);
-
-  const grouped = useMemo(() => {
-    if (groupBy === "none") return null;
-
-    if (groupBy === "company") {
-      const map = new Map<string, JobLead[]>();
-      for (const l of leads) {
-        const key = (l.company || "Unknown").trim() || "Unknown";
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(l);
-      }
-      const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
-      return keys.map(k => ({ label: k, rows: map.get(k)! }));
-    }
-
-    const map = new Map<string, JobLead[]>();
-    for (const l of leads) {
-      const key = groupBy === "size"
-        ? sizeBucket(l.companySize)
-        : bucketFor(
-            groupBy === "scraped" ? l.scrapedAt
-            : groupBy === "posted" ? l.postedAt
-            : groupBy === "emailSent" ? l.sentAt
-            : (l.activity[l.activity.length - 1]?.at ?? l.scrapedAt)
-          );
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(l);
-    }
-    const order = groupBy === "size" ? EMPLOYEE_BUCKETS : BUCKET_ORDER;
-    return order.map(b => ({ label: b, rows: map.get(b) || [] })).filter(g => g.rows.length > 0);
-  }, [leads, groupBy]);
 
   const clearFilters = () => {
     setStatusFilter("all"); setSearch(""); setKeywordFilter(""); setIndustryFilter("all");
@@ -781,17 +822,51 @@ export default function JobLeadsView() {
           )}
         </>
       ) : (
-        (grouped || []).map(g => (
-          <div key={g.label} style={{ marginBottom: 4 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 8px 2px" }}>
-              {g.label} <span style={{ fontWeight: 500, color: "var(--dim)" }}>({g.rows.length})</span>
+        groupSummaries.map(g => {
+          const isOpen = expandedGroups.has(g.label);
+          const rows = groupRows[g.label] || [];
+          const gPage = groupPages[g.label] || 1;
+          const gTotalPages = Math.max(1, Math.ceil(g.count / PER_PAGE));
+          const isGroupLoading = groupLoading.has(g.label);
+          return (
+            <div key={g.label} style={{ marginBottom: 4 }}>
+              <button
+                onClick={() => toggleGroup(g.label)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+                  background: "none", border: "none", cursor: "pointer", padding: "6px 2px",
+                  fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4,
+                }}
+              >
+                <span style={{ display: "inline-block", transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+                {g.label} <span style={{ fontWeight: 500, color: "var(--dim)" }}>({g.count})</span>
+              </button>
+              {isOpen && (
+                <>
+                  {isGroupLoading && rows.length === 0 ? (
+                    <div className="table-wrap"><div className="empty" style={{ padding: "24px 0" }}><span className="spinner spinner-dark" /></div></div>
+                  ) : (
+                    <>
+                      {renderTable(rows)}
+                      {g.count > PER_PAGE && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 16px", fontSize: 12, color: "var(--muted)" }}>
+                          <span>page {gPage} of {gTotalPages}</span>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button className="btn btn-ghost btn-sm" disabled={gPage <= 1 || isGroupLoading} onClick={() => fetchGroupPage(g.label, gPage - 1)}>Prev</button>
+                            <button className="btn btn-ghost btn-sm" disabled={gPage >= gTotalPages || isGroupLoading} onClick={() => fetchGroupPage(g.label, gPage + 1)}>Next</button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
             </div>
-            {renderTable(g.rows)}
-          </div>
-        ))
+          );
+        })
       )}
-      {groupBy !== "none" && grouped && grouped.length === 0 && (
-        <div className="table-wrap"><div className="empty"><div className="empty-title">{loading ? "Loading…" : "No leads match your filters"}</div></div></div>
+      {groupBy !== "none" && !loading && groupSummaries.length === 0 && (
+        <div className="table-wrap"><div className="empty"><div className="empty-title">No leads match your filters</div></div></div>
       )}
 
       {/* Drawer */}

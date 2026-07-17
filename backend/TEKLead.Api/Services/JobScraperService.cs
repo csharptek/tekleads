@@ -346,6 +346,172 @@ public class JobScraperService
         else { where.Add($"{sizeExpr} >= @sizeMin"); }
     }
 
+    // Maps a date-bucket label (Today/Yesterday/This week/Last week/Older) to a SQL WHERE condition
+    // on the given column, matching the exact boundaries used by bucketFor() on the frontend.
+    private static void ApplyDateBucket(List<string> where, DynamicParameters p, string column, string bucket)
+    {
+        if (bucket == "Older")
+        {
+            // Older = more than 14 days ago, OR the column is null (no date captured yet).
+            where.Add($"({column} IS NULL OR {column} < NOW() - INTERVAL '14 days')");
+            return;
+        }
+        where.Add($"{column} IS NOT NULL");
+        switch (bucket)
+        {
+            case "Today":
+                where.Add($"{column} >= date_trunc('day', NOW())");
+                break;
+            case "Yesterday":
+                where.Add($"{column} >= date_trunc('day', NOW()) - INTERVAL '1 day' AND {column} < date_trunc('day', NOW())");
+                break;
+            case "This week":
+                where.Add($"{column} >= date_trunc('day', NOW()) - INTERVAL '7 days' AND {column} < date_trunc('day', NOW()) - INTERVAL '1 day'");
+                break;
+            case "Last week":
+                where.Add($"{column} >= date_trunc('day', NOW()) - INTERVAL '14 days' AND {column} < date_trunc('day', NOW()) - INTERVAL '7 days'");
+                break;
+        }
+    }
+
+    private static readonly string[] DateBucketOrder = { "Today", "Yesterday", "This week", "Last week", "Older" };
+    private static readonly string[] SizeBucketOrder = { "1–9", "10–50", "51–200", "201–1000", "1000+", "Unknown" };
+
+    /// <summary>
+    /// Cheap group summary: label + row count only, no lead rows. Powers the collapsed group list
+    /// so the UI never has to fetch hundreds of rows just to show group headers.
+    /// </summary>
+    public async Task<List<JobLeadGroupSummary>> GetGroupCounts(
+        string groupBy, string? status, string? search, string? keyword, string? industry, string? size,
+        string? country, bool needsFollowUp, DateTime? dateFrom, DateTime? dateTo)
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var baseWhere = new List<string>();
+        var p = new DynamicParameters();
+        if (!string.IsNullOrWhiteSpace(status) && status != "all") { baseWhere.Add("status=@status"); p.Add("status", status); }
+        if (!string.IsNullOrWhiteSpace(search)) { baseWhere.Add("(company ILIKE @search OR job_title ILIKE @search)"); p.Add("search", $"%{search}%"); }
+        if (!string.IsNullOrWhiteSpace(keyword)) { baseWhere.Add("EXISTS (SELECT 1 FROM unnest(matched_keywords) k WHERE k ILIKE @keyword)"); p.Add("keyword", $"%{keyword}%"); }
+        if (!string.IsNullOrWhiteSpace(industry) && industry != "all") { baseWhere.Add("industry=@industry"); p.Add("industry", industry); }
+        if (!string.IsNullOrWhiteSpace(size) && size != "all") ApplySizeBucket(baseWhere, p, size);
+        if (!string.IsNullOrWhiteSpace(country) && country != "all") { baseWhere.Add("country=@country"); p.Add("country", country); }
+        if (needsFollowUp) { baseWhere.Add("status='sent' AND replied_at IS NULL"); }
+        if (dateFrom.HasValue) { baseWhere.Add("scraped_at >= @dateFrom"); p.Add("dateFrom", dateFrom.Value); }
+        if (dateTo.HasValue) { baseWhere.Add("scraped_at <= @dateTo"); p.Add("dateTo", dateTo.Value); }
+
+        if (groupBy == "company")
+        {
+            var whereSql = baseWhere.Count > 0 ? "WHERE " + string.Join(" AND ", baseWhere) : "";
+            var rows = await c.QueryAsync<(string Label, int Count)>($@"
+                SELECT COALESCE(NULLIF(TRIM(company), ''), 'Unknown') AS label, COUNT(*) AS count
+                FROM job_leads {whereSql}
+                GROUP BY 1 ORDER BY 1 ASC", p);
+            return rows.Select(r => new JobLeadGroupSummary { Label = r.Label, Count = r.Count }).ToList();
+        }
+
+        if (groupBy == "size")
+        {
+            var results = new List<JobLeadGroupSummary>();
+            foreach (var bucket in SizeBucketOrder)
+            {
+                var w = new List<string>(baseWhere);
+                var bp = new DynamicParameters(p);
+                ApplySizeBucket(w, bp, bucket);
+                var whereSql = "WHERE " + string.Join(" AND ", w);
+                var count = await c.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM job_leads {whereSql}", bp);
+                if (count > 0) results.Add(new JobLeadGroupSummary { Label = bucket, Count = count });
+            }
+            return results;
+        }
+
+        // Date-based groups: scraped / posted / emailSent / activity (activity falls back to scraped_at column
+        // since "last activity" isn't a single column — treated as scraped_at for counting purposes).
+        var column = groupBy switch
+        {
+            "scraped" => "scraped_at",
+            "posted" => "posted_at",
+            "emailSent" => "sent_at",
+            "activity" => "scraped_at",
+            _ => "scraped_at",
+        };
+
+        var dateResults = new List<JobLeadGroupSummary>();
+        foreach (var bucket in DateBucketOrder)
+        {
+            var w = new List<string>(baseWhere);
+            var bp = new DynamicParameters(p);
+            ApplyDateBucket(w, bp, column, bucket);
+            var whereSql = "WHERE " + string.Join(" AND ", w);
+            var count = await c.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM job_leads {whereSql}", bp);
+            if (count > 0) dateResults.Add(new JobLeadGroupSummary { Label = bucket, Count = count });
+        }
+        return dateResults;
+    }
+
+    /// <summary>
+    /// Rows for exactly one group bucket, paginated normally. Used when a group is expanded in the UI.
+    /// </summary>
+    public async Task<JobLeadListResult> ListByGroup(
+        string groupBy, string groupValue,
+        string? status, string? search, string? keyword, string? industry, string? size, string? country,
+        bool needsFollowUp, DateTime? dateFrom, DateTime? dateTo, int page, int perPage,
+        string? sortBy, string? sortDir)
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var where = new List<string>();
+        var p = new DynamicParameters();
+        if (!string.IsNullOrWhiteSpace(status) && status != "all") { where.Add("status=@status"); p.Add("status", status); }
+        if (!string.IsNullOrWhiteSpace(search)) { where.Add("(company ILIKE @search OR job_title ILIKE @search)"); p.Add("search", $"%{search}%"); }
+        if (!string.IsNullOrWhiteSpace(keyword)) { where.Add("EXISTS (SELECT 1 FROM unnest(matched_keywords) k WHERE k ILIKE @keyword)"); p.Add("keyword", $"%{keyword}%"); }
+        if (!string.IsNullOrWhiteSpace(industry) && industry != "all") { where.Add("industry=@industry"); p.Add("industry", industry); }
+        if (!string.IsNullOrWhiteSpace(size) && size != "all") ApplySizeBucket(where, p, size);
+        if (!string.IsNullOrWhiteSpace(country) && country != "all") { where.Add("country=@country"); p.Add("country", country); }
+        if (needsFollowUp) { where.Add("status='sent' AND replied_at IS NULL"); }
+        if (dateFrom.HasValue) { where.Add("scraped_at >= @dateFrom"); p.Add("dateFrom", dateFrom.Value); }
+        if (dateTo.HasValue) { where.Add("scraped_at <= @dateTo"); p.Add("dateTo", dateTo.Value); }
+
+        if (groupBy == "company")
+        {
+            where.Add("COALESCE(NULLIF(TRIM(company), ''), 'Unknown') = @groupValue");
+            p.Add("groupValue", groupValue);
+        }
+        else if (groupBy == "size")
+        {
+            ApplySizeBucket(where, p, groupValue);
+        }
+        else
+        {
+            var column = groupBy switch
+            {
+                "scraped" => "scraped_at",
+                "posted" => "posted_at",
+                "emailSent" => "sent_at",
+                "activity" => "scraped_at",
+                _ => "scraped_at",
+            };
+            ApplyDateBucket(where, p, column, groupValue);
+        }
+
+        var whereSql = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+
+        p.Add("limit", perPage);
+        p.Add("offset", (page - 1) * perPage);
+
+        var sortCol = (sortBy != null && SortColumns.TryGetValue(sortBy, out var col)) ? col : "scraped_at";
+        var dir = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
+        var orderSql = $"ORDER BY {sortCol} {dir} NULLS LAST";
+
+        var rows = await c.QueryAsync<dynamic>($"SELECT * FROM job_leads {whereSql} {orderSql} LIMIT @limit OFFSET @offset", p);
+        var total = await c.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM job_leads {whereSql}", p);
+
+        return new JobLeadListResult { Leads = rows.Select(MapLead).ToList(), Total = total };
+    }
+
     private static readonly Dictionary<string, string> SortColumns = new()
     {
         ["scraped"] = "scraped_at",
@@ -411,6 +577,19 @@ public class JobScraperService
             Scraped = (int)row.scraped, Enriched = (int)row.enriched, EmailReady = (int)row.email_ready,
             Sent = (int)row.sent, Replied = (int)row.replied, NeedsFollowUp = (int)row.needs_follow_up,
         };
+    }
+
+    // Cheap distinct-value lists for filter dropdowns — DISTINCT at the DB instead of scanning
+    // hundreds of full rows client-side.
+    public async Task<(string[] Industries, string[] Sizes, string[] Countries)> GetFilterOptions()
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+        var industries = (await c.QueryAsync<string>("SELECT DISTINCT industry FROM job_leads WHERE industry IS NOT NULL AND industry != '' ORDER BY 1")).ToArray();
+        var sizes = (await c.QueryAsync<string>("SELECT DISTINCT company_size FROM job_leads WHERE company_size IS NOT NULL AND company_size != '' ORDER BY 1")).ToArray();
+        var countries = (await c.QueryAsync<string>("SELECT DISTINCT country FROM job_leads WHERE country IS NOT NULL AND country != '' ORDER BY 1")).ToArray();
+        return (industries, sizes, countries);
     }
 
     public async Task<JobLead?> GetById(Guid id)

@@ -73,6 +73,12 @@ public class JobLeadListResult
     public int Total { get; set; }
 }
 
+public class JobLeadGroupSummary
+{
+    public string Label { get; set; } = "";
+    public int Count { get; set; }
+}
+
 public class JobLeadStats
 {
     public int Scraped { get; set; }
