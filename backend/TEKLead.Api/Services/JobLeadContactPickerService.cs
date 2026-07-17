@@ -110,12 +110,21 @@ public class JobLeadContactPickerService
             addedAny = true;
         }
 
+        // Resolve company name to a domain once, then use it as a hard filter for every title search below.
+        // Without this, Apollo's free-text company match is fuzzy and can return the same popular
+        // candidate across unrelated companies.
+        string? domain = null;
+        try { domain = await _apollo.SearchOrganizationDomain(lead.Company); }
+        catch (Exception ex) { _log.LogWarning(ex, "Org domain lookup failed for lead {id}, company {company}", leadId, lead.Company); }
+
         foreach (var title in JobScraperService.ContactTitlePriority)
         {
             List<Lead> candidates;
             try
             {
-                var (found, _) = await _apollo.Search(null, title, lead.Company, null, null, null, 1, 3);
+                var (found, _) = domain != null
+                    ? await _apollo.Search(null, title, null, null, null, domain, 1, 3)
+                    : await _apollo.Search(null, title, lead.Company, null, null, null, 1, 3);
                 candidates = found;
             }
             catch (Exception ex)
@@ -126,7 +135,8 @@ public class JobLeadContactPickerService
 
             var candidate = candidates.FirstOrDefault(cand =>
                 !string.IsNullOrWhiteSpace(cand.ApolloId) &&
-                !string.Equals(cand.Name?.Trim(), lead.Company.Trim(), StringComparison.OrdinalIgnoreCase));
+                !string.Equals(cand.Name?.Trim(), lead.Company.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                (domain != null || string.Equals(cand.Company?.Trim(), lead.Company.Trim(), StringComparison.OrdinalIgnoreCase)));
             if (candidate == null) continue;
 
             var exists = await c.ExecuteScalarAsync<bool>(

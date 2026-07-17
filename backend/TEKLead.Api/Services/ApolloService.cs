@@ -348,6 +348,36 @@ public class ApolloService
         return (phones.ToArray(), true);
     }
 
+    // Resolves a company name to its primary domain via Apollo's Organization Search (free, no credits).
+    // Used to turn a loose company name into a hard q_organization_domains_list filter for people search,
+    // avoiding false-positive matches from free-text q_keywords search.
+    public async Task<string?> SearchOrganizationDomain(string companyName)
+    {
+        if (string.IsNullOrWhiteSpace(companyName)) return null;
+        var key = await GetKey();
+        var payload = new Dictionary<string, object> { ["q_organization_name"] = companyName, ["page"] = 1, ["per_page"] = 5 };
+        var client = MakeClient(key);
+        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/mixed_companies/search", payload);
+        var body = await res.Content.ReadAsStringAsync();
+        _log.LogInformation("Apollo org search {0}: {1}", res.StatusCode, body[..Math.Min(300, body.Length)]);
+        if (!res.IsSuccessStatusCode) return null;
+
+        using var doc = JsonDocument.Parse(body);
+        if (!doc.RootElement.TryGetProperty("organizations", out var orgs) || orgs.GetArrayLength() == 0) return null;
+
+        // Prefer an exact (case-insensitive) name match; fall back to the first result.
+        JsonElement? exact = null;
+        foreach (var o in orgs.EnumerateArray())
+        {
+            var name = Str(o, "name");
+            if (string.Equals(name?.Trim(), companyName.Trim(), StringComparison.OrdinalIgnoreCase)) { exact = o; break; }
+        }
+        var chosen = exact ?? orgs[0];
+        var website = Str(chosen, "website_url") ?? Str(chosen, "primary_domain");
+        if (string.IsNullOrWhiteSpace(website)) return null;
+        return website.Trim().ToLower().Replace("https://", "").Replace("http://", "").TrimEnd('/');
+    }
+
     public async Task<Lead?> SearchByLinkedIn(string linkedinUrl)
     {
         var key = await GetKey();

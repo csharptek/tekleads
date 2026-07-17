@@ -27,12 +27,18 @@ public class JobLeadContactService
 
         var foundAnyCandidate = false;
 
+        string? domain = null;
+        try { domain = await _apollo.SearchOrganizationDomain(lead.Company); }
+        catch (Exception ex) { _log.LogWarning(ex, "Org domain lookup failed for lead {id}, company {company}", leadId, lead.Company); }
+
         foreach (var title in JobScraperService.ContactTitlePriority)
         {
             List<Lead> candidates;
             try
             {
-                var (found, _) = await _apollo.Search(null, title, lead.Company, null, null, null, 1, 3);
+                var (found, _) = domain != null
+                    ? await _apollo.Search(null, title, null, null, null, domain, 1, 3)
+                    : await _apollo.Search(null, title, lead.Company, null, null, null, 1, 3);
                 candidates = found;
             }
             catch (Exception ex)
@@ -46,7 +52,8 @@ public class JobLeadContactService
             // an enrich-email credit on them.
             var candidate = candidates.FirstOrDefault(c =>
                 !string.IsNullOrWhiteSpace(c.ApolloId) &&
-                !string.Equals(c.Name?.Trim(), lead.Company.Trim(), StringComparison.OrdinalIgnoreCase));
+                !string.Equals(c.Name?.Trim(), lead.Company.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                (domain != null || string.Equals(c.Company?.Trim(), lead.Company.Trim(), StringComparison.OrdinalIgnoreCase)));
             if (candidate == null) continue;
             foundAnyCandidate = true;
 
