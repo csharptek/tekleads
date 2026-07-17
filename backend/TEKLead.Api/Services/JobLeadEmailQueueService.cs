@@ -65,6 +65,108 @@ public class JobLeadEmailQueueService
             new { leadId = jobLeadId, stage, toEmail, toName, fromEmail, subject, body, scheduledAt = scheduledAt ?? DateTime.UtcNow });
     }
 
+    /// <summary>
+    /// Enqueues initial email for each recipient + optional FU1/FU2, staggered by intervalMinutes.
+    /// Cancels all existing pending jobs for this lead first.
+    /// </summary>
+    public async Task EnqueueBulk(
+        Guid jobLeadId,
+        List<(string email, string name)> recipients,
+        string fromEmail,
+        string initialSubject,
+        string initialBody,
+        int intervalMinutes,
+        FollowUpSpec? fu1,
+        FollowUpSpec? fu2)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+
+        await c.ExecuteAsync(
+            "DELETE FROM job_lead_email_jobs WHERE job_lead_id=@id AND status IN ('pending','cancelled','failed')",
+            new { id = jobLeadId });
+
+        var now = DateTime.UtcNow;
+        for (int i = 0; i < recipients.Count; i++)
+        {
+            var initialAt = now.AddMinutes(i * intervalMinutes);
+
+            await c.ExecuteAsync(@"
+                INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status)
+                VALUES (@leadId, 0, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending')",
+                new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = initialSubject, body = initialBody, scheduledAt = initialAt });
+
+            if (fu1 != null && !string.IsNullOrWhiteSpace(fu1.Subject) && !string.IsNullOrWhiteSpace(fu1.Body))
+            {
+                var fu1At = initialAt.AddHours(fu1.DelayHours);
+                await c.ExecuteAsync(@"
+                    INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status)
+                    VALUES (@leadId, 1, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending')",
+                    new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = fu1.Subject, body = fu1.Body, scheduledAt = fu1At });
+            }
+
+            if (fu2 != null && !string.IsNullOrWhiteSpace(fu2.Subject) && !string.IsNullOrWhiteSpace(fu2.Body))
+            {
+                var fu2At = initialAt.AddHours(fu2.DelayHours);
+                await c.ExecuteAsync(@"
+                    INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status)
+                    VALUES (@leadId, 2, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending')",
+                    new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = fu2.Subject, body = fu2.Body, scheduledAt = fu2At });
+            }
+        }
+    }
+
+    public async Task<List<JobLeadEmailJob>> GetByLead(Guid jobLeadId)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+        var rows = await c.QueryAsync<dynamic>(
+            "SELECT * FROM job_lead_email_jobs WHERE job_lead_id=@id AND status != 'cancelled' ORDER BY stage, scheduled_at",
+            new { id = jobLeadId });
+        return rows.Select(Map).ToList();
+    }
+
+    public async Task<bool> CancelJob(Guid jobId)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+        var rows = await c.ExecuteAsync(
+            "UPDATE job_lead_email_jobs SET status='cancelled' WHERE id=@id AND status='pending'",
+            new { id = jobId });
+        return rows > 0;
+    }
+
+    /// <summary>
+    /// Cancels pending follow-up jobs for a lead.
+    /// If contactEmail is provided, only for that contact. If stage is provided (1 or 2), only that stage; otherwise stages 1+2.
+    /// </summary>
+    public async Task<int> CancelFollowUps(Guid jobLeadId, string? contactEmail = null, int? stage = null)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+
+        var sql = new System.Text.StringBuilder(
+            "UPDATE job_lead_email_jobs SET status='cancelled' WHERE job_lead_id=@id AND status='pending'");
+
+        if (stage.HasValue) sql.Append(" AND stage=@stage");
+        else sql.Append(" AND stage > 0");
+
+        if (!string.IsNullOrWhiteSpace(contactEmail)) sql.Append(" AND to_email=@email");
+
+        return await c.ExecuteAsync(sql.ToString(), new { id = jobLeadId, stage, email = contactEmail });
+    }
+
+    /// <summary>Advances ScheduledAt to NOW for a specific pending job so the worker picks it up immediately.</summary>
+    public async Task<bool> SendNow(Guid jobId)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+        var rows = await c.ExecuteAsync(
+            "UPDATE job_lead_email_jobs SET scheduled_at=NOW() WHERE id=@id AND status='pending'",
+            new { id = jobId });
+        return rows > 0;
+    }
+
     public async Task<List<JobLeadEmailJob>> GetDueJobs()
     {
         await using var c = new NpgsqlConnection(_settings.ConnectionString);

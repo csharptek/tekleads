@@ -42,6 +42,18 @@ public class ContactIdsRequest
     public List<Guid> ContactIds { get; set; } = new();
 }
 
+public class JobLeadBulkSendRecipient { public string Email { get; set; } = ""; public string? Name { get; set; } }
+public class FollowUpSpecRequest { public string? Subject { get; set; } public string? Body { get; set; } public int DelayHours { get; set; } }
+public class JobLeadBulkSendEmailRequest
+{
+    public List<JobLeadBulkSendRecipient> Recipients { get; set; } = new();
+    public string Sender { get; set; } = "all";
+    public int IntervalMinutes { get; set; } = 5;
+    public FollowUpSpecRequest? FollowUp1 { get; set; }
+    public FollowUpSpecRequest? FollowUp2 { get; set; }
+}
+public class JobLeadCancelFollowUpsRequest { public string? ContactEmail { get; set; } public int? Stage { get; set; } }
+
 public class JobLeadBulkSendRequest
 {
     public List<Guid> Ids { get; set; } = new();
@@ -206,6 +218,75 @@ public class JobLeadsController : ControllerBase
         await _emailQueue.CancelPending(id);
         await _jobs.Delete(id);
         return Ok(new { ok = true });
+    }
+
+    // ── Multi-contact outreach queue (Initial + FU1/FU2, interval-staggered) ──
+
+    [HttpPost("{id}/send-bulk")]
+    public async Task<IActionResult> EnqueueBulk(Guid id, [FromBody] JobLeadBulkSendEmailRequest req)
+    {
+        var lead = await _jobs.GetById(id);
+        if (lead == null) return NotFound();
+        if (req.Recipients.Count == 0) return BadRequest(new { error = "No recipients provided." });
+        if (string.IsNullOrWhiteSpace(lead.EmailSubject) || string.IsNullOrWhiteSpace(lead.EmailBody))
+            return BadRequest(new { error = "Generate the email before sending." });
+        if (req.IntervalMinutes < 1) req.IntervalMinutes = 1;
+
+        var fromEmail = await ResolveSender(req.Sender);
+        var recipients = req.Recipients.Select(r => (r.Email, r.Name ?? "")).ToList();
+
+        FollowUpSpec? fu1 = null, fu2 = null;
+        if (req.FollowUp1 != null && !string.IsNullOrWhiteSpace(req.FollowUp1.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp1.Body))
+            fu1 = new FollowUpSpec { Subject = req.FollowUp1.Subject!, Body = req.FollowUp1.Body!, DelayHours = req.FollowUp1.DelayHours > 0 ? req.FollowUp1.DelayHours : 6 };
+        if (req.FollowUp2 != null && !string.IsNullOrWhiteSpace(req.FollowUp2.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp2.Body))
+            fu2 = new FollowUpSpec { Subject = req.FollowUp2.Subject!, Body = req.FollowUp2.Body!, DelayHours = req.FollowUp2.DelayHours > 0 ? req.FollowUp2.DelayHours : 12 };
+
+        await _emailQueue.EnqueueBulk(id, recipients, fromEmail, lead.EmailSubject!, lead.EmailBody!, req.IntervalMinutes, fu1, fu2);
+        await _jobs.AddEvent(id, $"Queued outreach to {recipients.Count} contact(s)");
+
+        return Ok(new { queued = recipients.Count, intervalMinutes = req.IntervalMinutes, followUp1 = fu1 != null, followUp2 = fu2 != null });
+    }
+
+    [HttpGet("{id}/send-bulk/status")]
+    public async Task<IActionResult> BulkStatus(Guid id)
+    {
+        var jobsList = await _emailQueue.GetByLead(id);
+        return Ok(jobsList.Select(j => new
+        {
+            id = j.Id, toEmail = j.ToEmail, toName = j.ToName, scheduledAt = j.ScheduledAt,
+            sentAt = j.SentAt, status = j.Status, error = j.Error, followUpStage = j.Stage,
+            subject = j.Subject, body = j.Body,
+        }));
+    }
+
+    [HttpPost("{id}/send-bulk/cancel")]
+    public async Task<IActionResult> CancelBulk(Guid id)
+    {
+        await _emailQueue.CancelPending(id);
+        return Ok(new { cancelled = true });
+    }
+
+    [HttpPost("{id}/send-bulk/cancel-followups")]
+    public async Task<IActionResult> CancelFollowUps(Guid id, [FromBody] JobLeadCancelFollowUpsRequest req)
+    {
+        var count = await _emailQueue.CancelFollowUps(id, req.ContactEmail, req.Stage);
+        return Ok(new { cancelled = count });
+    }
+
+    [HttpPost("send-job/{jobId}/cancel")]
+    public async Task<IActionResult> CancelJob(Guid jobId)
+    {
+        var ok = await _emailQueue.CancelJob(jobId);
+        if (!ok) return BadRequest(new { error = "Job not found or not pending." });
+        return Ok(new { cancelled = true });
+    }
+
+    [HttpPost("send-job/{jobId}/send-now")]
+    public async Task<IActionResult> SendJobNow(Guid jobId)
+    {
+        var ok = await _emailQueue.SendNow(jobId);
+        if (!ok) return BadRequest(new { error = "Job not found or not pending." });
+        return Ok(new { sendNow = true });
     }
 
     [HttpPost("bulk/enrich")]
