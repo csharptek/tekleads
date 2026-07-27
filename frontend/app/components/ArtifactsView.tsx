@@ -169,13 +169,6 @@ export default function ArtifactsView({
   const [fu1Delay, setFu1Delay] = useState(6);
   const [fu2Delay, setFu2Delay] = useState(12);
 
-  // Push to Instantly state
-  const [instantlyCampaigns, setInstantlyCampaigns] = useState<{ id: string; name: string }[]>([]);
-  const [instantlyError, setInstantlyError] = useState("");
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
-  const [pushingToInstantly, setPushingToInstantly] = useState(false);
-  const [instantlyResult, setInstantlyResult] = useState<{ ok: boolean; pushed: number; failed: number; errors: string[] } | null>(null);
-
   useEffect(() => {
     api.get<{ values: Record<string, string> }>("/api/settings")
       .then(d => {
@@ -183,11 +176,6 @@ export default function ArtifactsView({
         if (d.values?.ai_provider) setGlobalProvider(d.values.ai_provider);
       })
       .catch(() => {});
-    
-    // Load Instantly campaigns
-    api.get<{ id: string; name: string }[]>("/api/instantly/campaigns")
-      .then(campaigns => { setInstantlyCampaigns(campaigns); setInstantlyError(""); })
-      .catch(err => { setInstantlyError(err.message); setInstantlyCampaigns([]); });
   }, []);
 
   const buildPlainSig = () => {
@@ -392,6 +380,38 @@ export default function ArtifactsView({
 
   const [cloudSending, setCloudSending] = useState(false);
   const [cloudResult, setCloudResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [templateSendAllRunning, setTemplateSendAllRunning] = useState(false);
+  const [templateSendAllProgress, setTemplateSendAllProgress] = useState<{ sent: number; failed: number; total: number } | null>(null);
+  const templateSendAllCancelRef = React.useRef(false);
+
+  const sendTemplateToAll = async () => {
+    if (!allPhones || allPhones.length === 0) return;
+    templateSendAllCancelRef.current = false;
+    setTemplateSendAllRunning(true);
+    setTemplateSendAllProgress({ sent: 0, failed: 0, total: allPhones.length });
+    for (let i = 0; i < allPhones.length; i++) {
+      if (templateSendAllCancelRef.current) break;
+      const phone = allPhones[i];
+      const name = allPhoneNames?.[i] || "";
+      const targetPhone = phone.replace(/\D/g, "");
+      const firstName = (name || "").split(/[\s-]+/)[0];
+      try {
+        const res = await api.post<any>("/api/whatsapp/send-template", {
+          to: targetPhone,
+          proposalId,
+          languageCode: "en",
+          bodyVariables: [firstName || "there", proposalHeadline || "your project"],
+        });
+        setTemplateSendAllProgress(p => p && ({ ...p, sent: p.sent + (res?.ok ? 1 : 0), failed: p.failed + (res?.ok ? 0 : 1) }));
+      } catch {
+        setTemplateSendAllProgress(p => p && ({ ...p, failed: p.failed + 1 }));
+      }
+      if (i < allPhones.length - 1) await new Promise(r => setTimeout(r, 2000));
+    }
+    setTemplateSendAllRunning(false);
+  };
+
+  const cancelTemplateSendAll = () => { templateSendAllCancelRef.current = true; setTemplateSendAllRunning(false); };
 
   const sendWhatsappCloud = async (mode: "template" | "text", phone?: string, name?: string) => {
     const targetPhone = (phone || clientPhone)?.replace(/\D/g, "") || "";
@@ -500,25 +520,6 @@ export default function ArtifactsView({
     pollStatus();
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(pollStatus, 5000);
-  };
-
-  const pushToInstantly = async () => {
-    if (!selectedCampaignId || !allEmails || allEmails.length === 0) return;
-    setPushingToInstantly(true);
-    try {
-      const contacts = allEmails.map((email, i) => ({ email, name: allEmailNames?.[i] || "" }));
-      const result = await api.post<{ ok: boolean; pushed: number; failed: number; errors: string[] }>(
-        "/api/instantly/push",
-        { campaignId: selectedCampaignId, contacts }
-      );
-      setInstantlyResult(result);
-      setTimeout(() => setInstantlyResult(null), 4000);
-    } catch (err: any) {
-      setInstantlyResult({ ok: false, pushed: 0, failed: 0, errors: [err.message] });
-      setTimeout(() => setInstantlyResult(null), 4000);
-    } finally {
-      setPushingToInstantly(false);
-    }
   };
 
   React.useEffect(() => {
@@ -999,34 +1000,25 @@ export default function ArtifactsView({
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                       Send to All
                     </button>
-                    {instantlyCampaigns.length > 0 && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <select
-                          value={selectedCampaignId}
-                          onChange={e => setSelectedCampaignId(e.target.value)}
-                          disabled={pushingToInstantly}
-                          style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}
-                        >
-                          <option value="">Campaign...</option>
-                          {instantlyCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                        <button 
-                          className="btn btn-sm" 
-                          style={{ background: "#22c55e", color: "white", border: "none" }} 
-                          onClick={pushToInstantly}
-                          disabled={!selectedCampaignId || pushingToInstantly}
-                        >
-                          {pushingToInstantly ? "..." : "→ Instantly"}
-                        </button>
-                      </div>
-                    )}
-                    {instantlyCampaigns.length === 0 && (
-                      <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>No campaigns found - Create in Instantly first</span>
-                    )}
-                    {instantlyError && (
-                      <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>Instantly error: {instantlyError}</span>
-                    )}
                   </>
+                )}
+              </div>
+            )}
+            {allPhones && allPhones.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {templateSendAllRunning ? (
+                  <button className="btn btn-sm" style={{ background: "#dc3545", color: "white", border: "none" }} onClick={cancelTemplateSendAll}>
+                    ✕ Cancel
+                  </button>
+                ) : (
+                  <button className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} onClick={sendTemplateToAll}>
+                    Send All Template (API)
+                  </button>
+                )}
+                {templateSendAllProgress && (
+                  <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                    {templateSendAllProgress.sent + templateSendAllProgress.failed}/{templateSendAllProgress.total} · ✓{templateSendAllProgress.sent} ✕{templateSendAllProgress.failed}
+                  </span>
                 )}
               </div>
             )}
@@ -1223,23 +1215,6 @@ export default function ArtifactsView({
               </div>
             );
           })()}
-          {instantlyResult && (
-            <div style={{
-              marginBottom: 12,
-              padding: "12px 14px",
-              background: instantlyResult.ok ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
-              borderRadius: 8,
-              border: `1px solid ${instantlyResult.ok ? "#22c55e" : "#ef4444"}`,
-              fontSize: 12,
-              color: instantlyResult.ok ? "#16a34a" : "#991b1b"
-            }}>
-              {instantlyResult.ok ? (
-                <>✓ {instantlyResult.pushed} pushed to Instantly{instantlyResult.errors.length > 0 && ` • ${instantlyResult.errors.join(", ")}`}</>
-              ) : (
-                <>✕ Failed: {instantlyResult.errors.join(", ")}</>
-              )}
-            </div>
-          )}
           {allEmails && allEmails.length > 0 && artifacts.emailSubject && (
             <div style={{ marginBottom: 12 }}>
               <div className="field-label" style={{ marginBottom: 6 }}>Email</div>
