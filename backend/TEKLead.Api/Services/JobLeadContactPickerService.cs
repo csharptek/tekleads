@@ -174,7 +174,7 @@ public class JobLeadContactPickerService
         // Without this, Apollo's free-text company match is fuzzy and can return the same popular
         // candidate across unrelated companies.
         string? domain = null;
-        try { domain = await _apollo.SearchOrganizationDomain(lead.Company); }
+        try { domain = await _apollo.ResolveCompanyDomain(lead.Company, lead.CompanyWebsite, lead.CompanyLinkedinUrl); }
         catch (Exception ex) { _log.LogWarning(ex, "Org domain lookup failed for lead {id}, company {company}", leadId, lead.Company); }
 
         foreach (var title in JobScraperService.ContactTitlePriority)

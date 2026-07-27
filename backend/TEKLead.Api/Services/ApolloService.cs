@@ -351,6 +351,47 @@ public class ApolloService
     // Resolves a company name to its primary domain via Apollo's Organization Search (free, no credits).
     // Used to turn a loose company name into a hard q_organization_domains_list filter for people search,
     // avoiding false-positive matches from free-text q_keywords search.
+    public static string NormalizeDomain(string url) =>
+        url.Trim().ToLower().Replace("https://", "").Replace("http://", "").Replace("www.", "").TrimEnd('/').Split('/')[0];
+
+    public async Task<string?> SearchOrganizationDomainByLinkedin(string companyLinkedinUrl)
+    {
+        if (string.IsNullOrWhiteSpace(companyLinkedinUrl)) return null;
+        var key = await GetKey();
+        var payload = new Dictionary<string, object> { ["organization_linkedin_url_list"] = new[] { companyLinkedinUrl }, ["page"] = 1, ["per_page"] = 1 };
+        var client = MakeClient(key);
+        var res = await client.PostAsJsonAsync("https://api.apollo.io/api/v1/mixed_companies/search", payload);
+        var body = await res.Content.ReadAsStringAsync();
+        _log.LogInformation("Apollo org-by-linkedin search {0}: {1}", res.StatusCode, body[..Math.Min(300, body.Length)]);
+        if (!res.IsSuccessStatusCode) return null;
+
+        using var doc = JsonDocument.Parse(body);
+        if (!doc.RootElement.TryGetProperty("organizations", out var orgs) || orgs.GetArrayLength() == 0) return null;
+        var website = Str(orgs[0], "website_url") ?? Str(orgs[0], "primary_domain");
+        return string.IsNullOrWhiteSpace(website) ? null : NormalizeDomain(website);
+    }
+
+    // Resolves a company's Apollo search domain, preferring scraped website/LinkedIn (accurate)
+    // over a fuzzy name-based lookup (fallback for older leads without those fields).
+    public async Task<string?> ResolveCompanyDomain(string companyName, string? companyWebsite, string? companyLinkedinUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(companyWebsite))
+            return NormalizeDomain(companyWebsite);
+
+        if (!string.IsNullOrWhiteSpace(companyLinkedinUrl))
+        {
+            try
+            {
+                var domain = await SearchOrganizationDomainByLinkedin(companyLinkedinUrl);
+                if (domain != null) return domain;
+            }
+            catch (Exception ex) { _log.LogWarning(ex, "Org lookup by LinkedIn failed for {url}", companyLinkedinUrl); }
+        }
+
+        try { return await SearchOrganizationDomain(companyName); }
+        catch (Exception ex) { _log.LogWarning(ex, "Org domain lookup failed for company {company}", companyName); return null; }
+    }
+
     public async Task<string?> SearchOrganizationDomain(string companyName)
     {
         if (string.IsNullOrWhiteSpace(companyName)) return null;

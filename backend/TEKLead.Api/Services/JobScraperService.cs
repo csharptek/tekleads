@@ -106,6 +106,8 @@ public class JobScraperService
             ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS poster_title TEXT;
             ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS poster_linkedin TEXT;
             ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ;
+            ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS company_website TEXT;
+            ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS company_linkedin_url TEXT;
             CREATE INDEX IF NOT EXISTS idx_job_leads_posted ON job_leads(posted_at);
 
             CREATE TABLE IF NOT EXISTS job_lead_events (
@@ -202,6 +204,8 @@ public class JobScraperService
                         var posterName = GetStr(item, "jobPosterName");
                         var posterTitle = GetStr(item, "jobPosterTitle");
                         var posterLinkedin = GetStr(item, "jobPosterProfileUrl");
+                        var companyWebsite = GetStr(item, "companyWebsite") ?? GetStr(item, "companyWebsiteUrl");
+                        var companyLinkedinUrl = GetStr(item, "companyLinkedinUrl") ?? GetStr(item, "companyLinkedInUrl") ?? GetStr(item, "companyUrl");
                         int? employeeCount = item.TryGetProperty("companyEmployeesCount", out var ce) && ce.ValueKind == JsonValueKind.Number && ce.TryGetInt32(out var ceInt)
                             ? ceInt : null;
                         if (!employeeCount.HasValue || employeeCount.Value > 200) { skippedSize++; continue; }
@@ -224,16 +228,16 @@ public class JobScraperService
                         await ic.OpenAsync();
                         var leadId = await ic.QuerySingleAsync<Guid>(@"
                             INSERT INTO job_leads (run_id, company, industry, company_size, country, job_title, job_description, job_url,
-                                                    poster_name, poster_title, poster_linkedin,
+                                                    poster_name, poster_title, poster_linkedin, company_website, company_linkedin_url,
                                                     matched_keywords, missed_keywords, scraped_at, posted_at, saved_at)
                             VALUES (@runId, @company, @industry, @companySize, @country, @title, @desc, @url,
-                                    @posterName, @posterTitle, @posterLinkedin,
+                                    @posterName, @posterTitle, @posterLinkedin, @companyWebsite, @companyLinkedinUrl,
                                     @matched, @missed, @scrapedAt, @postedAt, NOW())
                             RETURNING id",
                             new
                             {
                                 runId, company = companyName, industry, companySize = scrapedCompanySize, country, title = jobTitle, desc = description, url = jobUrl,
-                                posterName, posterTitle, posterLinkedin,
+                                posterName, posterTitle, posterLinkedin, companyWebsite, companyLinkedinUrl,
                                 matched, missed, scrapedAt = DateTime.UtcNow, postedAt,
                             });
                         await ic.ExecuteAsync("INSERT INTO job_lead_events (job_lead_id, label) VALUES (@id, 'Scraped from LinkedIn')", new { id = leadId });
@@ -647,6 +651,7 @@ public class JobScraperService
         Id = r.id, RunId = r.run_id, Company = r.company ?? "", Industry = r.industry ?? "", CompanySize = r.company_size ?? "",
         Country = r.country ?? "", JobTitle = r.job_title ?? "", JobDescription = r.job_description ?? "", JobUrl = r.job_url ?? "",
         PosterName = r.poster_name, PosterTitle = r.poster_title, PosterLinkedin = r.poster_linkedin,
+        CompanyWebsite = r.company_website, CompanyLinkedinUrl = r.company_linkedin_url,
         Status = r.status ?? "scraped", MatchedKeywords = r.matched_keywords ?? Array.Empty<string>(), MissedKeywords = r.missed_keywords ?? Array.Empty<string>(),
         ApolloPersonId = r.apollo_person_id, ContactName = r.contact_name, ContactTitle = r.contact_title, ContactEmail = r.contact_email,
         ContactPhone = r.contact_phone, ContactLinkedin = r.contact_linkedin, EmailSubject = r.email_subject, EmailBody = r.email_body,

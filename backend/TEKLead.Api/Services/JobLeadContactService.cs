@@ -27,9 +27,7 @@ public class JobLeadContactService
 
         var foundAnyCandidate = false;
 
-        string? domain = null;
-        try { domain = await _apollo.SearchOrganizationDomain(lead.Company); }
-        catch (Exception ex) { _log.LogWarning(ex, "Org domain lookup failed for lead {id}, company {company}", leadId, lead.Company); }
+        string? domain = await _apollo.ResolveCompanyDomain(lead.Company, lead.CompanyWebsite, lead.CompanyLinkedinUrl);
 
         foreach (var title in JobScraperService.ContactTitlePriority)
         {
