@@ -40,6 +40,8 @@ interface JobLead {
   posterName?: string | null;
   posterTitle?: string | null;
   posterLinkedin?: string | null;
+  companyWebsite?: string | null;
+  companyLinkedinUrl?: string | null;
   status: LeadStatus;
   matchedKeywords: string[];
   missedKeywords: string[];
@@ -597,8 +599,7 @@ export default function JobLeadsView() {
               <th>Keywords</th>
               <th>Status</th>
               <th>Contact</th>
-              <th>Scraped</th>
-              <th>Last Action</th>
+              <th>Activity</th>
               <th style={{ width: 24 }} />
             </tr>
           </thead>
@@ -607,7 +608,27 @@ export default function JobLeadsView() {
               <tr key={l.id} style={{ cursor: "pointer", opacity: busy.has(l.id) ? 0.5 : 1 }} onClick={() => openDrawer(l.id)}>
                 <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleSelect(l.id)} /></td>
                 <td>
-                  <div style={{ fontWeight: 600 }}>{l.company}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontWeight: 600 }}>{l.company}</span>
+                    {l.companyWebsite && (
+                      <a href={l.companyWebsite.startsWith("http") ? l.companyWebsite : `https://${l.companyWebsite}`}
+                         target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                         title="Company website" style={{ color: "var(--muted)", lineHeight: 0 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" />
+                          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                        </svg>
+                      </a>
+                    )}
+                    {l.companyLinkedinUrl && (
+                      <a href={l.companyLinkedinUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                         title="Company LinkedIn" style={{ color: "var(--muted)", lineHeight: 0 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.03-1.85-3.03-1.85 0-2.14 1.45-2.14 2.94v5.66H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45z" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>{l.industry || "Industry unknown"} · {l.companySize || "Size unknown"} · {l.country}</div>
                 </td>
                 <td style={{ maxWidth: 220 }}>
@@ -635,8 +656,10 @@ export default function JobLeadsView() {
                     <button className="icon-btn" style={{ color: "var(--accent)" }} disabled={busy.has(l.id)} onClick={() => enrichOne(l.id)}>Enrich</button>
                   )}
                 </td>
-                <td style={{ fontSize: 12, color: "var(--muted)" }}>{fmtDate(l.scrapedAt)}</td>
-                <td style={{ fontSize: 12, color: "var(--muted)" }}>{fmtDate(l.activity[l.activity.length - 1]?.at ?? l.scrapedAt)}</td>
+                <td style={{ fontSize: 12, color: "var(--muted)" }}>
+                  <div>{fmtDate(l.activity[l.activity.length - 1]?.at ?? l.scrapedAt)}</div>
+                  <div style={{ fontSize: 11, color: "var(--dim)" }}>Scraped {fmtDate(l.scrapedAt)}</div>
+                </td>
                 <td style={{ color: "var(--dim)" }}>›</td>
               </tr>
             ))}
