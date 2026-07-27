@@ -66,6 +66,7 @@ public class WhatsAppCloudService
         await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_wamid ON whatsapp_messages (wamid)");
         await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_created ON whatsapp_messages (created_at DESC)");
         await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_inbox_type ON whatsapp_messages (inbox_type)");
+        await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_inbox_type_created ON whatsapp_messages (inbox_type, created_at DESC)");
         // Migration: add inbox_type if table already existed without it
         await c.ExecuteAsync(@"
             DO $$
@@ -632,7 +633,7 @@ Login to TEKLead AI to respond.";
     // ─────────────────────────────────────────────────────────────
     // Inbox — scoped by inbox type
     // ─────────────────────────────────────────────────────────────
-    public async Task<WhatsAppInboxPage> GetInbox(string inboxType = "sales", int page = 1, int pageSize = 50)
+    public async Task<WhatsAppInboxPage> GetInbox(string inboxType = "sales", int page = 1, int pageSize = 50, int days = 3)
     {
         var cs = _settings.ConnectionString;
         if (string.IsNullOrEmpty(cs)) return new();
@@ -640,6 +641,7 @@ Login to TEKLead AI to respond.";
         await c.OpenAsync();
 
         var offset = (page - 1) * pageSize;
+        var since = DateTime.UtcNow.AddDays(-days);
 
         var rows = await c.QueryAsync<WhatsAppInboxThread>(@"
             SELECT
@@ -668,6 +670,7 @@ Login to TEKLead AI to respond.";
                 FROM whatsapp_messages
                 WHERE inbox_type = @InboxType
                 GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
+                HAVING MAX(created_at) >= @Since
             ) w
             LEFT JOIN LATERAL (
                 SELECT status FROM whatsapp_messages m2
@@ -685,12 +688,17 @@ Login to TEKLead AI to respond.";
                 ON regexp_replace(ct.phone, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
             ORDER BY w.IsHotLead DESC, w.LastAt DESC
             LIMIT @PageSize OFFSET @Offset",
-            new { InboxType = inboxType, PageSize = pageSize, Offset = offset });
+            new { InboxType = inboxType, PageSize = pageSize, Offset = offset, Since = since });
 
         var total = await c.ExecuteScalarAsync<int>(@"
-            SELECT COUNT(DISTINCT COALESCE(NULLIF(from_phone,''), to_phone))
-            FROM whatsapp_messages WHERE inbox_type = @InboxType",
-            new { InboxType = inboxType });
+            SELECT COUNT(*) FROM (
+                SELECT COALESCE(NULLIF(from_phone,''), to_phone) AS Phone
+                FROM whatsapp_messages
+                WHERE inbox_type = @InboxType
+                GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
+                HAVING MAX(created_at) >= @Since
+            ) t",
+            new { InboxType = inboxType, Since = since });
 
         var list = rows.ToList();
         return new WhatsAppInboxPage
@@ -702,6 +710,7 @@ Login to TEKLead AI to respond.";
             HasMore = (offset + list.Count) < total
         };
     }
+
 
     // ─────────────────────────────────────────────────────────────
     // Hot lead toggle — sets/unsets is_hot_lead on all messages for phone

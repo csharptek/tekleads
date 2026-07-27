@@ -93,6 +93,8 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [daysWindow, setDaysWindow] = useState(3);
+  const [loadingMoreDays, setLoadingMoreDays] = useState(false);
   const [selected, setSelected] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [replyText, setReplyText] = useState("");
@@ -132,7 +134,7 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
     const p = resetPage ? 1 : page;
     if (resetPage) setLoading(true);
     try {
-      const data = await api.get<InboxPage>(`/api/whatsapp/inbox?inbox=${inboxType}&page=${p}&pageSize=50`);
+      const data = await api.get<InboxPage>(`/api/whatsapp/inbox?inbox=${inboxType}&page=${p}&pageSize=50&days=${daysWindow}`);
       if (data) {
         if (resetPage) {
           setThreads(data.items || []);
@@ -145,13 +147,13 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
       }
     } catch { }
     setLoading(false);
-  }, [inboxType, page]);
+  }, [inboxType, page, daysWindow]);
 
   const loadMore = async () => {
     setLoadingMore(true);
     const nextPage = page + 1;
     try {
-      const data = await api.get<InboxPage>(`/api/whatsapp/inbox?inbox=${inboxType}&page=${nextPage}&pageSize=50`);
+      const data = await api.get<InboxPage>(`/api/whatsapp/inbox?inbox=${inboxType}&page=${nextPage}&pageSize=50&days=${daysWindow}`);
       if (data) {
         setThreads((prev: Thread[]) => [...prev, ...(data.items || [])]);
         setPage(nextPage);
@@ -160,6 +162,22 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
       }
     } catch { }
     setLoadingMore(false);
+  };
+
+  const loadMoreDays = async () => {
+    setLoadingMoreDays(true);
+    const nextDays = daysWindow + 3;
+    try {
+      const data = await api.get<InboxPage>(`/api/whatsapp/inbox?inbox=${inboxType}&page=1&pageSize=50&days=${nextDays}`);
+      if (data) {
+        setThreads(data.items || []);
+        setPage(1);
+        setDaysWindow(nextDays);
+        setHasMore(data.hasMore);
+        setTotal(data.total);
+      }
+    } catch { }
+    setLoadingMoreDays(false);
   };
 
   const loadConversation = async (phone: string) => {
@@ -173,6 +191,7 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
 
   // Initial load + auto-refresh every 120s
   useEffect(() => {
+    setDaysWindow(3);
     loadInbox(true);
     if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
     autoRefreshRef.current = setInterval(() => {
@@ -362,7 +381,7 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
               <div className="page-title" style={{ fontSize: 15, margin: 0 }}>
                 {inboxType === "hr" ? "HR Inbox" : inboxType === "contacts" ? "Contacts WA Inbox" : "WA Inbox"}
               </div>
-              <div className="page-sub" style={{ fontSize: 11 }}>{total} conversations · auto-refresh 2m</div>
+              <div className="page-sub" style={{ fontSize: 11 }}>{total} conversations · last {daysWindow}d · auto-refresh 2m</div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button
@@ -471,6 +490,18 @@ export default function WhatsAppInboxView({ inboxType = "sales" }: Props) {
                   </button>
                 </div>
               )}
+
+              <div style={{ padding: "4px 14px 14px", textAlign: "center" }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={loadMoreDays}
+                  disabled={loadingMoreDays}
+                  style={{ width: "100%", fontSize: 12 }}
+                  title={`Currently showing last ${daysWindow} days`}
+                >
+                  {loadingMoreDays ? "Loading…" : `Load older (last ${daysWindow} days → ${daysWindow + 3})`}
+                </button>
+              </div>
             </>
           )}
         </div>

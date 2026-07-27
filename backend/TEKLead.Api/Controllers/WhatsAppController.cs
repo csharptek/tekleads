@@ -118,8 +118,9 @@ public class WhatsAppController : ControllerBase
     public async Task<IActionResult> Inbox(
         [FromQuery] string inbox = "sales",
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 50)
-        => Ok(await _svc.GetInbox(inbox, page, pageSize));
+        [FromQuery] int pageSize = 50,
+        [FromQuery] int days = 3)
+        => Ok(await _svc.GetInbox(inbox, page, pageSize, days));
 
     [HttpPatch("conversations/{phone}/hot-lead")]
     public async Task<IActionResult> ToggleHotLead(string phone, [FromBody] ToggleHotLeadRequest req)
