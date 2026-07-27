@@ -380,14 +380,22 @@ export default function ArtifactsView({
 
   const [cloudSending, setCloudSending] = useState(false);
   const [cloudResult, setCloudResult] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [templateSendAllRunning, setTemplateSendAllRunning] = useState(false);
+  const [templateSendAllRunning, setTemplateSendAllRunning] = useState<string | null>(null);
   const [templateSendAllProgress, setTemplateSendAllProgress] = useState<{ sent: number; failed: number; total: number } | null>(null);
   const templateSendAllCancelRef = React.useRef(false);
 
-  const sendTemplateToAll = async () => {
+  type MetaTemplate = { name: string; status: string; language: string; bodyText: string };
+  const [metaTemplates, setMetaTemplates] = useState<MetaTemplate[]>([]);
+  useEffect(() => {
+    api.get<MetaTemplate[]>("/api/whatsapp/templates")
+      .then(data => setMetaTemplates((data || []).filter(t => t.status === "APPROVED")))
+      .catch(() => {});
+  }, []);
+
+  const sendTemplateToAll = async (tpl: MetaTemplate) => {
     if (!allPhones || allPhones.length === 0) return;
     templateSendAllCancelRef.current = false;
-    setTemplateSendAllRunning(true);
+    setTemplateSendAllRunning(tpl.name);
     setTemplateSendAllProgress({ sent: 0, failed: 0, total: allPhones.length });
     for (let i = 0; i < allPhones.length; i++) {
       if (templateSendAllCancelRef.current) break;
@@ -399,7 +407,8 @@ export default function ArtifactsView({
         const res = await api.post<any>("/api/whatsapp/send-template", {
           to: targetPhone,
           proposalId,
-          languageCode: "en",
+          templateName: tpl.name,
+          languageCode: tpl.language || "en",
           bodyVariables: [firstName || "there", proposalHeadline || "your project"],
         });
         setTemplateSendAllProgress(p => p && ({ ...p, sent: p.sent + (res?.ok ? 1 : 0), failed: p.failed + (res?.ok ? 0 : 1) }));
@@ -408,12 +417,12 @@ export default function ArtifactsView({
       }
       if (i < allPhones.length - 1) await new Promise(r => setTimeout(r, 2000));
     }
-    setTemplateSendAllRunning(false);
+    setTemplateSendAllRunning(null);
   };
 
-  const cancelTemplateSendAll = () => { templateSendAllCancelRef.current = true; setTemplateSendAllRunning(false); };
+  const cancelTemplateSendAll = () => { templateSendAllCancelRef.current = true; setTemplateSendAllRunning(null); };
 
-  const sendWhatsappCloud = async (mode: "template" | "text", phone?: string, name?: string) => {
+  const sendWhatsappCloud = async (mode: "template" | "text", phone?: string, name?: string, tpl?: MetaTemplate) => {
     const targetPhone = (phone || clientPhone)?.replace(/\D/g, "") || "";
     if (!targetPhone) { setCloudResult({ ok: false, msg: "No recipient phone." }); return; }
     setCloudSending(true);
@@ -428,8 +437,8 @@ export default function ArtifactsView({
         const res = await api.post<any>("/api/whatsapp/send-template", {
           to: targetPhone,
           proposalId,
-
-          languageCode: "en",
+          templateName: tpl?.name,
+          languageCode: tpl?.language || "en",
           bodyVariables: [
             firstName || "there",
             proposalHeadline || "your project"
@@ -756,9 +765,11 @@ export default function ArtifactsView({
         actions={<>
           <ProviderToggle value={artifactProvider.whatsapp ?? globalProvider} onChange={v => setArtifactProvider(p => ({ ...p, whatsapp: v }))} />
           <PromptBtn onClick={() => openPromptModal("whatsapp")} />
-          <button className="btn btn-sm" onClick={() => sendWhatsappCloud("template")} disabled={cloudSending} style={{ background: "#128C7E", color: "white", border: "none" }} title="Send approved template via Meta Cloud API (works for cold outreach)">
-            {cloudSending ? "Sending…" : "Send Template (API)"}
-          </button>
+          {metaTemplates.map(tpl => (
+            <button key={tpl.name} className="btn btn-sm" onClick={() => sendWhatsappCloud("template", undefined, undefined, tpl)} disabled={cloudSending} style={{ background: "#128C7E", color: "white", border: "none" }} title={tpl.bodyText || tpl.name}>
+              {cloudSending ? "Sending…" : `Send ${tpl.name}`}
+            </button>
+          ))}
           {artifacts.whatsappMessage && <>
             <CopyBtn text={artifacts.whatsappMessage} />
             <button className="btn btn-sm" onClick={() => sendWhatsapp()} style={{ background: "#25D366", color: "white", border: "none" }}>
@@ -1005,15 +1016,17 @@ export default function ArtifactsView({
               </div>
             )}
             {allPhones && allPhones.length > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 {templateSendAllRunning ? (
                   <button className="btn btn-sm" style={{ background: "#dc3545", color: "white", border: "none" }} onClick={cancelTemplateSendAll}>
-                    ✕ Cancel
+                    ✕ Cancel ({templateSendAllRunning})
                   </button>
                 ) : (
-                  <button className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} onClick={sendTemplateToAll}>
-                    Send All Template (API)
-                  </button>
+                  metaTemplates.map(tpl => (
+                    <button key={tpl.name} className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} onClick={() => sendTemplateToAll(tpl)} title={tpl.bodyText || tpl.name}>
+                      Send All: {tpl.name}
+                    </button>
+                  ))
                 )}
                 {templateSendAllProgress && (
                   <span style={{ fontSize: 11, color: "var(--muted)" }}>
@@ -1250,10 +1263,12 @@ export default function ArtifactsView({
                         {name && <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{name}</div>}
                         <span className="chip chip-green" style={{ fontSize: 12 }}>💬 {phone}</span>
                       </div>
-                      <button className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} disabled={cloudSending}
-                        onClick={() => sendWhatsappCloud("template", phone, name)} title="Send approved template via Meta Cloud API">
-                        Template (API)
-                      </button>
+                      {metaTemplates.map(tpl => (
+                        <button key={tpl.name} className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} disabled={cloudSending}
+                          onClick={() => sendWhatsappCloud("template", phone, name, tpl)} title={tpl.bodyText || tpl.name}>
+                          {tpl.name}
+                        </button>
+                      ))}
                       {artifacts.whatsappMessage && <>
                         <button className="btn btn-sm" style={{ background: "#25D366", color: "white", border: "none" }}
                           onClick={() => sendWhatsapp(phone, name)}>
