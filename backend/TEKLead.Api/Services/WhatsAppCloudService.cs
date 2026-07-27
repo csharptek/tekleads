@@ -108,226 +108,7 @@ public class WhatsAppCloudService
                     ALTER TABLE whatsapp_messages ADD COLUMN is_hot_lead BOOLEAN NOT NULL DEFAULT FALSE;
                 END IF;
             END$$");
-
-        // Normalized phone digits, indexed, used everywhere instead of regexp_replace-in-JOIN
-        await c.ExecuteAsync(@"
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name='whatsapp_messages' AND column_name='phone_norm'
-                ) THEN
-                    ALTER TABLE whatsapp_messages ADD COLUMN phone_norm TEXT NULL;
-                    UPDATE whatsapp_messages
-                        SET phone_norm = regexp_replace(COALESCE(NULLIF(from_phone,''), to_phone), '[^0-9]', '', 'g');
-                END IF;
-            END$$");
-        await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_phone_norm ON whatsapp_messages (phone_norm)");
-        await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wa_phone_norm_inbox ON whatsapp_messages (inbox_type, phone_norm, created_at DESC)");
-
-        await c.ExecuteAsync(@"
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name='contacts' AND column_name='phone_norm'
-                ) THEN
-                    ALTER TABLE contacts ADD COLUMN phone_norm TEXT NULL;
-                    UPDATE contacts SET phone_norm = regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g');
-                END IF;
-            END$$");
-        await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_contacts_phone_norm ON contacts (phone_norm)");
-
-        // Thread summary table — avoids full GROUP BY over whatsapp_messages on every inbox load
-        await c.ExecuteAsync(@"
-            CREATE TABLE IF NOT EXISTS wa_thread_summary (
-                phone_norm TEXT NOT NULL,
-                inbox_type TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                contact_name TEXT NULL,
-                last_message TEXT NULL,
-                last_template TEXT NULL,
-                last_at TIMESTAMPTZ NOT NULL,
-                message_count INT NOT NULL DEFAULT 0,
-                unread_count INT NOT NULL DEFAULT 0,
-                is_hot_lead BOOLEAN NOT NULL DEFAULT FALSE,
-                has_inbound BOOLEAN NOT NULL DEFAULT FALSE,
-                last_outbound_status TEXT NULL,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (phone_norm, inbox_type)
-            )");
-        await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wts_inbox_hot_at ON wa_thread_summary (inbox_type, is_hot_lead DESC, last_at DESC)");
-        await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_wts_search ON wa_thread_summary (inbox_type, phone, contact_name)");
-
-        var summaryEmpty = await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM wa_thread_summary") == 0;
-        var messagesExist = await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM whatsapp_messages") > 0;
-        if (summaryEmpty && messagesExist)
-        {
-            try
-            {
-                var n = await BackfillThreadSummary(c);
-                _log.LogInformation("wa_thread_summary backfilled: {N} rows.", n);
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "wa_thread_summary backfill FAILED");
-            }
-        }
-
         _log.LogInformation("WhatsAppCloud schema OK.");
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // Backfill wa_thread_summary from whatsapp_messages (one-time, on empty summary table)
-    // ─────────────────────────────────────────────────────────────
-    public async Task<int> BackfillThreadSummary(NpgsqlConnection c)
-    {
-        var n = await c.ExecuteAsync(@"
-            INSERT INTO wa_thread_summary
-                (phone_norm, inbox_type, phone, contact_name, last_message, last_template, last_at,
-                 message_count, unread_count, is_hot_lead, has_inbound, last_outbound_status, updated_at)
-            SELECT
-                w.phone_norm,
-                w.inbox_type,
-                w.Phone,
-                COALESCE(sl.name, ct.name),
-                w.LastMessage,
-                w.LastTemplate,
-                w.LastAt,
-                w.MessageCount,
-                w.UnreadCount,
-                w.IsHotLead,
-                w.HasInbound,
-                ls.status,
-                NOW()
-            FROM (
-                SELECT
-                    phone_norm,
-                    inbox_type,
-                    COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
-                    MAX(body) AS LastMessage,
-                    MAX(template_name) AS LastTemplate,
-                    MAX(created_at) AS LastAt,
-                    COUNT(*) AS MessageCount,
-                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount,
-                    BOOL_OR(COALESCE(is_hot_lead, FALSE)) AS IsHotLead,
-                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound
-                FROM whatsapp_messages
-                WHERE phone_norm IS NOT NULL AND phone_norm != ''
-                  AND inbox_type IS NOT NULL AND inbox_type != ''
-                GROUP BY phone_norm, inbox_type
-            ) w
-            LEFT JOIN LATERAL (
-                SELECT status FROM whatsapp_messages m2
-                WHERE m2.direction = 'outbound' AND m2.phone_norm = w.phone_norm
-                ORDER BY m2.created_at DESC LIMIT 1
-            ) ls ON TRUE
-            LEFT JOIN saved_leads sl ON EXISTS (
-                SELECT 1 FROM unnest(sl.phones) AS p
-                WHERE p IS NOT NULL AND regexp_replace(p, '[^0-9]', '', 'g') = w.phone_norm
-            )
-            LEFT JOIN contacts ct ON ct.phone_norm = w.phone_norm
-            ON CONFLICT (phone_norm, inbox_type) DO UPDATE SET
-                phone = EXCLUDED.phone,
-                contact_name = EXCLUDED.contact_name,
-                last_message = EXCLUDED.last_message,
-                last_template = EXCLUDED.last_template,
-                last_at = EXCLUDED.last_at,
-                message_count = EXCLUDED.message_count,
-                unread_count = EXCLUDED.unread_count,
-                is_hot_lead = EXCLUDED.is_hot_lead,
-                has_inbound = EXCLUDED.has_inbound,
-                last_outbound_status = EXCLUDED.last_outbound_status,
-                updated_at = NOW()");
-        return n;
-    }
-
-    public async Task<(bool Ok, int Rows, string? Error)> RebuildThreadSummary()
-    {
-        var cs = _settings.ConnectionString;
-        if (string.IsNullOrEmpty(cs)) return (false, 0, "No connection string");
-        try
-        {
-            await using var c = new NpgsqlConnection(cs);
-            await c.OpenAsync();
-            var n = await BackfillThreadSummary(c);
-            return (true, n, null);
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "RebuildThreadSummary failed");
-            return (false, 0, ex.Message);
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // Incremental upsert — call after any write affecting a thread
-    // ─────────────────────────────────────────────────────────────
-    public async Task UpsertThreadSummary(string phoneRaw, string inboxType)
-    {
-        var cs = _settings.ConnectionString;
-        if (string.IsNullOrEmpty(cs)) return;
-        var phoneNorm = CleanPhone(phoneRaw);
-        if (string.IsNullOrEmpty(phoneNorm)) return;
-        await using var c = new NpgsqlConnection(cs);
-        await c.OpenAsync();
-        await c.ExecuteAsync(@"
-            INSERT INTO wa_thread_summary
-                (phone_norm, inbox_type, phone, contact_name, last_message, last_template, last_at,
-                 message_count, unread_count, is_hot_lead, has_inbound, last_outbound_status, updated_at)
-            SELECT
-                w.phone_norm,
-                w.inbox_type,
-                w.Phone,
-                COALESCE(sl.name, ct.name),
-                w.LastMessage,
-                w.LastTemplate,
-                w.LastAt,
-                w.MessageCount,
-                w.UnreadCount,
-                w.IsHotLead,
-                w.HasInbound,
-                ls.status,
-                NOW()
-            FROM (
-                SELECT
-                    phone_norm,
-                    inbox_type,
-                    COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
-                    MAX(body) AS LastMessage,
-                    MAX(template_name) AS LastTemplate,
-                    MAX(created_at) AS LastAt,
-                    COUNT(*) AS MessageCount,
-                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount,
-                    BOOL_OR(COALESCE(is_hot_lead, FALSE)) AS IsHotLead,
-                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound
-                FROM whatsapp_messages
-                WHERE phone_norm = @PhoneNorm
-                GROUP BY phone_norm, inbox_type
-            ) w
-            LEFT JOIN LATERAL (
-                SELECT status FROM whatsapp_messages m2
-                WHERE m2.direction = 'outbound' AND m2.phone_norm = @PhoneNorm
-                ORDER BY m2.created_at DESC LIMIT 1
-            ) ls ON TRUE
-            LEFT JOIN saved_leads sl ON EXISTS (
-                SELECT 1 FROM unnest(sl.phones) AS p
-                WHERE regexp_replace(p, '[^0-9]', '', 'g') = @PhoneNorm
-            )
-            LEFT JOIN contacts ct ON ct.phone_norm = @PhoneNorm
-            ON CONFLICT (phone_norm, inbox_type) DO UPDATE SET
-                phone = EXCLUDED.phone,
-                contact_name = EXCLUDED.contact_name,
-                last_message = EXCLUDED.last_message,
-                last_template = EXCLUDED.last_template,
-                last_at = EXCLUDED.last_at,
-                message_count = EXCLUDED.message_count,
-                unread_count = EXCLUDED.unread_count,
-                is_hot_lead = EXCLUDED.is_hot_lead,
-                has_inbound = EXCLUDED.has_inbound,
-                last_outbound_status = EXCLUDED.last_outbound_status,
-                updated_at = NOW()",
-            new { PhoneNorm = phoneNorm });
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -588,25 +369,18 @@ public class WhatsAppCloudService
     {
         var cs = _settings.ConnectionString;
         if (string.IsNullOrEmpty(cs)) return;
-        var phoneNorm = CleanPhone(!string.IsNullOrEmpty(m.FromPhone) ? m.FromPhone : m.ToPhone);
         await using var c = new NpgsqlConnection(cs);
         await c.OpenAsync();
         await c.ExecuteAsync(@"
             INSERT INTO whatsapp_messages
                 (id, lead_id, proposal_id, direction, to_phone, from_phone, message_type, template_name,
                  body, wamid, status, error_code, error_message, raw_payload, media_url, media_caption,
-                 inbox_type, phone_norm, created_at, updated_at)
+                 inbox_type, created_at, updated_at)
             VALUES
                 (@Id, @LeadId, @ProposalId, @Direction, @ToPhone, @FromPhone, @MessageType, @TemplateName,
                  @Body, @Wamid, @Status, @ErrorCode, @ErrorMessage, @RawPayload, @MediaUrl, @MediaCaption,
-                 @InboxType, @PhoneNorm, @CreatedAt, @UpdatedAt)",
-            new
-            {
-                m.Id, m.LeadId, m.ProposalId, m.Direction, m.ToPhone, m.FromPhone, m.MessageType, m.TemplateName,
-                m.Body, m.Wamid, m.Status, m.ErrorCode, m.ErrorMessage, m.RawPayload, m.MediaUrl, m.MediaCaption,
-                m.InboxType, PhoneNorm = phoneNorm, m.CreatedAt, m.UpdatedAt
-            });
-        await UpsertThreadSummary(phoneNorm, m.InboxType);
+                 @InboxType, @CreatedAt, @UpdatedAt)",
+            m);
     }
 
     // Keep old name as alias for callers that still use it
@@ -702,21 +476,16 @@ public class WhatsAppCloudService
                                     new { Wamid = wamid, Status = status, ErrCode = errCode, ErrMsg = errMsg });
                                 statusUpdates++;
 
-                                var affected = await c.QuerySingleOrDefaultAsync(
-                                    "SELECT to_phone AS ToPhone, inbox_type AS InboxType FROM whatsapp_messages WHERE wamid = @Wamid LIMIT 1",
-                                    new { Wamid = wamid });
-                                string? affectedToPhone = affected?.ToPhone;
-                                string? affectedInboxType = affected?.InboxType;
-
                                 // Auto-flag contact as wa_failed / wa_delivered
                                 if (status == "failed" || status == "delivered" || status == "read")
                                 {
                                     var waContactStatus = status == "failed" ? "wa_failed" : "wa_delivered";
-                                    if (!string.IsNullOrEmpty(affectedToPhone))
-                                        await _contactListSvc.UpdateWaOutreachStatus(affectedToPhone, waContactStatus);
+                                    var toPhone = await c.ExecuteScalarAsync<string>(
+                                        "SELECT to_phone FROM whatsapp_messages WHERE wamid = @Wamid LIMIT 1",
+                                        new { Wamid = wamid }) ?? "";
+                                    if (!string.IsNullOrEmpty(toPhone))
+                                        await _contactListSvc.UpdateWaOutreachStatus(toPhone, waContactStatus);
                                 }
-                                if (!string.IsNullOrEmpty(affectedToPhone) && !string.IsNullOrEmpty(affectedInboxType))
-                                    await UpsertThreadSummary(affectedToPhone, affectedInboxType);
                             }
                         }
                     }
@@ -874,25 +643,53 @@ Login to TEKLead AI to respond.";
 
         var rows = await c.QueryAsync<WhatsAppInboxThread>(@"
             SELECT
-                phone AS Phone,
-                contact_name AS ContactName,
-                last_message AS LastMessage,
-                last_template AS LastTemplate,
-                last_at AS LastAt,
-                message_count AS MessageCount,
-                unread_count AS UnreadCount,
-                inbox_type AS InboxType,
-                is_hot_lead AS IsHotLead,
-                has_inbound AS HasInbound,
-                last_outbound_status AS LastOutboundStatus
-            FROM wa_thread_summary
-            WHERE inbox_type = @InboxType
-            ORDER BY is_hot_lead DESC, last_at DESC
+                w.Phone,
+                COALESCE(sl.name, ct.name) AS ContactName,
+                w.LastMessage,
+                w.LastTemplate,
+                w.LastAt,
+                w.MessageCount,
+                w.UnreadCount,
+                w.InboxType,
+                w.IsHotLead,
+                w.HasInbound,
+                ls.status AS LastOutboundStatus
+            FROM (
+                SELECT
+                    COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
+                    MAX(body) AS LastMessage,
+                    MAX(template_name) AS LastTemplate,
+                    MAX(created_at) AS LastAt,
+                    COUNT(*) AS MessageCount,
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount,
+                    MAX(inbox_type) AS InboxType,
+                    BOOL_OR(COALESCE(is_hot_lead, FALSE)) AS IsHotLead,
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound
+                FROM whatsapp_messages
+                WHERE inbox_type = @InboxType
+                GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
+            ) w
+            LEFT JOIN LATERAL (
+                SELECT status FROM whatsapp_messages m2
+                WHERE m2.direction = 'outbound'
+                  AND regexp_replace(m2.to_phone, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+                ORDER BY m2.created_at DESC
+                LIMIT 1
+            ) ls ON TRUE
+            LEFT JOIN saved_leads sl
+                ON EXISTS (
+                    SELECT 1 FROM unnest(sl.phones) AS p
+                    WHERE regexp_replace(p, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+                )
+            LEFT JOIN contacts ct
+                ON regexp_replace(ct.phone, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+            ORDER BY w.IsHotLead DESC, w.LastAt DESC
             LIMIT @PageSize OFFSET @Offset",
             new { InboxType = inboxType, PageSize = pageSize, Offset = offset });
 
-        var total = await c.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM wa_thread_summary WHERE inbox_type = @InboxType",
+        var total = await c.ExecuteScalarAsync<int>(@"
+            SELECT COUNT(DISTINCT COALESCE(NULLIF(from_phone,''), to_phone))
+            FROM whatsapp_messages WHERE inbox_type = @InboxType",
             new { InboxType = inboxType });
 
         var list = rows.ToList();
@@ -920,14 +717,8 @@ Login to TEKLead AI to respond.";
         await c.ExecuteAsync(@"
             UPDATE whatsapp_messages
             SET is_hot_lead = @IsHot, updated_at = NOW()
-            WHERE phone_norm = @Phone",
+            WHERE regexp_replace(COALESCE(NULLIF(from_phone,''), to_phone), '[^0-9]', '', 'g') = @Phone",
             new { IsHot = isHot, Phone = clean });
-
-        var inboxTypes = await c.QueryAsync<string>(
-            "SELECT DISTINCT inbox_type FROM whatsapp_messages WHERE phone_norm = @Phone",
-            new { Phone = clean });
-        foreach (var it in inboxTypes)
-            await UpsertThreadSummary(clean, it);
         return true;
     }
 
@@ -943,21 +734,43 @@ Login to TEKLead AI to respond.";
         await c.OpenAsync();
         var rows = await c.QueryAsync<WhatsAppInboxThread>(@"
             SELECT
-                phone AS Phone,
-                contact_name AS ContactName,
-                last_message AS LastMessage,
-                last_template AS LastTemplate,
-                last_at AS LastAt,
-                message_count AS MessageCount,
-                unread_count AS UnreadCount,
-                inbox_type AS InboxType,
-                is_hot_lead AS IsHotLead,
-                has_inbound AS HasInbound,
-                last_outbound_status AS LastOutboundStatus
-            FROM wa_thread_summary
-            WHERE inbox_type = @InboxType
-              AND (LOWER(phone) LIKE @Search OR LOWER(COALESCE(contact_name,'')) LIKE @Search)
-            ORDER BY last_at DESC
+                w.Phone,
+                COALESCE(sl.name, ct.name) AS ContactName,
+                w.LastMessage,
+                w.LastTemplate,
+                w.LastAt,
+                w.MessageCount,
+                w.UnreadCount,
+                w.InboxType,
+                BOOL_OR(COALESCE(w.IsHotLead, FALSE)) AS IsHotLead,
+                w.HasInbound,
+                w.LastOutboundStatus
+            FROM (
+                SELECT
+                    COALESCE(NULLIF(from_phone,''), to_phone) AS Phone,
+                    MAX(body) AS LastMessage,
+                    MAX(template_name) AS LastTemplate,
+                    MAX(created_at) AS LastAt,
+                    COUNT(*) AS MessageCount,
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS UnreadCount,
+                    MAX(inbox_type) AS InboxType,
+                    BOOL_OR(COALESCE(is_hot_lead, FALSE)) AS IsHotLead,
+                    SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound,
+                    NULL::TEXT AS LastOutboundStatus
+                FROM whatsapp_messages
+                WHERE inbox_type = @InboxType
+                GROUP BY COALESCE(NULLIF(from_phone,''), to_phone)
+            ) w
+            LEFT JOIN saved_leads sl
+                ON EXISTS (
+                    SELECT 1 FROM unnest(sl.phones) AS p
+                    WHERE regexp_replace(p, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+                )
+            LEFT JOIN contacts ct
+                ON regexp_replace(ct.phone, '[^0-9]', '', 'g') = regexp_replace(w.Phone, '[^0-9]', '', 'g')
+            WHERE LOWER(w.Phone) LIKE @Search
+               OR LOWER(COALESCE(sl.name, ct.name, '')) LIKE @Search
+            ORDER BY w.LastAt DESC
             LIMIT 50",
             new { InboxType = inboxType, Search = search });
         return rows.ToList();

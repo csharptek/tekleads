@@ -121,13 +121,6 @@ public class WhatsAppController : ControllerBase
         [FromQuery] int pageSize = 50)
         => Ok(await _svc.GetInbox(inbox, page, pageSize));
 
-    [HttpPost("inbox/rebuild-summary")]
-    public async Task<IActionResult> RebuildSummary()
-    {
-        var (ok, rows, err) = await _svc.RebuildThreadSummary();
-        return Ok(new { ok, rows, error = err });
-    }
-
     [HttpPatch("conversations/{phone}/hot-lead")]
     public async Task<IActionResult> ToggleHotLead(string phone, [FromBody] ToggleHotLeadRequest req)
     {
