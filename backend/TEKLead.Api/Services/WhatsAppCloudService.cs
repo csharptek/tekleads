@@ -163,8 +163,15 @@ public class WhatsAppCloudService
         var messagesExist = await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM whatsapp_messages") > 0;
         if (summaryEmpty && messagesExist)
         {
-            _log.LogInformation("wa_thread_summary empty, backfilling…");
-            await BackfillThreadSummary(c);
+            try
+            {
+                var n = await BackfillThreadSummary(c);
+                _log.LogInformation("wa_thread_summary backfilled: {N} rows.", n);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "wa_thread_summary backfill FAILED");
+            }
         }
 
         _log.LogInformation("WhatsAppCloud schema OK.");
@@ -173,9 +180,9 @@ public class WhatsAppCloudService
     // ─────────────────────────────────────────────────────────────
     // Backfill wa_thread_summary from whatsapp_messages (one-time, on empty summary table)
     // ─────────────────────────────────────────────────────────────
-    private async Task BackfillThreadSummary(NpgsqlConnection c)
+    public async Task<int> BackfillThreadSummary(NpgsqlConnection c)
     {
-        await c.ExecuteAsync(@"
+        var n = await c.ExecuteAsync(@"
             INSERT INTO wa_thread_summary
                 (phone_norm, inbox_type, phone, contact_name, last_message, last_template, last_at,
                  message_count, unread_count, is_hot_lead, has_inbound, last_outbound_status, updated_at)
@@ -207,6 +214,7 @@ public class WhatsAppCloudService
                     SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) > 0 AS HasInbound
                 FROM whatsapp_messages
                 WHERE phone_norm IS NOT NULL AND phone_norm != ''
+                  AND inbox_type IS NOT NULL AND inbox_type != ''
                 GROUP BY phone_norm, inbox_type
             ) w
             LEFT JOIN LATERAL (
@@ -216,10 +224,40 @@ public class WhatsAppCloudService
             ) ls ON TRUE
             LEFT JOIN saved_leads sl ON EXISTS (
                 SELECT 1 FROM unnest(sl.phones) AS p
-                WHERE regexp_replace(p, '[^0-9]', '', 'g') = w.phone_norm
+                WHERE p IS NOT NULL AND regexp_replace(p, '[^0-9]', '', 'g') = w.phone_norm
             )
             LEFT JOIN contacts ct ON ct.phone_norm = w.phone_norm
-            ON CONFLICT (phone_norm, inbox_type) DO NOTHING");
+            ON CONFLICT (phone_norm, inbox_type) DO UPDATE SET
+                phone = EXCLUDED.phone,
+                contact_name = EXCLUDED.contact_name,
+                last_message = EXCLUDED.last_message,
+                last_template = EXCLUDED.last_template,
+                last_at = EXCLUDED.last_at,
+                message_count = EXCLUDED.message_count,
+                unread_count = EXCLUDED.unread_count,
+                is_hot_lead = EXCLUDED.is_hot_lead,
+                has_inbound = EXCLUDED.has_inbound,
+                last_outbound_status = EXCLUDED.last_outbound_status,
+                updated_at = NOW()");
+        return n;
+    }
+
+    public async Task<(bool Ok, int Rows, string? Error)> RebuildThreadSummary()
+    {
+        var cs = _settings.ConnectionString;
+        if (string.IsNullOrEmpty(cs)) return (false, 0, "No connection string");
+        try
+        {
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+            var n = await BackfillThreadSummary(c);
+            return (true, n, null);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "RebuildThreadSummary failed");
+            return (false, 0, ex.Message);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
