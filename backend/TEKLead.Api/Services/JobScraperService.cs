@@ -185,6 +185,7 @@ public class JobScraperService
                     continue;
                 }
                 await AppendLog(runId, $"Found {items.Count} raw postings for \"{role}\"");
+                var skippedSize = 0;
 
                 foreach (var item in items)
                 {
@@ -203,7 +204,8 @@ public class JobScraperService
                         var posterLinkedin = GetStr(item, "jobPosterProfileUrl");
                         int? employeeCount = item.TryGetProperty("companyEmployeesCount", out var ce) && ce.ValueKind == JsonValueKind.Number && ce.TryGetInt32(out var ceInt)
                             ? ceInt : null;
-                        var scrapedCompanySize = employeeCount.HasValue ? $"{employeeCount:N0} employees" : "";
+                        if (!employeeCount.HasValue || employeeCount.Value > 200) { skippedSize++; continue; }
+                        var scrapedCompanySize = $"{employeeCount:N0} employees";
                         var postedAtRaw = GetStr(item, "postedAt");
                         DateTime? postedAt = DateTime.TryParse(postedAtRaw, out var pd) ? pd : null;
 
@@ -242,6 +244,7 @@ public class JobScraperService
                         _log.LogWarning(ex, "job_leads insert error for run {id}", runId);
                     }
                 }
+                if (skippedSize > 0) await AppendLog(runId, $"Skipped {skippedSize} postings (company size outside 0-200)");
             }
 
             await AppendLog(runId, $"{leadsCreated} leads added to the table");
