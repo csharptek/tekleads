@@ -174,6 +174,7 @@ export default function ArtifactsView({
       .then(d => {
         if (d.values?.email_signature) setEmailSignature(d.values.email_signature);
         if (d.values?.ai_provider) setGlobalProvider(d.values.ai_provider);
+        if (d.values?.whatsapp_cloud_template_name) setDefaultWaTemplateName(d.values.whatsapp_cloud_template_name);
       })
       .catch(() => {});
   }, []);
@@ -386,6 +387,7 @@ export default function ArtifactsView({
 
   type MetaTemplate = { name: string; status: string; language: string; bodyText: string };
   const [metaTemplates, setMetaTemplates] = useState<MetaTemplate[]>([]);
+  const [defaultWaTemplateName, setDefaultWaTemplateName] = useState<string>("");
   useEffect(() => {
     api.get<MetaTemplate[]>("/api/whatsapp/templates")
       .then(data => setMetaTemplates((data || []).filter(t => t.status === "APPROVED")))
@@ -1022,11 +1024,15 @@ export default function ArtifactsView({
                     ✕ Cancel ({templateSendAllRunning})
                   </button>
                 ) : (
-                  metaTemplates.map(tpl => (
-                    <button key={tpl.name} className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} onClick={() => sendTemplateToAll(tpl)} title={tpl.bodyText || tpl.name}>
-                      Send All: {tpl.name}
-                    </button>
-                  ))
+                  (() => {
+                    const dflt = metaTemplates.find(t => t.name === defaultWaTemplateName);
+                    if (!dflt) return null;
+                    return (
+                      <button className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} onClick={() => sendTemplateToAll(dflt)} title={dflt.bodyText || dflt.name}>
+                        Send All ({dflt.name})
+                      </button>
+                    );
+                  })()
                 )}
                 {templateSendAllProgress && (
                   <span style={{ fontSize: 11, color: "var(--muted)" }}>
