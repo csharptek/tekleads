@@ -983,7 +983,7 @@ export default function ArtifactsView({
       )}
 
       {/* Multi-contact Send Panel */}
-      {((allEmails && allEmails.length > 0 && artifacts.emailSubject) || (allPhones && allPhones.length > 0)) && (
+      {((allEmails && allEmails.length > 0) || (allPhones && allPhones.length > 0)) && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
             <div>
@@ -1232,7 +1232,7 @@ export default function ArtifactsView({
               </div>
             );
           })()}
-          {allEmails && allEmails.length > 0 && artifacts.emailSubject && (
+          {allEmails && allEmails.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <div className="field-label" style={{ marginBottom: 6 }}>Email</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
