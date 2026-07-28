@@ -400,37 +400,37 @@ export default function ProposalList({
             <tbody>
               {paged.map((p, i) => (
                 <tr key={p.id} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "white" : "#fafafa", cursor: "pointer" }} onClick={() => openDrawer(p)}>
-                  <td style={td}><div style={{ fontWeight: 600 }}>{p.clientCompany || "—"}</div></td>
-                  <td style={{...td, whiteSpace: "nowrap"}}><div style={{ display: "flex", alignItems: "center", gap: 4 }}><span>{p.clientName || "—"}</span>{p.clientLinkedin && <a href={p.clientLinkedin} target="_blank" rel="noreferrer" title="LinkedIn" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none", marginLeft: 4 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{p.clientEmail}</div></td>
-                  <td style={td}><div style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60) || "—"}</div></td>
-                  <td style={td}>
+                  <td style={{...td, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}><div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientCompany || "—"}</div></td>
+                  <td style={{...td, maxWidth: 160}}><div style={{ display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.clientName || "—"}</span>{p.clientLinkedin && <a href={p.clientLinkedin} target="_blank" rel="noreferrer" title="LinkedIn" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none", marginLeft: 4, flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}</div><div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientEmail}</div></td>
+                  <td style={td}><div style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60) || "—"}</div></td>
+                  <td style={{...td, whiteSpace: "nowrap"}}>
                     <div style={{ fontSize: 12 }}>{fmt(p.createdAt)}</div>
                     <div style={{ marginTop: 3 }}><StatusBadge status={p.status} /></div>
                   </td>
-                  <td style={{ ...td, minWidth: 150 }} onClick={e => e.stopPropagation()}>
-                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                  <td style={{ ...td, minWidth: 130 }} onClick={e => e.stopPropagation()}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       {onEdit && <button className="icon-btn" title="Edit" onClick={() => onEdit(p.id)}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>}
-                      {onGenerateArtifacts && <button className="icon-btn" title="Artifacts" style={{ color: "#0f172a" }} onClick={() => {
+                      {onGenerateArtifacts && <button className="btn btn-sm" style={{ fontSize: 11, background: "#0f172a", color: "white", border: "none" }} onClick={() => {
                           let cx: Contact[] = [];
                           try { cx = p.contactsJson ? JSON.parse(p.contactsJson) : []; } catch {}
                           onGenerateArtifacts(buildArtifactsCtx(p, cx));
-                        }}>✦</button>}
+                        }}>✦ Artifacts</button>}
                       {onGenerateProposal && <button className="icon-btn" title="Generate Proposal" onClick={() => onGenerateProposal({ proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientCompany: p.clientCompany })}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                       </button>}
                       {p.status !== "sent" && <button className="icon-btn" title="Mark Sent" onClick={() => changeStatus(p, "sent")} disabled={statusChanging}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                       </button>}
                       {p.status !== "won" && <button className="icon-btn" title="Mark Won" style={{ color: "var(--green)" }} onClick={() => changeStatus(p, "won")} disabled={statusChanging}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
                       </button>}
                       {p.status !== "lost" && <button className="icon-btn" title="Mark Lost" style={{ color: "var(--red)" }} onClick={() => changeStatus(p, "lost")} disabled={statusChanging}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                       </button>}
                       {p.status !== "follow_up" && <button className="icon-btn" title="Follow Up" style={{ color: "var(--orange)" }} onClick={() => changeStatus(p, "follow_up")} disabled={statusChanging}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                       </button>}
                     </div>
                   </td>
