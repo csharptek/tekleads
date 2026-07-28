@@ -767,11 +767,9 @@ export default function ArtifactsView({
         actions={<>
           <ProviderToggle value={artifactProvider.whatsapp ?? globalProvider} onChange={v => setArtifactProvider(p => ({ ...p, whatsapp: v }))} />
           <PromptBtn onClick={() => openPromptModal("whatsapp")} />
-          {metaTemplates.map(tpl => (
-            <button key={tpl.name} className="btn btn-sm" onClick={() => sendWhatsappCloud("template", undefined, undefined, tpl)} disabled={cloudSending} style={{ background: "#128C7E", color: "white", border: "none" }} title={tpl.bodyText || tpl.name}>
-              {cloudSending ? "Sending…" : `Send ${tpl.name}`}
-            </button>
-          ))}
+          <button className="btn btn-sm" onClick={() => sendWhatsappCloud("template", undefined, undefined, metaTemplates.find(t => t.name === defaultWaTemplateName))} disabled={cloudSending} style={{ background: "#128C7E", color: "white", border: "none" }} title="Send approved template via Meta Cloud API">
+            {cloudSending ? "Sending…" : "Template (API)"}
+          </button>
           {artifacts.whatsappMessage && <>
             <CopyBtn text={artifacts.whatsappMessage} />
             <button className="btn btn-sm" onClick={() => sendWhatsapp()} style={{ background: "#25D366", color: "white", border: "none" }}>
@@ -1269,12 +1267,10 @@ export default function ArtifactsView({
                         {name && <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{name}</div>}
                         <span className="chip chip-green" style={{ fontSize: 12 }}>💬 {phone}</span>
                       </div>
-                      {metaTemplates.map(tpl => (
-                        <button key={tpl.name} className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} disabled={cloudSending}
-                          onClick={() => sendWhatsappCloud("template", phone, name, tpl)} title={tpl.bodyText || tpl.name}>
-                          {tpl.name}
-                        </button>
-                      ))}
+                      <button className="btn btn-sm" style={{ background: "#128C7E", color: "white", border: "none" }} disabled={cloudSending}
+                        onClick={() => sendWhatsappCloud("template", phone, name, metaTemplates.find(t => t.name === defaultWaTemplateName))} title="Send approved template via Meta Cloud API">
+                        Template (API)
+                      </button>
                       {artifacts.whatsappMessage && <>
                         <button className="btn btn-sm" style={{ background: "#25D366", color: "white", border: "none" }}
                           onClick={() => sendWhatsapp(phone, name)}>
