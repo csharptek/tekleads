@@ -693,7 +693,7 @@ export default function QuickOutreachView() {
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost" onClick={() => setCompose(null)}>Close</button>
-              <button className="btn btn-primary" onClick={sendCompose} disabled={sending}>
+              <button className="btn btn-primary" onClick={sendCompose} disabled={sending || enrichedSelected.size === 0}>
                 {sending ? <span className="spinner" /> : null}
                 {sending ? "Sending..." : "Send"}
               </button>
