@@ -19,6 +19,7 @@ builder.Services.AddScoped<LogService>();
 builder.Services.AddScoped<ProposalExportService>();
 builder.Services.AddScoped<ArtifactsService>();
 builder.Services.AddScoped<GraphEmailService>();
+builder.Services.AddScoped<GmailSmtpService>();
 builder.Services.AddScoped<EmailSendQueueService>();
 builder.Services.AddScoped<ContactListService>();
 builder.Services.AddScoped<InstantlyService>();

@@ -127,7 +127,8 @@ public class ArtifactsController : ControllerBase
             };
         }
 
-        await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes, fu1, fu2, req.Subject, req.Body);
+        await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes, fu1, fu2, req.Subject, req.Body,
+            string.IsNullOrWhiteSpace(req.Channel) ? "graph" : req.Channel);
         return Ok(new
         {
             queued = list.Count,
@@ -215,4 +216,5 @@ public class BulkSendRequest
     // Optional — when provided, used directly for the initial send instead of the proposal's generated artifact.
     public string? Subject { get; set; }
     public string? Body { get; set; }
+    public string? Channel { get; set; } // "graph" (default) or "gmail_smtp"
 }

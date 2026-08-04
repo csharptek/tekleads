@@ -26,6 +26,8 @@ const KEYS = {
   WaSendIntervalSeconds: "wa_send_interval_seconds",
   WhatsappBlobContainer: "whatsapp_blob_container",
   EmailSignature: "email_signature",
+  GmailSmtpUser: "gmail_smtp_user",
+  GmailSmtpAppPassword: "gmail_smtp_app_password",
   ArtifactCoverLetterPrompt: "artifact_cover_letter_prompt",
   ArtifactWhatsappPrompt: "artifact_whatsapp_prompt",
   ArtifactEmailPrompt: "artifact_email_prompt",
@@ -124,6 +126,14 @@ const TECH_GROUPS: Group[] = [
       { key: KEYS.GraphClientId, label: "Client (App) ID", placeholder: "00000000-0000-0000-0000-000000000000" },
       { key: KEYS.GraphClientSecret, label: "Client Secret", placeholder: "Enter to set / replace", secret: true },
       { key: KEYS.GraphSenderEmail, label: "Sender Email", placeholder: "outreach@yourcompany.com" },
+    ],
+  },
+  {
+    title: "Gmail SMTP (Quick Outreach)",
+    subtitle: "Used only for Quick Outreach sends. Requires a Gmail App Password (Google Account → Security → App Passwords).",
+    fields: [
+      { key: KEYS.GmailSmtpUser, label: "Gmail Address", placeholder: "manjika.tantia@gmail.com" },
+      { key: KEYS.GmailSmtpAppPassword, label: "App Password", placeholder: "Enter to set / replace", secret: true },
     ],
   },
 ];

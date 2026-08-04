@@ -42,6 +42,7 @@ public class EmailSendQueueService
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS follow_up_stage INT NOT NULL DEFAULT 0;
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS subject TEXT;
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS body TEXT;
+            ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'graph';
             CREATE INDEX IF NOT EXISTS idx_esj_stage ON email_send_jobs(proposal_id, follow_up_stage);
         ");
     }
@@ -57,7 +58,8 @@ public class EmailSendQueueService
         FollowUpSpec? fu1,
         FollowUpSpec? fu2,
         string? manualSubject = null,
-        string? manualBody = null)
+        string? manualBody = null,
+        string channel = "graph")
     {
         await using var c = new NpgsqlConnection(_settings.ConnectionString);
         await c.OpenAsync();
@@ -73,18 +75,18 @@ public class EmailSendQueueService
 
             // initial — manual subject/body when provided, else worker falls back to proposal artifact
             await c.ExecuteAsync(@"
-                INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body)
-                VALUES (@pid, @email, @name, @scheduledAt, 'pending', 0, @subject, @body)",
-                new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = initialAt, subject = manualSubject, body = manualBody });
+                INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body, channel)
+                VALUES (@pid, @email, @name, @scheduledAt, 'pending', 0, @subject, @body, @channel)",
+                new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = initialAt, subject = manualSubject, body = manualBody, channel });
 
             // FU1
             if (fu1 != null && !string.IsNullOrWhiteSpace(fu1.Subject) && !string.IsNullOrWhiteSpace(fu1.Body))
             {
                 var fu1At = initialAt.AddHours(fu1.DelayHours);
                 await c.ExecuteAsync(@"
-                    INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body)
-                    VALUES (@pid, @email, @name, @scheduledAt, 'pending', 1, @subject, @body)",
-                    new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = fu1At, subject = fu1.Subject, body = fu1.Body });
+                    INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body, channel)
+                    VALUES (@pid, @email, @name, @scheduledAt, 'pending', 1, @subject, @body, @channel)",
+                    new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = fu1At, subject = fu1.Subject, body = fu1.Body, channel });
             }
 
             // FU2
@@ -92,9 +94,9 @@ public class EmailSendQueueService
             {
                 var fu2At = initialAt.AddHours(fu2.DelayHours);
                 await c.ExecuteAsync(@"
-                    INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body)
-                    VALUES (@pid, @email, @name, @scheduledAt, 'pending', 2, @subject, @body)",
-                    new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = fu2At, subject = fu2.Subject, body = fu2.Body });
+                    INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body, channel)
+                    VALUES (@pid, @email, @name, @scheduledAt, 'pending', 2, @subject, @body, @channel)",
+                    new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = fu2At, subject = fu2.Subject, body = fu2.Body, channel });
             }
         }
     }
@@ -217,5 +219,6 @@ public class EmailSendQueueService
         FollowUpStage = (int)(r.follow_up_stage ?? 0),
         Subject = r.subject,
         Body = r.body,
+        Channel = r.channel ?? "graph",
     };
 }

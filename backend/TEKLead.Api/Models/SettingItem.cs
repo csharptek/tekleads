@@ -104,6 +104,9 @@ public static class SettingKeys
     public const string JobLeadFollowUp1Prompt     = "job_lead_followup1_prompt";
     public const string JobLeadFollowUp2Prompt     = "job_lead_followup2_prompt";
 
+    public const string GmailSmtpUser              = "gmail_smtp_user";
+    public const string GmailSmtpAppPassword       = "gmail_smtp_app_password";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -126,11 +129,12 @@ public static class SettingKeys
         WaSendIntervalSeconds,
         ApifyApiKey, JobScraperKeywords, EmailSendersJson,
         JobLeadEmailPrompt, JobLeadFollowUp1Prompt, JobLeadFollowUp2Prompt,
+        GmailSmtpUser, GmailSmtpAppPassword,
     };
 
     public static readonly HashSet<string> Secrets = new()
     {
         AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey,
-        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey, ClaudeApiKey, ApifyApiKey
+        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey, ClaudeApiKey, ApifyApiKey, GmailSmtpAppPassword
     };
 }

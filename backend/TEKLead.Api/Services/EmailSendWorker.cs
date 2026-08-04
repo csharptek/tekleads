@@ -35,6 +35,7 @@ public class EmailSendWorker : BackgroundService
         using var scope = _sp.CreateScope();
         var queue = scope.ServiceProvider.GetRequiredService<EmailSendQueueService>();
         var graphEmail = scope.ServiceProvider.GetRequiredService<GraphEmailService>();
+        var gmailSmtp = scope.ServiceProvider.GetRequiredService<GmailSmtpService>();
         var artifactsSvc = scope.ServiceProvider.GetRequiredService<ArtifactsService>();
         var settingsSvc = scope.ServiceProvider.GetRequiredService<SettingsService>();
 
@@ -120,7 +121,9 @@ public class EmailSendWorker : BackgroundService
                     sig = settings.GetValueOrDefault("email_signature", "");
                 }
 
-                var (ok, error) = await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig, "manjika.tantia@csharptek.com");
+                var (ok, error) = job.Channel == "gmail_smtp"
+                    ? await gmailSmtp.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig)
+                    : await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig, "manjika.tantia@csharptek.com");
 
                 if (ok)
                 {

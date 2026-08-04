@@ -98,6 +98,7 @@ export default function QuickOutreachView() {
         intervalMinutes: 1,
         subject: compose.subject,
         body: compose.body,
+        channel: "gmail_smtp",
         followUp1: compose.fu1Enabled && compose.fu1Subject.trim() && compose.fu1Body.trim()
           ? { subject: compose.fu1Subject, body: compose.fu1Body, delayHours: compose.fu1DelayHours || 6 }
           : null,
