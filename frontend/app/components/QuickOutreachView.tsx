@@ -37,8 +37,6 @@ function WaLink({ phone, message, name }: { phone: string; message: string; name
 }
 
 type ComposeState = {
-  lead: Lead;
-  to: string;
   subject: string;
   body: string;
   fu1Enabled: boolean;
@@ -76,17 +74,15 @@ export default function QuickOutreachView() {
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
-  const openCompose = (lead: Lead) => {
-    if (!lead.emails?.[0]) { setBanner({ kind: "info", text: "Enrich this contact for an email first." }); return; }
+  const openCompose = () => {
     setSendResult(null);
+    const greeting = "Hi {{first_name}},\n\n";
     setCompose({
-      lead,
-      to: lead.emails[0],
       subject: "",
-      body: "",
-      fu1Enabled: false, fu1Subject: "", fu1Body: "", fu1DelayHours: 6,
-      fu2Enabled: false, fu2Subject: "", fu2Body: "", fu2DelayHours: 12,
-      fu3Enabled: false, fu3Subject: "", fu3Body: "", fu3DelayHours: 24,
+      body: greeting,
+      fu1Enabled: false, fu1Subject: "", fu1Body: greeting, fu1DelayHours: 6,
+      fu2Enabled: false, fu2Subject: "", fu2Body: greeting, fu2DelayHours: 12,
+      fu3Enabled: false, fu3Subject: "", fu3Body: greeting, fu3DelayHours: 24,
       attachmentFile: null,
     });
   };
@@ -95,6 +91,13 @@ export default function QuickOutreachView() {
     if (!compose) return;
     if (!compose.subject.trim() || !compose.body.trim()) {
       setSendResult({ kind: "error", text: "Subject and body required." });
+      return;
+    }
+    const recipients = results
+      .filter(l => selected.has(l.id) && l.emails?.[0])
+      .map(l => ({ email: l.emails[0], name: l.name }));
+    if (recipients.length === 0) {
+      setSendResult({ kind: "error", text: "Select at least one contact with an enriched email." });
       return;
     }
     setSending(true); setSendResult(null);
@@ -109,7 +112,7 @@ export default function QuickOutreachView() {
 
       const proposalId = crypto.randomUUID();
       await api.post(`/api/artifacts/${proposalId}/send-bulk`, {
-        recipients: [{ email: compose.to, name: compose.lead.name }],
+        recipients,
         intervalMinutes: 1,
         subject: compose.subject,
         body: compose.body,
@@ -466,10 +469,10 @@ export default function QuickOutreachView() {
       {compose && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div className="card" style={{ maxWidth: 640, margin: 0, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
-            <div className="card-title">Compose Email — {compose.lead.name}</div>
-
-            <div className="field-label">To</div>
-            <input className="input" value={compose.to} onChange={e => setCompose(c => c && { ...c, to: e.target.value })} style={{ marginBottom: 10 }} />
+            <div className="card-title">Compose Email — {selected.size} recipient{selected.size !== 1 ? "s" : ""} selected</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+              Sends to selected contacts with an enriched email. First line uses <code>{"{{first_name}}"}</code> — filled per contact automatically.
+            </div>
 
             <div className="field-label">Subject</div>
             <input className="input" value={compose.subject} onChange={e => setCompose(c => c && { ...c, subject: e.target.value })} style={{ marginBottom: 10 }} />
@@ -551,14 +554,19 @@ export default function QuickOutreachView() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Quick Outreach</h1>
-          <div className="page-sub">Search free · Enrich uses Apollo credits · Click a contact with email to compose</div>
+          <div className="page-sub">Search free · Enrich uses Apollo credits · Select contacts, then Compose to email all at once</div>
         </div>
-        {selected.size > 0 && (
-          <button className="btn btn-primary" onClick={onSave} disabled={saving}>
-            {saving ? <span className="spinner" /> : null}
-            {saving ? "Saving..." : `Save ${selected.size} Lead${selected.size > 1 ? "s" : ""}`}
+        <div style={{ display: "flex", gap: 8 }}>
+          {selected.size > 0 && (
+            <button className="btn btn-primary" onClick={onSave} disabled={saving}>
+              {saving ? <span className="spinner" /> : null}
+              {saving ? "Saving..." : `Save ${selected.size} Lead${selected.size > 1 ? "s" : ""}`}
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={openCompose}>
+            ✉️ Compose{selected.size > 0 ? ` (${selected.size})` : ""}
           </button>
-        )}
+        </div>
       </div>
 
       {banner && (
@@ -635,10 +643,7 @@ export default function QuickOutreachView() {
                       <tr key={lead.id} className={selected.has(lead.id) ? "selected" : ""}>
                         <td><input type="checkbox" checked={selected.has(lead.id)} onChange={() => toggleSelect(lead.id)} /></td>
                         <td>
-                          <div
-                            onClick={() => openCompose(lead)}
-                            style={{ fontWeight: 600, color: lead.emails?.[0] ? "var(--accent)" : "var(--text)", whiteSpace: "nowrap", cursor: lead.emails?.[0] ? "pointer" : "default" }}
-                            title={lead.emails?.[0] ? "Click to compose email" : "Enrich for email first"}>
+                          <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>
                             {lead.name || "—"}
                           </div>
                           {lead.linkedinUrl && (
