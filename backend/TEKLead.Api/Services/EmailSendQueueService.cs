@@ -134,6 +134,17 @@ public class EmailSendQueueService
         return rows.Select(MapJob).ToList();
     }
 
+    /// <summary>All jobs for a channel (e.g. "gmail_smtp" for Quick Outreach), most recent first.</summary>
+    public async Task<List<EmailSendJob>> GetByChannel(string channel, int limit = 200)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+        var rows = await c.QueryAsync<dynamic>(
+            "SELECT * FROM email_send_jobs WHERE channel=@channel ORDER BY created_at DESC, scheduled_at DESC LIMIT @limit",
+            new { channel, limit });
+        return rows.Select(MapJob).ToList();
+    }
+
     public async Task<EmailSendJob?> GetById(Guid jobId)
     {
         await using var c = new NpgsqlConnection(_settings.ConnectionString);

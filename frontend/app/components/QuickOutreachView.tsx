@@ -73,6 +73,28 @@ export default function QuickOutreachView() {
   const [compose, setCompose] = useState<ComposeState>(null);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusJobs, setStatusJobs] = useState<any[]>([]);
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  const STAGE_LABEL: Record<number, string> = { 0: "Initial", 1: "Follow-up 1", 2: "Follow-up 2", 3: "Follow-up 3" };
+
+  const loadStatus = async () => {
+    setStatusLoading(true);
+    try {
+      const jobs = await api.get<any[]>("/api/artifacts/quick-outreach/status");
+      setStatusJobs(jobs);
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setStatusLoading(false); }
+  };
+
+  const openStatus = () => { setStatusOpen(true); loadStatus(); };
+
+  const cancelProposal = async (proposalId: string) => {
+    await api.post(`/api/artifacts/quick-outreach/${proposalId}/cancel`, {});
+    loadStatus();
+  };
 
   const openCompose = () => {
     setSendResult(null);
@@ -466,6 +488,74 @@ export default function QuickOutreachView() {
         </div>
       )}
 
+      {statusOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div className="card" style={{ maxWidth: 900, margin: 0, width: "100%", maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div className="card-title" style={{ marginBottom: 0 }}>Quick Outreach — Send Status</div>
+              <button className="btn btn-ghost btn-sm" onClick={loadStatus} disabled={statusLoading}>
+                {statusLoading ? <span className="spinner" /> : "↻ Refresh"}
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+              Initial + follow-up sends via Gmail SMTP. Pending jobs run automatically; cancel stops all pending stages for that recipient batch.
+            </div>
+
+            {statusJobs.length === 0 && !statusLoading && (
+              <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>No Quick Outreach emails sent yet.</div>
+            )}
+
+            {statusJobs.length > 0 && (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>To</th>
+                      <th>Stage</th>
+                      <th>Subject</th>
+                      <th>Scheduled</th>
+                      <th>Status</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statusJobs.map(j => (
+                      <tr key={j.id}>
+                        <td style={{ fontSize: 12 }}>
+                          <div style={{ fontWeight: 600 }}>{j.toName || "—"}</div>
+                          <div style={{ color: "var(--muted)" }}>{j.toEmail}</div>
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          {STAGE_LABEL[j.followUpStage] ?? j.followUpStage}
+                          {j.hasAttachment && <span title="Has attachment" style={{ marginLeft: 4 }}>📎</span>}
+                        </td>
+                        <td style={{ fontSize: 12, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{j.subject || "—"}</td>
+                        <td style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{new Date(j.scheduledAt).toLocaleString()}</td>
+                        <td style={{ fontSize: 12 }}>
+                          {j.status === "sent" && <span className="chip chip-green">Sent</span>}
+                          {j.status === "pending" && <span className="chip chip-orange">Pending</span>}
+                          {j.status === "failed" && <span className="chip" style={{ background: "var(--danger-bg, #fee)", color: "var(--danger, #c00)" }} title={j.error}>Failed</span>}
+                          {j.status === "cancelled" && <span className="chip">Cancelled</span>}
+                        </td>
+                        <td>
+                          {j.status === "pending" && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => cancelProposal(j.proposalId)}>Cancel</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="btn btn-ghost" onClick={() => setStatusOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {compose && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div className="card" style={{ maxWidth: 640, margin: 0, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
@@ -563,6 +653,7 @@ export default function QuickOutreachView() {
               {saving ? "Saving..." : `Save ${selected.size} Lead${selected.size > 1 ? "s" : ""}`}
             </button>
           )}
+          <button className="btn btn-ghost" onClick={openStatus}>📋 Status</button>
           <button className="btn btn-primary" onClick={openCompose}>
             ✉️ Compose{selected.size > 0 ? ` (${selected.size})` : ""}
           </button>

@@ -186,6 +186,33 @@ public class ArtifactsController : ControllerBase
         }));
     }
 
+    [HttpGet("quick-outreach/status")]
+    public async Task<IActionResult> QuickOutreachStatus()
+    {
+        var jobs = await _queue.GetByChannel("gmail_smtp");
+        return Ok(jobs.Select(j => new
+        {
+            id            = j.Id,
+            proposalId    = j.ProposalId,
+            toEmail       = j.ToEmail,
+            toName        = j.ToName,
+            scheduledAt   = j.ScheduledAt,
+            sentAt        = j.SentAt,
+            status        = j.Status,
+            error         = j.Error,
+            followUpStage = j.FollowUpStage,
+            subject       = j.Subject,
+            hasAttachment = !string.IsNullOrWhiteSpace(j.AttachmentPath),
+        }));
+    }
+
+    [HttpPost("quick-outreach/{proposalId}/cancel")]
+    public async Task<IActionResult> CancelQuickOutreach(Guid proposalId)
+    {
+        await _queue.CancelPending(proposalId);
+        return Ok(new { ok = true });
+    }
+
     [HttpPost("{proposalId}/send-bulk/cancel")]
     public async Task<IActionResult> CancelBulk(Guid proposalId)
     {
