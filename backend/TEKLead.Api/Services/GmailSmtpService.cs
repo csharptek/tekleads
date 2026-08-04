@@ -19,7 +19,8 @@ public class GmailSmtpService
         string toName,
         string subject,
         string body,
-        string? signature = null)
+        string? signature = null,
+        string? attachmentPath = null)
     {
         try
         {
@@ -36,7 +37,14 @@ public class GmailSmtpService
             msg.From.Add(MailboxAddress.Parse(user));
             msg.To.Add(string.IsNullOrWhiteSpace(toName) ? MailboxAddress.Parse(toEmail) : new MailboxAddress(toName, toEmail));
             msg.Subject = subject;
-            msg.Body = new TextPart("plain") { Text = fullBody };
+
+            var builder = new BodyBuilder { TextBody = fullBody };
+            if (!string.IsNullOrWhiteSpace(attachmentPath) && File.Exists(attachmentPath))
+            {
+                var displayName = LocalAttachmentStore.GetFileName(attachmentPath);
+                builder.Attachments.Add(displayName, File.ReadAllBytes(attachmentPath));
+            }
+            msg.Body = builder.ToMessageBody();
 
             using var client = new SmtpClient();
             await client.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);

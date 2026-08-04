@@ -122,7 +122,7 @@ public class EmailSendWorker : BackgroundService
                 }
 
                 var (ok, error) = job.Channel == "gmail_smtp"
-                    ? await gmailSmtp.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig)
+                    ? await gmailSmtp.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig, job.AttachmentPath)
                     : await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig, "manjika.tantia@csharptek.com");
 
                 if (ok)

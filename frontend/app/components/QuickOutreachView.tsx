@@ -49,6 +49,11 @@ type ComposeState = {
   fu2Subject: string;
   fu2Body: string;
   fu2DelayHours: number;
+  fu3Enabled: boolean;
+  fu3Subject: string;
+  fu3Body: string;
+  fu3DelayHours: number;
+  attachmentFile: File | null;
 } | null;
 
 export default function QuickOutreachView() {
@@ -81,6 +86,8 @@ export default function QuickOutreachView() {
       body: "",
       fu1Enabled: false, fu1Subject: "", fu1Body: "", fu1DelayHours: 6,
       fu2Enabled: false, fu2Subject: "", fu2Body: "", fu2DelayHours: 12,
+      fu3Enabled: false, fu3Subject: "", fu3Body: "", fu3DelayHours: 24,
+      attachmentFile: null,
     });
   };
 
@@ -92,6 +99,14 @@ export default function QuickOutreachView() {
     }
     setSending(true); setSendResult(null);
     try {
+      let attachmentToken: string | undefined;
+      if (compose.attachmentFile) {
+        const fd = new FormData();
+        fd.append("file", compose.attachmentFile);
+        const up = await api.upload<{ token: string }>("/api/artifacts/upload-attachment", fd);
+        attachmentToken = up.token;
+      }
+
       const proposalId = crypto.randomUUID();
       await api.post(`/api/artifacts/${proposalId}/send-bulk`, {
         recipients: [{ email: compose.to, name: compose.lead.name }],
@@ -99,11 +114,15 @@ export default function QuickOutreachView() {
         subject: compose.subject,
         body: compose.body,
         channel: "gmail_smtp",
+        attachmentToken,
         followUp1: compose.fu1Enabled && compose.fu1Subject.trim() && compose.fu1Body.trim()
           ? { subject: compose.fu1Subject, body: compose.fu1Body, delayHours: compose.fu1DelayHours || 6 }
           : null,
         followUp2: compose.fu2Enabled && compose.fu2Subject.trim() && compose.fu2Body.trim()
           ? { subject: compose.fu2Subject, body: compose.fu2Body, delayHours: compose.fu2DelayHours || 12 }
+          : null,
+        followUp3: compose.fu3Enabled && compose.fu3Subject.trim() && compose.fu3Body.trim()
+          ? { subject: compose.fu3Subject, body: compose.fu3Body, delayHours: compose.fu3DelayHours || 24 }
           : null,
       });
       setSendResult({ kind: "success", text: "Queued for sending." });
@@ -458,6 +477,15 @@ export default function QuickOutreachView() {
             <div className="field-label">Body</div>
             <textarea className="input" rows={8} value={compose.body} onChange={e => setCompose(c => c && { ...c, body: e.target.value })} style={{ marginBottom: 14, fontFamily: "inherit" }} />
 
+            <div className="field-label">Attachment (optional — brochure etc., initial email only)</div>
+            <input type="file" onChange={e => setCompose(c => c && { ...c, attachmentFile: e.target.files?.[0] || null })} style={{ marginBottom: 14 }} />
+            {compose.attachmentFile && (
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -8, marginBottom: 14 }}>
+                {compose.attachmentFile.name} ({Math.round(compose.attachmentFile.size / 1024)} KB)
+                <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => setCompose(c => c && { ...c, attachmentFile: null })}>Remove</button>
+              </div>
+            )}
+
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 10 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
                 <input type="checkbox" checked={compose.fu1Enabled} onChange={e => setCompose(c => c && { ...c, fu1Enabled: e.target.checked })} />
@@ -473,7 +501,7 @@ export default function QuickOutreachView() {
               )}
             </div>
 
-            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 14 }}>
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 10 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
                 <input type="checkbox" checked={compose.fu2Enabled} onChange={e => setCompose(c => c && { ...c, fu2Enabled: e.target.checked })} />
                 Follow-up 2
@@ -484,6 +512,21 @@ export default function QuickOutreachView() {
                   <textarea className="input" rows={4} placeholder="Body" value={compose.fu2Body} onChange={e => setCompose(c => c && { ...c, fu2Body: e.target.value })} style={{ marginBottom: 8, fontFamily: "inherit" }} />
                   <div className="field-label">Delay (hours after initial)</div>
                   <input className="input" type="number" value={compose.fu2DelayHours} onChange={e => setCompose(c => c && { ...c, fu2DelayHours: Number(e.target.value) })} />
+                </div>
+              )}
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 14 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
+                <input type="checkbox" checked={compose.fu3Enabled} onChange={e => setCompose(c => c && { ...c, fu3Enabled: e.target.checked })} />
+                Follow-up 3
+              </label>
+              {compose.fu3Enabled && (
+                <div style={{ marginTop: 8 }}>
+                  <input className="input" placeholder="Subject" value={compose.fu3Subject} onChange={e => setCompose(c => c && { ...c, fu3Subject: e.target.value })} style={{ marginBottom: 8 }} />
+                  <textarea className="input" rows={4} placeholder="Body" value={compose.fu3Body} onChange={e => setCompose(c => c && { ...c, fu3Body: e.target.value })} style={{ marginBottom: 8, fontFamily: "inherit" }} />
+                  <div className="field-label">Delay (hours after initial)</div>
+                  <input className="input" type="number" value={compose.fu3DelayHours} onChange={e => setCompose(c => c && { ...c, fu3DelayHours: Number(e.target.value) })} />
                 </div>
               )}
             </div>

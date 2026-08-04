@@ -107,7 +107,7 @@ public class ArtifactsController : ControllerBase
 
         var list = req.Recipients.Select(r => (r.Email, r.Name ?? "")).ToList();
 
-        FollowUpSpec? fu1 = null, fu2 = null;
+        FollowUpSpec? fu1 = null, fu2 = null, fu3 = null;
         if (req.FollowUp1 != null && !string.IsNullOrWhiteSpace(req.FollowUp1.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp1.Body))
         {
             fu1 = new FollowUpSpec
@@ -126,16 +126,45 @@ public class ArtifactsController : ControllerBase
                 DelayHours = req.FollowUp2.DelayHours > 0 ? req.FollowUp2.DelayHours : 12,
             };
         }
+        if (req.FollowUp3 != null && !string.IsNullOrWhiteSpace(req.FollowUp3.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp3.Body))
+        {
+            fu3 = new FollowUpSpec
+            {
+                Subject = req.FollowUp3.Subject!,
+                Body = req.FollowUp3.Body!,
+                DelayHours = req.FollowUp3.DelayHours > 0 ? req.FollowUp3.DelayHours : 24,
+            };
+        }
 
-        await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes, fu1, fu2, req.Subject, req.Body,
-            string.IsNullOrWhiteSpace(req.Channel) ? "graph" : req.Channel);
+        string? attachmentPath = null;
+        if (!string.IsNullOrWhiteSpace(req.AttachmentToken))
+        {
+            attachmentPath = LocalAttachmentStore.ResolvePath(req.AttachmentToken);
+            if (attachmentPath == null)
+                return BadRequest(new { error = "Attachment not found — please re-upload." });
+        }
+
+        await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes, fu1, fu2, fu3, req.Subject, req.Body,
+            string.IsNullOrWhiteSpace(req.Channel) ? "graph" : req.Channel, attachmentPath);
         return Ok(new
         {
             queued = list.Count,
             intervalMinutes = req.IntervalMinutes,
             followUp1 = fu1 != null,
             followUp2 = fu2 != null,
+            followUp3 = fu3 != null,
         });
+    }
+
+    [HttpPost("upload-attachment")]
+    [RequestSizeLimit(15_000_000)]
+    public async Task<IActionResult> UploadAttachment(IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { error = "No file provided." });
+        if (file.Length > 15_000_000) return BadRequest(new { error = "File too large (max 15MB)." });
+
+        var token = await LocalAttachmentStore.SaveAsync(file);
+        return Ok(new { token, fileName = file.FileName });
     }
 
     [HttpGet("{proposalId}/send-bulk/status")]
@@ -213,8 +242,10 @@ public class BulkSendRequest
     public int IntervalMinutes { get; set; } = 5;
     public FollowUpRequest? FollowUp1 { get; set; }
     public FollowUpRequest? FollowUp2 { get; set; }
+    public FollowUpRequest? FollowUp3 { get; set; }
     // Optional — when provided, used directly for the initial send instead of the proposal's generated artifact.
     public string? Subject { get; set; }
     public string? Body { get; set; }
     public string? Channel { get; set; } // "graph" (default) or "gmail_smtp"
+    public string? AttachmentToken { get; set; } // returned by /api/artifacts/upload-attachment
 }
