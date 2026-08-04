@@ -76,6 +76,28 @@ export default function QuickOutreachView() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusJobs, setStatusJobs] = useState<any[]>([]);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [enrichedContacts, setEnrichedContacts] = useState<Lead[]>([]);
+  const [enrichedSelected, setEnrichedSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const withEmail = results.filter(l => l.emails?.[0]);
+    if (withEmail.length === 0) return;
+    setEnrichedContacts(prev => {
+      const byId = new Map(prev.map(l => [l.id, l]));
+      for (const l of withEmail) byId.set(l.id, l);
+      return Array.from(byId.values());
+    });
+  }, [results]);
+
+  const removeEnrichedContact = (id: string) => {
+    setEnrichedContacts(prev => prev.filter(l => l.id !== id));
+    setEnrichedSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+  };
+
+  const toggleEnrichedSelect = (id: string) =>
+    setEnrichedSelected(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleEnrichedAll = () =>
+    setEnrichedSelected(enrichedSelected.size === enrichedContacts.length ? new Set() : new Set(enrichedContacts.map(l => l.id)));
 
   const STAGE_LABEL: Record<number, string> = { 0: "Initial", 1: "Follow-up 1", 2: "Follow-up 2", 3: "Follow-up 3" };
 
@@ -115,11 +137,11 @@ export default function QuickOutreachView() {
       setSendResult({ kind: "error", text: "Subject and body required." });
       return;
     }
-    const recipients = results
-      .filter(l => selected.has(l.id) && l.emails?.[0])
+    const recipients = enrichedContacts
+      .filter(l => enrichedSelected.has(l.id) && l.emails?.[0])
       .map(l => ({ email: l.emails[0], name: l.name }));
     if (recipients.length === 0) {
-      setSendResult({ kind: "error", text: "Select at least one contact with an enriched email." });
+      setSendResult({ kind: "error", text: "Select at least one contact in the Enriched Contacts table below." });
       return;
     }
     setSending(true); setSendResult(null);
@@ -559,7 +581,7 @@ export default function QuickOutreachView() {
       {compose && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div className="card" style={{ maxWidth: 640, margin: 0, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
-            <div className="card-title">Compose Email — {selected.size} recipient{selected.size !== 1 ? "s" : ""} selected</div>
+            <div className="card-title">Compose Email — {enrichedSelected.size} recipient{enrichedSelected.size !== 1 ? "s" : ""} selected</div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
               Sends to selected contacts with an enriched email. First line uses <code>{"{{first_name}}"}</code> — filled per contact automatically.
             </div>
@@ -644,7 +666,7 @@ export default function QuickOutreachView() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Quick Outreach</h1>
-          <div className="page-sub">Search free · Enrich uses Apollo credits · Select contacts, then Compose to email all at once</div>
+          <div className="page-sub">Search free · Enrich uses Apollo credits · Enriched contacts appear below for composing</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {selected.size > 0 && (
@@ -654,9 +676,6 @@ export default function QuickOutreachView() {
             </button>
           )}
           <button className="btn btn-ghost" onClick={openStatus}>📋 Status</button>
-          <button className="btn btn-primary" onClick={openCompose}>
-            ✉️ Compose{selected.size > 0 ? ` (${selected.size})` : ""}
-          </button>
         </div>
       </div>
 
@@ -794,6 +813,63 @@ export default function QuickOutreachView() {
           )}
         </>
       )}
+
+      {/* ── Section 2: Enriched Contacts ── */}
+      <div style={{ marginTop: 28 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Enriched Contacts</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>Contacts with an email revealed, across all searches. Select and send.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {enrichedContacts.length > 0 && (
+              <button className="btn btn-ghost btn-sm" onClick={toggleEnrichedAll}>
+                {enrichedSelected.size === enrichedContacts.length ? "Deselect All" : "Select All"}
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={openCompose} disabled={enrichedContacts.length === 0}>
+              ✉️ Send Email{enrichedSelected.size > 0 ? ` (${enrichedSelected.size})` : ""}
+            </button>
+          </div>
+        </div>
+
+        {enrichedContacts.length === 0 ? (
+          <div className="card" style={{ color: "var(--muted)", fontSize: 13 }}>
+            No enriched contacts yet — search above, then click Email/Enrich on a contact.
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}><input type="checkbox" checked={enrichedSelected.size === enrichedContacts.length} onChange={toggleEnrichedAll} /></th>
+                  <th>Name</th>
+                  <th>Title</th>
+                  <th>Company</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th style={{ width: 40 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {enrichedContacts.map(lead => (
+                  <tr key={lead.id} className={enrichedSelected.has(lead.id) ? "selected" : ""}>
+                    <td><input type="checkbox" checked={enrichedSelected.has(lead.id)} onChange={() => toggleEnrichedSelect(lead.id)} /></td>
+                    <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{lead.name || "—"}</td>
+                    <td style={{ color: "var(--muted)", fontSize: 12 }}>{lead.title || "—"}</td>
+                    <td style={{ fontSize: 12 }}>{lead.company || "—"}</td>
+                    <td style={{ fontSize: 12 }}><span className="chip chip-blue">{lead.emails?.[0]}</span></td>
+                    <td style={{ fontSize: 12 }}>{lead.phones?.[0] || "—"}</td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" title="Remove from list" onClick={() => removeEnrichedContact(lead.id)}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
