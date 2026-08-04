@@ -118,18 +118,46 @@ export default function QuickOutreachView() {
     loadStatus();
   };
 
+  const COMPOSE_STORAGE_KEY = "quick_outreach_compose_draft";
+
   const openCompose = () => {
     setSendResult(null);
     const greeting = "Hi {{first_name}},\n\n";
+    let saved: Partial<NonNullable<ComposeState>> | null = null;
+    try {
+      const raw = localStorage.getItem(COMPOSE_STORAGE_KEY);
+      if (raw) saved = JSON.parse(raw);
+    } catch {}
+
     setCompose({
-      subject: "",
-      body: greeting,
-      fu1Enabled: false, fu1Subject: "", fu1Body: greeting, fu1DelayHours: 6,
-      fu2Enabled: false, fu2Subject: "", fu2Body: greeting, fu2DelayHours: 12,
-      fu3Enabled: false, fu3Subject: "", fu3Body: greeting, fu3DelayHours: 24,
+      subject: saved?.subject ?? "",
+      body: saved?.body ?? greeting,
+      fu1Enabled: saved?.fu1Enabled ?? false,
+      fu1Subject: saved?.fu1Subject ?? "",
+      fu1Body: saved?.fu1Body ?? greeting,
+      fu1DelayHours: saved?.fu1DelayHours ?? 6,
+      fu2Enabled: saved?.fu2Enabled ?? false,
+      fu2Subject: saved?.fu2Subject ?? "",
+      fu2Body: saved?.fu2Body ?? greeting,
+      fu2DelayHours: saved?.fu2DelayHours ?? 12,
+      fu3Enabled: saved?.fu3Enabled ?? false,
+      fu3Subject: saved?.fu3Subject ?? "",
+      fu3Body: saved?.fu3Body ?? greeting,
+      fu3DelayHours: saved?.fu3DelayHours ?? 24,
       attachmentFile: null,
     });
   };
+
+  const saveComposeDraft = (c: NonNullable<ComposeState>) => {
+    try {
+      const { attachmentFile, ...rest } = c;
+      localStorage.setItem(COMPOSE_STORAGE_KEY, JSON.stringify(rest));
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (compose) saveComposeDraft(compose);
+  }, [compose]);
 
   const sendCompose = async () => {
     if (!compose) return;
