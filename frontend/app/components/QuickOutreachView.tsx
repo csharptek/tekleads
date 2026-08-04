@@ -211,6 +211,24 @@ export default function QuickOutreachView() {
     }
   };
 
+  const useExistingMatch = (m: DupMatch) => {
+    if (!enrichModal) return;
+    const { lead } = enrichModal;
+    setResults(prev => prev.map(l => l.id === lead.id
+      ? {
+          ...l,
+          id: m.id,
+          name:   l.name?.trim() ? l.name : m.name,
+          title:  l.title?.trim() ? l.title : m.title,
+          company: l.company?.trim() ? l.company : m.company,
+          emails: unionStr(l.emails, m.emails),
+          phones: unionStr(l.phones, m.phones),
+        }
+      : l));
+    setEnrichModal(null);
+    setBanner({ kind: "success", text: `Using existing data for ${m.name}.` });
+  };
+
   const confirmEnrich = () => {
     if (!enrichModal) return;
     const { lead, enrichType } = enrichModal;
@@ -401,12 +419,17 @@ export default function QuickOutreachView() {
               <strong>{enrichModal.lead.name}</strong> may already exist in Prospects:
             </div>
             {enrichModal.matches.map((m, i) => (
-              <div key={i} style={{ background: "var(--surface2)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13 }}>
-                <div style={{ fontWeight: 600 }}>{m.name}</div>
-                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>
-                  {[m.title, m.company].filter(Boolean).join(" @ ")}
-                  {m.emails?.[0] && <span style={{ marginLeft: 8 }}>{m.emails[0]}</span>}
+              <div key={i} style={{ background: "var(--surface2)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{m.name}</div>
+                  <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>
+                    {[m.title, m.company].filter(Boolean).join(" @ ")}
+                    {m.emails?.[0] && <span style={{ marginLeft: 8 }}>{m.emails[0]}</span>}
+                  </div>
                 </div>
+                <button className="btn btn-ghost btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => useExistingMatch(m)}>
+                  Use existing
+                </button>
               </div>
             ))}
             <div style={{ borderTop: "1px solid var(--border)", margin: "12px 0" }} />
