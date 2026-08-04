@@ -1,0 +1,625 @@
+"use client";
+import { useState, useEffect } from "react";
+import { api } from "../../lib/api";
+
+interface Lead {
+  id: string;
+  apolloId?: string;
+  name: string;
+  title: string;
+  company: string;
+  industry: string;
+  location: string;
+  emails: string[];
+  phones: string[];
+  linkedinUrl?: string;
+}
+
+interface SearchResult { leads: Lead[]; total: number; }
+
+type DupMatch = { id: string; name: string; title: string; company: string; emails: string[]; phones: string[] };
+type EnrichType = "email" | "phone" | "all";
+type EnrichModal = { lead: Lead; matches: DupMatch[]; enrichType: EnrichType } | null;
+
+const PER_PAGE = 25;
+
+function WaLink({ phone, message, name }: { phone: string; message: string; name: string }) {
+  const clean = phone.replace(/\D/g, "");
+  const text = message.replace("{name}", name).replace("{phone}", phone);
+  const url = `https://wa.me/${clean}?text=${encodeURIComponent(text)}`;
+  return (
+    <a href={url} target="_blank" rel="noreferrer"
+      className="chip chip-green" style={{ fontSize: 11, textDecoration: "none", cursor: "pointer" }}
+      title="Open WhatsApp">
+      💬 {phone}
+    </a>
+  );
+}
+
+type ComposeState = {
+  lead: Lead;
+  to: string;
+  subject: string;
+  body: string;
+  fu1Enabled: boolean;
+  fu1Subject: string;
+  fu1Body: string;
+  fu1DelayHours: number;
+  fu2Enabled: boolean;
+  fu2Subject: string;
+  fu2Body: string;
+  fu2DelayHours: number;
+} | null;
+
+export default function QuickOutreachView() {
+  const [form, setForm] = useState({ name: "", title: "", company: "", industry: "", location: "", domain: "", linkedinUrl: "" });
+  const [results, setResults] = useState<Lead[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [revealingId, setRevealingId] = useState<string | null>(null);
+  const [revealingEmailId, setRevealingEmailId] = useState<string | null>(null);
+  const [revealingPhoneId, setRevealingPhoneId] = useState<string | null>(null);
+  const [phonePending, setPhonePending] = useState<Set<string>>(new Set());
+  const [banner, setBanner] = useState<{ kind: "error"|"success"|"info"; text: string } | null>(null);
+  const [searched, setSearched] = useState(false);
+  const [enrichModal, setEnrichModal] = useState<EnrichModal>(null);
+  const [waTemplate, setWaTemplate] = useState("Hi {name}, I'd love to connect!");
+  const [compose, setCompose] = useState<ComposeState>(null);
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+
+  const openCompose = (lead: Lead) => {
+    if (!lead.emails?.[0]) { setBanner({ kind: "info", text: "Enrich this contact for an email first." }); return; }
+    setSendResult(null);
+    setCompose({
+      lead,
+      to: lead.emails[0],
+      subject: "",
+      body: "",
+      fu1Enabled: false, fu1Subject: "", fu1Body: "", fu1DelayHours: 6,
+      fu2Enabled: false, fu2Subject: "", fu2Body: "", fu2DelayHours: 12,
+    });
+  };
+
+  const sendCompose = async () => {
+    if (!compose) return;
+    if (!compose.subject.trim() || !compose.body.trim()) {
+      setSendResult({ kind: "error", text: "Subject and body required." });
+      return;
+    }
+    setSending(true); setSendResult(null);
+    try {
+      const proposalId = crypto.randomUUID();
+      await api.post(`/api/artifacts/${proposalId}/send-bulk`, {
+        recipients: [{ email: compose.to, name: compose.lead.name }],
+        intervalMinutes: 1,
+        subject: compose.subject,
+        body: compose.body,
+        followUp1: compose.fu1Enabled && compose.fu1Subject.trim() && compose.fu1Body.trim()
+          ? { subject: compose.fu1Subject, body: compose.fu1Body, delayHours: compose.fu1DelayHours || 6 }
+          : null,
+        followUp2: compose.fu2Enabled && compose.fu2Subject.trim() && compose.fu2Body.trim()
+          ? { subject: compose.fu2Subject, body: compose.fu2Body, delayHours: compose.fu2DelayHours || 12 }
+          : null,
+      });
+      setSendResult({ kind: "success", text: "Queued for sending." });
+    } catch (e: any) {
+      setSendResult({ kind: "error", text: e.message });
+    } finally { setSending(false); }
+  };
+
+  useEffect(() => {
+    api.get<{ values: Record<string, string> }>("/api/settings")
+      .then(d => { if (d.values?.whatsapp_message_template) setWaTemplate(d.values.whatsapp_message_template); })
+      .catch(() => {});
+  }, []);
+
+  const f = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  const unionStr = (a: string[] = [], b: string[] = []) => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const s of [...a, ...b]) {
+      const t = (s || "").trim();
+      if (!t) continue;
+      const k = t.toLowerCase();
+      if (!seen.has(k)) { seen.add(k); out.push(t); }
+    }
+    return out;
+  };
+
+  const doSearch = async (p: number) => {
+    setSearching(true); setBanner(null); setSelected(new Set());
+    try {
+      if (form.linkedinUrl.trim() && !form.name && !form.title && !form.company && !form.industry && !form.location && !form.domain) {
+        const res = await api.post<{ lead: Lead }>("/api/leads/search-by-linkedin", { linkedinUrl: form.linkedinUrl.trim() });
+        setResults(res.lead ? [res.lead] : []);
+        setTotal(res.lead ? 1 : 0);
+        setPage(1);
+        setSearched(true);
+        if (!res.lead) setBanner({ kind: "info", text: "No match found for that LinkedIn URL." });
+      } else {
+        const data = await api.post<SearchResult>("/api/leads/search", { ...form, page: p, perPage: PER_PAGE });
+        setResults(data.leads || []);
+        setTotal(data.total || 0);
+        setPage(p);
+        setSearched(true);
+        if ((data.leads || []).length === 0)
+          setBanner({ kind: "info", text: "No results. Try broader filters." });
+      }
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setSearching(false); }
+  };
+
+  const toggleSelect = (id: string) =>
+    setSelected(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () =>
+    setSelected(selected.size === results.length ? new Set() : new Set(results.map(l => l.id)));
+
+  const onSave = async () => {
+    const toSave = results.filter(l => selected.has(l.id));
+    if (!toSave.length) { setBanner({ kind: "info", text: "Select leads to save." }); return; }
+    setSaving(true); setBanner(null);
+    try {
+      const res = await api.post<{ saved: number }>("/api/leads/save", toSave);
+      setBanner({ kind: "success", text: `${res.saved} lead(s) saved to Prospects.` });
+      setSelected(new Set());
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setSaving(false); }
+  };
+
+  // Enrich — check duplicates first, if dup found show warning, else go straight
+  const startEnrich = async (lead: Lead, enrichType: EnrichType) => {
+    if (!lead.apolloId) { setBanner({ kind: "info", text: "No Apollo ID — cannot enrich." }); return; }
+    try {
+      const res = await api.post<{ matches: DupMatch[] }>("/api/leads/check-duplicate", {
+        apolloId: lead.apolloId,
+        name: lead.name,
+        company: lead.company,
+        linkedinUrl: lead.linkedinUrl,
+      });
+      if (res.matches && res.matches.length > 0) {
+        // Only show modal when there is a duplicate warning
+        setEnrichModal({ lead, matches: res.matches, enrichType });
+      } else {
+        // No duplicate — enrich directly, no confirmation needed
+        if (enrichType === "email") doEnrichEmail(lead);
+        else if (enrichType === "phone") doEnrichPhone(lead);
+        else doEnrich(lead);
+      }
+    } catch {
+      // On error just go straight
+      if (enrichType === "email") doEnrichEmail(lead);
+      else if (enrichType === "phone") doEnrichPhone(lead);
+      else doEnrich(lead);
+    }
+  };
+
+  const confirmEnrich = () => {
+    if (!enrichModal) return;
+    const { lead, enrichType } = enrichModal;
+    setEnrichModal(null);
+    if (enrichType === "email") doEnrichEmail(lead);
+    else if (enrichType === "phone") doEnrichPhone(lead);
+    else doEnrich(lead);
+  };
+
+  const doEnrich = async (lead: Lead) => {
+    if (!lead.apolloId) return;
+    setRevealingId(lead.id); setBanner(null);
+    try {
+      const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
+      const savedLead = saveRes.leads?.find(l => l.apolloId === lead.apolloId) || lead;
+      const realId = savedLead.id || lead.id;
+      const res = await api.post<{ emails: string[]; phones: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
+        `/api/leads/${realId}/reveal-phone`, {});
+
+      setResults(prev => prev.map(l => l.id === lead.id || l.id === realId
+        ? {
+            ...l,
+            id: realId,
+            name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
+            location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
+            emails:     unionStr(l.emails, res.emails),
+            phones:     unionStr(l.phones, res.phones),
+            linkedinUrl: l.linkedinUrl?.trim() ? l.linkedinUrl : res.linkedinUrl,
+          }
+        : l));
+
+      if (res.phoneWebhookPending) {
+        setPhonePending(p => new Set([...p, realId]));
+        setBanner({ kind: "info", text: `Phone request sent — polling…` });
+        const leadId = realId;
+        let elapsed = 0;
+        const INTERVAL = 10000;
+        const SWITCH_TO_POLL = 30000;
+        const MAX_TIME = 600000;
+        const timer = setInterval(async () => {
+          elapsed += INTERVAL;
+          try {
+            if (elapsed <= SWITCH_TO_POLL) {
+              const updated = await api.get<Lead>(`/api/leads/${leadId}`);
+              if (updated.phones && updated.phones.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+                setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, updated.phones) } : l));
+                setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
+              }
+            } else {
+              const polled: any = await api.post(`/api/leads/${leadId}/poll-phone`, {});
+              const phones: string[] = polled.phones?.length ? polled.phones : [];
+              if (phones.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+                setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, phones) } : l));
+                setBanner({ kind: "success", text: `Phone: ${phones[0]} — saved.` });
+              }
+              // notReady=true means Apollo still processing — keep polling
+            }
+          } catch { }
+          if (elapsed >= MAX_TIME) {
+            clearInterval(timer);
+            setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+          }
+        }, INTERVAL);
+      } else if (res.phones.length > 0) {
+        setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")} — auto-saved.` });
+      } else if (res.emails.length > 0) {
+        setBanner({ kind: "success", text: `Email: ${res.emails[0]} — saved.` });
+      }
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setRevealingId(null); }
+  };
+
+  const doEnrichEmail = async (lead: Lead) => {
+    if (!lead.apolloId) return;
+    setRevealingEmailId(lead.id); setBanner(null);
+    try {
+      const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
+      const savedLead = saveRes.leads?.find(l => l.apolloId === lead.apolloId) || lead;
+      const realId = savedLead.id || lead.id;
+      const res = await api.post<{ emails: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean }>(
+        `/api/leads/${realId}/reveal-email`, {});
+
+      setResults(prev => prev.map(l => l.id === lead.id || l.id === realId
+        ? {
+            ...l,
+            id: realId,
+            name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
+            location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
+            emails:     unionStr(l.emails, res.emails),
+            linkedinUrl: l.linkedinUrl?.trim() ? l.linkedinUrl : res.linkedinUrl,
+          }
+        : l));
+
+      if (res.emails.length > 0) {
+        setBanner({ kind: "success", text: `Email: ${res.emails[0]} — saved.` });
+      } else {
+        setBanner({ kind: "info", text: "No email found." });
+      }
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setRevealingEmailId(null); }
+  };
+
+  const doEnrichPhone = async (lead: Lead) => {
+    if (!lead.apolloId) return;
+    setRevealingPhoneId(lead.id); setBanner(null);
+    try {
+      const saveRes = await api.post<{ saved: number; leads: Lead[] }>("/api/leads/save", [lead]);
+      const savedLead = saveRes.leads?.find(l => l.apolloId === lead.apolloId) || lead;
+      const realId = savedLead.id || lead.id;
+      const res = await api.post<{ phones: string[]; fullName?: string; location?: string; linkedinUrl?: string; autoSaved: boolean; phoneWebhookPending?: boolean }>(
+        `/api/leads/${realId}/reveal-phone-only`, {});
+
+      setResults(prev => prev.map(l => l.id === lead.id || l.id === realId
+        ? {
+            ...l,
+            id: realId,
+            name:       l.name && l.name.trim() ? l.name : (res.fullName ?? l.name),
+            location:   l.location && l.location.trim() ? l.location : (res.location ?? l.location),
+            phones:     unionStr(l.phones, res.phones),
+            linkedinUrl: l.linkedinUrl?.trim() ? l.linkedinUrl : res.linkedinUrl,
+          }
+        : l));
+
+      if (res.phoneWebhookPending) {
+        setPhonePending(p => new Set([...p, realId]));
+        setBanner({ kind: "info", text: `Phone request sent — polling…` });
+        const leadId = realId;
+        let elapsed = 0;
+        const INTERVAL = 10000;
+        const SWITCH_TO_POLL = 30000;
+        const MAX_TIME = 600000;
+        const timer = setInterval(async () => {
+          elapsed += INTERVAL;
+          try {
+            if (elapsed <= SWITCH_TO_POLL) {
+              const updated = await api.get<Lead>(`/api/leads/${leadId}`);
+              if (updated.phones && updated.phones.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+                setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, updated.phones) } : l));
+                setBanner({ kind: "success", text: `Phone: ${updated.phones[0]} — saved.` });
+              }
+            } else {
+              const polled: any = await api.post(`/api/leads/${leadId}/poll-phone`, {});
+              const phones: string[] = polled.phones?.length ? polled.phones : [];
+              if (phones.length > 0) {
+                clearInterval(timer);
+                setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+                setResults(prev => prev.map(l => l.id === leadId ? { ...l, phones: unionStr(l.phones, phones) } : l));
+                setBanner({ kind: "success", text: `Phone: ${phones[0]} — saved.` });
+              }
+              // notReady=true means Apollo still processing — keep polling
+            }
+          } catch { }
+          if (elapsed >= MAX_TIME) {
+            clearInterval(timer);
+            setPhonePending(p => { const n = new Set(p); n.delete(leadId); return n; });
+          }
+        }, INTERVAL);
+      } else if (res.phones.length > 0) {
+        setBanner({ kind: "success", text: `Phone: ${res.phones.join(", ")} — saved.` });
+      } else {
+        setBanner({ kind: "info", text: "No phone found." });
+      }
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e.message });
+    } finally { setRevealingPhoneId(null); }
+  };
+
+  const totalPages = Math.ceil(total / PER_PAGE);
+  const allSelected = results.length > 0 && selected.size === results.length;
+
+  return (
+    <div className="page">
+
+      {/* ── Enrich Modal (duplicate warning only) ── */}
+      {enrichModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ maxWidth: 500, margin: 0, width: "100%" }}>
+            <div className="card-title">⚠ Duplicate Found</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
+              <strong>{enrichModal.lead.name}</strong> may already exist in Prospects:
+            </div>
+            {enrichModal.matches.map((m, i) => (
+              <div key={i} style={{ background: "var(--surface2)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13 }}>
+                <div style={{ fontWeight: 600 }}>{m.name}</div>
+                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>
+                  {[m.title, m.company].filter(Boolean).join(" @ ")}
+                  {m.emails?.[0] && <span style={{ marginLeft: 8 }}>{m.emails[0]}</span>}
+                </div>
+              </div>
+            ))}
+            <div style={{ borderTop: "1px solid var(--border)", margin: "12px 0" }} />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost" onClick={() => setEnrichModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmEnrich}>
+                {enrichModal.enrichType === "email" ? "Get Email" : enrichModal.enrichType === "phone" ? "Get Phone" : "Enrich anyway"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {compose && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div className="card" style={{ maxWidth: 640, margin: 0, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+            <div className="card-title">Compose Email — {compose.lead.name}</div>
+
+            <div className="field-label">To</div>
+            <input className="input" value={compose.to} onChange={e => setCompose(c => c && { ...c, to: e.target.value })} style={{ marginBottom: 10 }} />
+
+            <div className="field-label">Subject</div>
+            <input className="input" value={compose.subject} onChange={e => setCompose(c => c && { ...c, subject: e.target.value })} style={{ marginBottom: 10 }} />
+
+            <div className="field-label">Body</div>
+            <textarea className="input" rows={8} value={compose.body} onChange={e => setCompose(c => c && { ...c, body: e.target.value })} style={{ marginBottom: 14, fontFamily: "inherit" }} />
+
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 10 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
+                <input type="checkbox" checked={compose.fu1Enabled} onChange={e => setCompose(c => c && { ...c, fu1Enabled: e.target.checked })} />
+                Follow-up 1
+              </label>
+              {compose.fu1Enabled && (
+                <div style={{ marginTop: 8 }}>
+                  <input className="input" placeholder="Subject" value={compose.fu1Subject} onChange={e => setCompose(c => c && { ...c, fu1Subject: e.target.value })} style={{ marginBottom: 8 }} />
+                  <textarea className="input" rows={4} placeholder="Body" value={compose.fu1Body} onChange={e => setCompose(c => c && { ...c, fu1Body: e.target.value })} style={{ marginBottom: 8, fontFamily: "inherit" }} />
+                  <div className="field-label">Delay (hours after initial)</div>
+                  <input className="input" type="number" value={compose.fu1DelayHours} onChange={e => setCompose(c => c && { ...c, fu1DelayHours: Number(e.target.value) })} />
+                </div>
+              )}
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 14 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
+                <input type="checkbox" checked={compose.fu2Enabled} onChange={e => setCompose(c => c && { ...c, fu2Enabled: e.target.checked })} />
+                Follow-up 2
+              </label>
+              {compose.fu2Enabled && (
+                <div style={{ marginTop: 8 }}>
+                  <input className="input" placeholder="Subject" value={compose.fu2Subject} onChange={e => setCompose(c => c && { ...c, fu2Subject: e.target.value })} style={{ marginBottom: 8 }} />
+                  <textarea className="input" rows={4} placeholder="Body" value={compose.fu2Body} onChange={e => setCompose(c => c && { ...c, fu2Body: e.target.value })} style={{ marginBottom: 8, fontFamily: "inherit" }} />
+                  <div className="field-label">Delay (hours after initial)</div>
+                  <input className="input" type="number" value={compose.fu2DelayHours} onChange={e => setCompose(c => c && { ...c, fu2DelayHours: Number(e.target.value) })} />
+                </div>
+              )}
+            </div>
+
+            {sendResult && (
+              <div className={`banner banner-${sendResult.kind}`} style={{ marginBottom: 10 }}>
+                <span>{sendResult.text}</span>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost" onClick={() => setCompose(null)}>Close</button>
+              <button className="btn btn-primary" onClick={sendCompose} disabled={sending}>
+                {sending ? <span className="spinner" /> : null}
+                {sending ? "Sending..." : "Send"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Quick Outreach</h1>
+          <div className="page-sub">Search free · Enrich uses Apollo credits · Click a contact with email to compose</div>
+        </div>
+        {selected.size > 0 && (
+          <button className="btn btn-primary" onClick={onSave} disabled={saving}>
+            {saving ? <span className="spinner" /> : null}
+            {saving ? "Saving..." : `Save ${selected.size} Lead${selected.size > 1 ? "s" : ""}`}
+          </button>
+        )}
+      </div>
+
+      {banner && (
+        <div className={`banner banner-${banner.kind}`}>
+          <span>{banner.text}</span>
+          <button className="icon-btn" onClick={() => setBanner(null)}>✕</button>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-title">Search Filters</div>
+        <div className="card-sub">No credits consumed · Similar matches included · LinkedIn URL triggers direct lookup</div>
+        <div className="grid-3">
+          {([
+            ["name",     "Person Name",  "e.g. John Wright"],
+            ["title",    "Job Title",    "e.g. CTO"],
+            ["company",  "Company",      "e.g. Acme Corp"],
+            ["industry", "Industry",     "e.g. Software"],
+            ["location", "Location",     "e.g. London"],
+            ["domain",   "Website Domain", "e.g. acmecorp.com"],
+          ] as [keyof typeof form, string, string][]).map(([k, label, ph]) => (
+            <div key={k}>
+              <div className="field-label">{label}</div>
+              <input className="input" placeholder={ph} value={form[k]}
+                onChange={e => f(k, e.target.value)}
+                onKeyDown={e => e.key === "Enter" && doSearch(1)} />
+            </div>
+          ))}
+          <div>
+            <div className="field-label">LinkedIn URL <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>(direct lookup · uses 1 credit)</span></div>
+            <input className="input" placeholder="https://linkedin.com/in/username" value={form.linkedinUrl}
+              onChange={e => f("linkedinUrl", e.target.value)}
+              onKeyDown={e => e.key === "Enter" && doSearch(1)} />
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => doSearch(1)} disabled={searching}>
+              {searching ? <><span className="spinner" />&nbsp;Searching…</> : "Search Apollo"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {searched && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>
+              {total > 0 ? `${total.toLocaleString()} total · page ${page} of ${totalPages}` : "No results"}
+            </div>
+            {results.length > 0 && (
+              <button className="btn btn-ghost btn-sm" onClick={toggleAll}>
+                {allSelected ? "Deselect All" : "Select All"}
+              </button>
+            )}
+          </div>
+
+          {results.length > 0 && (
+            <>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 36 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
+                      <th>Name</th>
+                      <th>Title</th>
+                      <th>Company</th>
+                      <th>Location</th>
+                      <th>Email</th>
+                      <th>Phone (WhatsApp)</th>
+                      <th style={{ width: 100 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map(lead => (
+                      <tr key={lead.id} className={selected.has(lead.id) ? "selected" : ""}>
+                        <td><input type="checkbox" checked={selected.has(lead.id)} onChange={() => toggleSelect(lead.id)} /></td>
+                        <td>
+                          <div
+                            onClick={() => openCompose(lead)}
+                            style={{ fontWeight: 600, color: lead.emails?.[0] ? "var(--accent)" : "var(--text)", whiteSpace: "nowrap", cursor: lead.emails?.[0] ? "pointer" : "default" }}
+                            title={lead.emails?.[0] ? "Click to compose email" : "Enrich for email first"}>
+                            {lead.name || "—"}
+                          </div>
+                          {lead.linkedinUrl && (
+                            <a href={lead.linkedinUrl} target="_blank" rel="noreferrer" title="LinkedIn"
+                              style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none", marginTop: 2 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                              </svg>
+                            </a>
+                          )}
+                        </td>
+                        <td style={{ color: "var(--muted)", fontSize: 12 }}>{lead.title || "—"}</td>
+                        <td style={{ fontSize: 12 }}>{lead.company || "—"}</td>
+                        <td style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap" }}>{lead.location || "—"}</td>
+                        <td style={{ fontSize: 12 }}>
+                          {lead.emails?.[0]
+                            ? <span className="chip chip-blue" style={{ fontSize: 11 }}>{lead.emails[0]}</span>
+                            : <span style={{ color: "var(--dim)" }}>—</span>}
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          {lead.phones?.[0]
+                            ? <WaLink phone={lead.phones[0]} message={waTemplate} name={lead.name} />
+                            : phonePending.has(lead.id)
+                              ? <span className="chip chip-orange">pending…</span>
+                              : <span style={{ color: "var(--dim)" }}>—</span>}
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => startEnrich(lead, "email")}
+                              disabled={revealingEmailId === lead.id || revealingId === lead.id || revealingPhoneId === lead.id} title="Email only — uses Apollo credits">
+                              {revealingEmailId === lead.id ? <span className="spinner spinner-dark" /> : "Email"}
+                            </button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => startEnrich(lead, "phone")}
+                              disabled={revealingPhoneId === lead.id || revealingId === lead.id || revealingEmailId === lead.id} title="Phone only — uses Apollo credits">
+                              {revealingPhoneId === lead.id ? <span className="spinner spinner-dark" /> : "Phone"}
+                            </button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => startEnrich(lead, "all")}
+                              disabled={revealingId === lead.id || revealingEmailId === lead.id || revealingPhoneId === lead.id} title="Email + phone — uses Apollo credits">
+                              {revealingId === lead.id ? <span className="spinner spinner-dark" /> : "Enrich"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {totalPages > 1 && (
+                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 16 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => doSearch(page - 1)} disabled={page <= 1 || searching}>← Prev</button>
+                  <span style={{ fontSize: 13, color: "var(--muted)" }}>Page {page} / {totalPages}</span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => doSearch(page + 1)} disabled={page >= totalPages || searching}>Next →</button>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

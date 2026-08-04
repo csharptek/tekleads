@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import SettingsView from "./SettingsView";
 import LeadSearchView from "./LeadSearchView";
+import QuickOutreachView from "./QuickOutreachView";
 import SavedLeadsView from "./SavedLeadsView";
 import PortfolioView from "./PortfolioView";
 import ProposalView from "./ProposalView";
@@ -20,7 +21,7 @@ import ContactsWAInboxView from "./ContactsWAInboxView";
 import JobLeadsView from "./JobLeadsView";
 import JobContactsView from "./JobContactsView";
 
-type Page = "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads" | "job-contacts";
+type Page = "quick-outreach" | "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads" | "job-contacts";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
 type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; };
@@ -48,6 +49,7 @@ const CATEGORIES: NavCategory[] = [
   {
     label: "Contact Discovery",
     items: [
+      { id: "quick-outreach", label: "Quick Outreach", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg> },
       { id: "leads", label: "Contact Search", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> },
       { id: "prospects", label: "Saved Contacts", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
     ],
@@ -180,6 +182,7 @@ export default function Shell() {
       </aside>
 
       <div className="main">
+        {page === "quick-outreach"    && <QuickOutreachView />}
         {page === "leads"             && <LeadSearchView />}
         {page === "prospects"         && <SavedLeadsView />}
         {page === "portfolio"         && <PortfolioView />}

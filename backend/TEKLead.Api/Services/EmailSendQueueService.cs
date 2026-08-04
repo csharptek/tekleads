@@ -55,7 +55,9 @@ public class EmailSendQueueService
         List<(string email, string name)> recipients,
         int intervalMinutes,
         FollowUpSpec? fu1,
-        FollowUpSpec? fu2)
+        FollowUpSpec? fu2,
+        string? manualSubject = null,
+        string? manualBody = null)
     {
         await using var c = new NpgsqlConnection(_settings.ConnectionString);
         await c.OpenAsync();
@@ -69,11 +71,11 @@ public class EmailSendQueueService
         {
             var initialAt = now.AddMinutes(i * intervalMinutes);
 
-            // initial
+            // initial — manual subject/body when provided, else worker falls back to proposal artifact
             await c.ExecuteAsync(@"
-                INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage)
-                VALUES (@pid, @email, @name, @scheduledAt, 'pending', 0)",
-                new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = initialAt });
+                INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body)
+                VALUES (@pid, @email, @name, @scheduledAt, 'pending', 0, @subject, @body)",
+                new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = initialAt, subject = manualSubject, body = manualBody });
 
             // FU1
             if (fu1 != null && !string.IsNullOrWhiteSpace(fu1.Subject) && !string.IsNullOrWhiteSpace(fu1.Body))

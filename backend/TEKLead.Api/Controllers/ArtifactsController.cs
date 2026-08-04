@@ -127,7 +127,7 @@ public class ArtifactsController : ControllerBase
             };
         }
 
-        await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes, fu1, fu2);
+        await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes, fu1, fu2, req.Subject, req.Body);
         return Ok(new
         {
             queued = list.Count,
@@ -212,4 +212,7 @@ public class BulkSendRequest
     public int IntervalMinutes { get; set; } = 5;
     public FollowUpRequest? FollowUp1 { get; set; }
     public FollowUpRequest? FollowUp2 { get; set; }
+    // Optional — when provided, used directly for the initial send instead of the proposal's generated artifact.
+    public string? Subject { get; set; }
+    public string? Body { get; set; }
 }

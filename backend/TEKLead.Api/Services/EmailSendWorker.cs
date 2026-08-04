@@ -55,21 +55,30 @@ public class EmailSendWorker : BackgroundService
 
                 if (job.FollowUpStage == 0)
                 {
-                    // Initial — use artifact
-                    if (!artifactsCache.TryGetValue(job.ProposalId, out var artifacts))
+                    if (!string.IsNullOrWhiteSpace(job.Subject) && !string.IsNullOrWhiteSpace(job.Body))
                     {
-                        artifacts = await artifactsSvc.GetExisting(job.ProposalId);
-                        artifactsCache[job.ProposalId] = artifacts;
+                        // Manual compose (e.g. Quick Outreach) — subject/body stored directly on the job
+                        subject = job.Subject!;
+                        bodyText = job.Body!;
                     }
-
-                    if (!artifacts.Ok || string.IsNullOrWhiteSpace(artifacts.EmailSubject))
+                    else
                     {
-                        await queue.MarkFailed(job.Id, "Email artifact not generated for this proposal.");
-                        continue;
-                    }
+                        // Initial — use proposal's generated artifact
+                        if (!artifactsCache.TryGetValue(job.ProposalId, out var artifacts))
+                        {
+                            artifacts = await artifactsSvc.GetExisting(job.ProposalId);
+                            artifactsCache[job.ProposalId] = artifacts;
+                        }
 
-                    subject = artifacts.EmailSubject ?? "";
-                    bodyText = artifacts.EmailBody ?? "";
+                        if (!artifacts.Ok || string.IsNullOrWhiteSpace(artifacts.EmailSubject))
+                        {
+                            await queue.MarkFailed(job.Id, "Email artifact not generated for this proposal.");
+                            continue;
+                        }
+
+                        subject = artifacts.EmailSubject ?? "";
+                        bodyText = artifacts.EmailBody ?? "";
+                    }
                 }
                 else
                 {
