@@ -76,8 +76,19 @@ export default function QuickOutreachView() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusJobs, setStatusJobs] = useState<any[]>([]);
   const [statusLoading, setStatusLoading] = useState(false);
-  const [enrichedContacts, setEnrichedContacts] = useState<Lead[]>([]);
+  const ENRICHED_STORAGE_KEY = "quick_outreach_enriched_contacts";
+
+  const [enrichedContacts, setEnrichedContacts] = useState<Lead[]>(() => {
+    try {
+      const raw = localStorage.getItem(ENRICHED_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
   const [enrichedSelected, setEnrichedSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try { localStorage.setItem(ENRICHED_STORAGE_KEY, JSON.stringify(enrichedContacts)); } catch {}
+  }, [enrichedContacts]);
 
   useEffect(() => {
     const withEmail = results.filter(l => l.emails?.[0]);
