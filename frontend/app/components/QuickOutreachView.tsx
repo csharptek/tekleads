@@ -131,6 +131,17 @@ export default function QuickOutreachView() {
     return out;
   };
 
+  const PRIORITY_TITLE_TERMS = ["leasing", "growth expansion", "growth & expansion", "growth and expansion"];
+  const isPriorityLead = (l: Lead) => {
+    const t = (l.title || "").toLowerCase();
+    return PRIORITY_TITLE_TERMS.some(term => t.includes(term));
+  };
+  const sortPriority = (leads: Lead[]) => {
+    const priority = leads.filter(isPriorityLead);
+    const rest = leads.filter(l => !isPriorityLead(l));
+    return [...priority, ...rest];
+  };
+
   const doSearch = async (p: number) => {
     setSearching(true); setBanner(null); setSelected(new Set());
     try {
@@ -143,7 +154,7 @@ export default function QuickOutreachView() {
         if (!res.lead) setBanner({ kind: "info", text: "No match found for that LinkedIn URL." });
       } else {
         const data = await api.post<SearchResult>("/api/leads/search", { ...form, page: p, perPage: PER_PAGE });
-        setResults(data.leads || []);
+        setResults(sortPriority(data.leads || []));
         setTotal(data.total || 0);
         setPage(p);
         setSearched(true);
