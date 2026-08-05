@@ -26,7 +26,7 @@ public class GmailSmtpService
         {
             var s = await _settings.GetAll();
             var user = s.GetValueOrDefault(SettingKeys.GmailSmtpUser, "");
-            var appPassword = s.GetValueOrDefault(SettingKeys.GmailSmtpAppPassword, "");
+            var appPassword = s.GetValueOrDefault(SettingKeys.GmailSmtpAppPassword, "").Trim();
 
             if (string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(appPassword))
                 return (false, "Gmail SMTP credentials not configured in Settings.");

@@ -114,16 +114,18 @@ public class EmailSendWorker : BackgroundService
                         bodyText = bodyText[..match.Index] + $"Hi {firstName}," + bodyText[(match.Index + match.Length)..];
                 }
 
-                // Load signature once per cycle
+                // Load signature once per cycle — skipped for gmail_smtp since Quick Outreach templates
+                // already include their own sign-off (avoids duplicate signatures).
                 if (sig == null)
                 {
                     var settings = await settingsSvc.GetAll();
                     sig = settings.GetValueOrDefault("email_signature", "");
                 }
+                var effectiveSig = job.Channel == "gmail_smtp" ? null : sig;
 
                 var (ok, error) = job.Channel == "gmail_smtp"
-                    ? await gmailSmtp.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig, job.AttachmentPath)
-                    : await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(sig) ? null : sig, "manjika.tantia@csharptek.com");
+                    ? await gmailSmtp.SendEmail(job.ToEmail, job.ToName, subject, bodyText, effectiveSig, job.AttachmentPath)
+                    : await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(effectiveSig) ? null : effectiveSig, "manjika.tantia@csharptek.com");
 
                 if (ok)
                 {

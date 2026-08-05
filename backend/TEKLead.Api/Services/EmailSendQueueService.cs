@@ -44,6 +44,8 @@ public class EmailSendQueueService
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS body TEXT;
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'graph';
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_path TEXT;
+            ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_data BYTEA;
+            ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_filename TEXT;
             CREATE INDEX IF NOT EXISTS idx_esj_stage ON email_send_jobs(proposal_id, follow_up_stage);
         ");
     }
