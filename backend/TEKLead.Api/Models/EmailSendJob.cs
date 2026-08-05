@@ -17,5 +17,7 @@ public class EmailSendJob
     public string? Subject { get; set; }        // null for initial (uses artifact); set for FU1/FU2
     public string? Body { get; set; }           // null for initial (uses artifact); set for FU1/FU2
     public string Channel { get; set; } = "graph"; // graph | gmail_smtp
-    public string? AttachmentPath { get; set; } // local disk path, initial send only
+    public string? AttachmentPath { get; set; } // legacy local disk path, initial send only
+    public byte[]? AttachmentData { get; set; } // stored in DB, survives restarts
+    public string? AttachmentFilename { get; set; }
 }

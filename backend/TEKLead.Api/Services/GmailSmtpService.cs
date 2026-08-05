@@ -20,13 +20,14 @@ public class GmailSmtpService
         string subject,
         string body,
         string? signature = null,
-        string? attachmentPath = null)
+        byte[]? attachmentData = null,
+        string? attachmentFilename = null)
     {
         try
         {
             var s = await _settings.GetAll();
             var user = s.GetValueOrDefault(SettingKeys.GmailSmtpUser, "");
-            var appPassword = s.GetValueOrDefault(SettingKeys.GmailSmtpAppPassword, "");
+            var appPassword = s.GetValueOrDefault(SettingKeys.GmailSmtpAppPassword, "").Trim();
 
             if (string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(appPassword))
                 return (false, "Gmail SMTP credentials not configured in Settings.");
@@ -39,10 +40,9 @@ public class GmailSmtpService
             msg.Subject = subject;
 
             var builder = new BodyBuilder { TextBody = fullBody };
-            if (!string.IsNullOrWhiteSpace(attachmentPath) && File.Exists(attachmentPath))
+            if (attachmentData != null && attachmentData.Length > 0)
             {
-                var displayName = LocalAttachmentStore.GetFileName(attachmentPath);
-                builder.Attachments.Add(displayName, File.ReadAllBytes(attachmentPath));
+                builder.Attachments.Add(string.IsNullOrWhiteSpace(attachmentFilename) ? "attachment" : attachmentFilename, attachmentData);
             }
             msg.Body = builder.ToMessageBody();
 

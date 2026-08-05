@@ -44,6 +44,8 @@ public class EmailSendQueueService
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS body TEXT;
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'graph';
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_path TEXT;
+            ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_data BYTEA;
+            ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_filename TEXT;
             CREATE INDEX IF NOT EXISTS idx_esj_stage ON email_send_jobs(proposal_id, follow_up_stage);
         ");
     }
@@ -62,7 +64,8 @@ public class EmailSendQueueService
         string? manualSubject = null,
         string? manualBody = null,
         string channel = "graph",
-        string? attachmentPath = null)
+        byte[]? attachmentData = null,
+        string? attachmentFilename = null)
     {
         await using var c = new NpgsqlConnection(_settings.ConnectionString);
         await c.OpenAsync();
@@ -77,11 +80,11 @@ public class EmailSendQueueService
             var initialAt = now.AddMinutes(i * intervalMinutes);
 
             // initial — manual subject/body when provided, else worker falls back to proposal artifact
-            // attachment only applies to the initial send
+            // attachment (stored as bytes in DB — survives restarts) only applies to the initial send
             await c.ExecuteAsync(@"
-                INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body, channel, attachment_path)
-                VALUES (@pid, @email, @name, @scheduledAt, 'pending', 0, @subject, @body, @channel, @attachmentPath)",
-                new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = initialAt, subject = manualSubject, body = manualBody, channel, attachmentPath });
+                INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body, channel, attachment_data, attachment_filename)
+                VALUES (@pid, @email, @name, @scheduledAt, 'pending', 0, @subject, @body, @channel, @attachmentData, @attachmentFilename)",
+                new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = initialAt, subject = manualSubject, body = manualBody, channel, attachmentData, attachmentFilename });
 
             // FU1
             if (fu1 != null && !string.IsNullOrWhiteSpace(fu1.Subject) && !string.IsNullOrWhiteSpace(fu1.Body))
@@ -246,5 +249,7 @@ public class EmailSendQueueService
         Body = r.body,
         Channel = r.channel ?? "graph",
         AttachmentPath = r.attachment_path,
+        AttachmentData = r.attachment_data,
+        AttachmentFilename = r.attachment_filename,
     };
 }
