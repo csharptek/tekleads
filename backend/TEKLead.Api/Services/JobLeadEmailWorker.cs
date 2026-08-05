@@ -31,6 +31,7 @@ public class JobLeadEmailWorker : BackgroundService
         using var scope = _sp.CreateScope();
         var queue = scope.ServiceProvider.GetRequiredService<JobLeadEmailQueueService>();
         var graphEmail = scope.ServiceProvider.GetRequiredService<GraphEmailService>();
+        var gmailSmtp = scope.ServiceProvider.GetRequiredService<GmailSmtpService>();
         var jobs = scope.ServiceProvider.GetRequiredService<JobScraperService>();
         var settingsSvc = scope.ServiceProvider.GetRequiredService<SettingsService>();
 
@@ -44,8 +45,10 @@ public class JobLeadEmailWorker : BackgroundService
         {
             try
             {
-                var (ok, error) = await graphEmail.SendEmail(job.ToEmail, job.ToName, job.Subject, job.Body,
-                    string.IsNullOrWhiteSpace(sig) ? null : sig, string.IsNullOrWhiteSpace(job.FromEmail) ? null : job.FromEmail);
+                var (ok, error) = job.Channel == "gmail_smtp"
+                    ? await gmailSmtp.SendEmail(job.ToEmail, job.ToName, job.Subject, job.Body, string.IsNullOrWhiteSpace(sig) ? null : sig)
+                    : await graphEmail.SendEmail(job.ToEmail, job.ToName, job.Subject, job.Body,
+                        string.IsNullOrWhiteSpace(sig) ? null : sig, string.IsNullOrWhiteSpace(job.FromEmail) ? null : job.FromEmail);
 
                 if (ok)
                 {

@@ -17,6 +17,7 @@ public class JobLeadEmailJob
     public DateTime? SentAt { get; set; }
     public string Status { get; set; } = "pending";
     public string? Error { get; set; }
+    public string Channel { get; set; } = "graph";
 }
 
 public class JobLeadEmailQueueService
@@ -50,19 +51,20 @@ public class JobLeadEmailQueueService
             );
             CREATE INDEX IF NOT EXISTS idx_jlej_status ON job_lead_email_jobs(status, scheduled_at);
             CREATE INDEX IF NOT EXISTS idx_jlej_lead ON job_lead_email_jobs(job_lead_id);
+            ALTER TABLE job_lead_email_jobs ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'graph';
         ");
     }
 
     /// <summary>Enqueues one send job. Pass scheduledAt = null for "send now".</summary>
-    public async Task<Guid> Enqueue(Guid jobLeadId, int stage, string toEmail, string toName, string fromEmail, string subject, string body, DateTime? scheduledAt)
+    public async Task<Guid> Enqueue(Guid jobLeadId, int stage, string toEmail, string toName, string fromEmail, string subject, string body, DateTime? scheduledAt, string channel = "graph")
     {
         await using var c = new NpgsqlConnection(_settings.ConnectionString);
         await c.OpenAsync();
         await c.ExecuteAsync("DELETE FROM job_lead_email_jobs WHERE job_lead_id=@id AND stage=@stage AND status='pending'", new { id = jobLeadId, stage });
         return await c.QuerySingleAsync<Guid>(@"
-            INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status)
-            VALUES (@leadId, @stage, @toEmail, @toName, @fromEmail, @subject, @body, @scheduledAt, 'pending') RETURNING id",
-            new { leadId = jobLeadId, stage, toEmail, toName, fromEmail, subject, body, scheduledAt = scheduledAt ?? DateTime.UtcNow });
+            INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status, channel)
+            VALUES (@leadId, @stage, @toEmail, @toName, @fromEmail, @subject, @body, @scheduledAt, 'pending', @channel) RETURNING id",
+            new { leadId = jobLeadId, stage, toEmail, toName, fromEmail, subject, body, scheduledAt = scheduledAt ?? DateTime.UtcNow, channel });
     }
 
     /// <summary>
@@ -77,7 +79,8 @@ public class JobLeadEmailQueueService
         string initialBody,
         int intervalMinutes,
         FollowUpSpec? fu1,
-        FollowUpSpec? fu2)
+        FollowUpSpec? fu2,
+        string channel = "graph")
     {
         await using var c = new NpgsqlConnection(_settings.ConnectionString);
         await c.OpenAsync();
@@ -92,26 +95,26 @@ public class JobLeadEmailQueueService
             var initialAt = now.AddMinutes(i * intervalMinutes);
 
             await c.ExecuteAsync(@"
-                INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status)
-                VALUES (@leadId, 0, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending')",
-                new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = initialSubject, body = initialBody, scheduledAt = initialAt });
+                INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status, channel)
+                VALUES (@leadId, 0, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending', @channel)",
+                new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = initialSubject, body = initialBody, scheduledAt = initialAt, channel });
 
             if (fu1 != null && !string.IsNullOrWhiteSpace(fu1.Subject) && !string.IsNullOrWhiteSpace(fu1.Body))
             {
                 var fu1At = initialAt.AddHours(fu1.DelayHours);
                 await c.ExecuteAsync(@"
-                    INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status)
-                    VALUES (@leadId, 1, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending')",
-                    new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = fu1.Subject, body = fu1.Body, scheduledAt = fu1At });
+                    INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status, channel)
+                    VALUES (@leadId, 1, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending', @channel)",
+                    new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = fu1.Subject, body = fu1.Body, scheduledAt = fu1At, channel });
             }
 
             if (fu2 != null && !string.IsNullOrWhiteSpace(fu2.Subject) && !string.IsNullOrWhiteSpace(fu2.Body))
             {
                 var fu2At = initialAt.AddHours(fu2.DelayHours);
                 await c.ExecuteAsync(@"
-                    INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status)
-                    VALUES (@leadId, 2, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending')",
-                    new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = fu2.Subject, body = fu2.Body, scheduledAt = fu2At });
+                    INSERT INTO job_lead_email_jobs (job_lead_id, stage, to_email, to_name, from_email, subject, body, scheduled_at, status, channel)
+                    VALUES (@leadId, 2, @email, @name, @fromEmail, @subject, @body, @scheduledAt, 'pending', @channel)",
+                    new { leadId = jobLeadId, email = recipients[i].email, name = recipients[i].name, fromEmail, subject = fu2.Subject, body = fu2.Body, scheduledAt = fu2At, channel });
             }
         }
     }

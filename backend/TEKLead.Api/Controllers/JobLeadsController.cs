@@ -361,7 +361,8 @@ public class JobLeadsController : ControllerBase
             return BadRequest(new { error = "Generate the email before sending." });
         if (req.IntervalMinutes < 1) req.IntervalMinutes = 1;
 
-        var fromEmail = await ResolveSender(req.Sender);
+        var channel = string.IsNullOrWhiteSpace(req.Channel) ? "graph" : req.Channel;
+        var fromEmail = channel == "gmail_smtp" ? "" : await ResolveSender(req.Sender);
         var recipients = req.Recipients.Select(r => (r.Email, r.Name ?? "")).ToList();
 
         FollowUpSpec? fu1 = null, fu2 = null;
@@ -370,7 +371,7 @@ public class JobLeadsController : ControllerBase
         if (req.FollowUp2 != null && !string.IsNullOrWhiteSpace(req.FollowUp2.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp2.Body))
             fu2 = new FollowUpSpec { Subject = req.FollowUp2.Subject!, Body = req.FollowUp2.Body!, DelayHours = req.FollowUp2.DelayHours > 0 ? req.FollowUp2.DelayHours : 12 };
 
-        await _emailQueue.EnqueueBulk(id, recipients, fromEmail, lead.EmailSubject!, lead.EmailBody!, req.IntervalMinutes, fu1, fu2);
+        await _emailQueue.EnqueueBulk(id, recipients, fromEmail, lead.EmailSubject!, lead.EmailBody!, req.IntervalMinutes, fu1, fu2, channel);
         await _jobs.AddEvent(id, $"Queued outreach to {recipients.Count} contact(s)");
 
         return Ok(new { queued = recipients.Count, intervalMinutes = req.IntervalMinutes, followUp1 = fu1 != null, followUp2 = fu2 != null });
