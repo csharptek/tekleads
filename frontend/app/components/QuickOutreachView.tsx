@@ -185,15 +185,12 @@ export default function QuickOutreachView() {
     }
     setSending(true); setSendResult(null);
     try {
-      let attachmentBase64: string | undefined;
-      let attachmentFilename: string | undefined;
+      let attachmentToken: string | undefined;
       if (compose.attachmentFile) {
-        const buf = await compose.attachmentFile.arrayBuffer();
-        let binary = "";
-        const bytes = new Uint8Array(buf);
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        attachmentBase64 = btoa(binary);
-        attachmentFilename = compose.attachmentFile.name;
+        const fd = new FormData();
+        fd.append("file", compose.attachmentFile);
+        const up = await api.upload<{ token: string }>("/api/artifacts/upload-attachment", fd);
+        attachmentToken = up.token;
       }
 
       const proposalId = crypto.randomUUID();
@@ -203,8 +200,7 @@ export default function QuickOutreachView() {
         subject: compose.subject,
         body: compose.body,
         channel: "gmail_smtp",
-        attachmentBase64,
-        attachmentFilename,
+        attachmentToken,
         followUp1: compose.fu1Enabled && compose.fu1Subject.trim() && compose.fu1Body.trim()
           ? { subject: compose.fu1Subject, body: compose.fu1Body, delayHours: compose.fu1DelayHours || 6 }
           : null,

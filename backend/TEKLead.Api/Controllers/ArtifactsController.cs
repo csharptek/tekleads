@@ -136,17 +136,16 @@ public class ArtifactsController : ControllerBase
             };
         }
 
-        byte[]? attachmentData = null;
-        if (!string.IsNullOrWhiteSpace(req.AttachmentBase64))
+        string? attachmentPath = null;
+        if (!string.IsNullOrWhiteSpace(req.AttachmentToken))
         {
-            try { attachmentData = Convert.FromBase64String(req.AttachmentBase64); }
-            catch { return BadRequest(new { error = "Attachment data is not valid base64." }); }
-            if (attachmentData.Length > 15_000_000)
-                return BadRequest(new { error = "Attachment too large (max 15MB)." });
+            attachmentPath = LocalAttachmentStore.ResolvePath(req.AttachmentToken);
+            if (attachmentPath == null)
+                return BadRequest(new { error = "Attachment not found — please re-upload." });
         }
 
         await _queue.EnqueueBulk(proposalId, list, req.IntervalMinutes, fu1, fu2, fu3, req.Subject, req.Body,
-            string.IsNullOrWhiteSpace(req.Channel) ? "graph" : req.Channel, attachmentData, req.AttachmentFilename);
+            string.IsNullOrWhiteSpace(req.Channel) ? "graph" : req.Channel, attachmentPath);
         return Ok(new
         {
             queued = list.Count,
@@ -155,6 +154,17 @@ public class ArtifactsController : ControllerBase
             followUp2 = fu2 != null,
             followUp3 = fu3 != null,
         });
+    }
+
+    [HttpPost("upload-attachment")]
+    [RequestSizeLimit(15_000_000)]
+    public async Task<IActionResult> UploadAttachment(IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { error = "No file provided." });
+        if (file.Length > 15_000_000) return BadRequest(new { error = "File too large (max 15MB)." });
+
+        var token = await LocalAttachmentStore.SaveAsync(file);
+        return Ok(new { token, fileName = file.FileName });
     }
 
     [HttpGet("{proposalId}/send-bulk/status")]
@@ -192,7 +202,7 @@ public class ArtifactsController : ControllerBase
             error         = j.Error,
             followUpStage = j.FollowUpStage,
             subject       = j.Subject,
-            hasAttachment = j.AttachmentData != null && j.AttachmentData.Length > 0,
+            hasAttachment = !string.IsNullOrWhiteSpace(j.AttachmentPath),
         }));
     }
 
@@ -264,6 +274,5 @@ public class BulkSendRequest
     public string? Subject { get; set; }
     public string? Body { get; set; }
     public string? Channel { get; set; } // "graph" (default) or "gmail_smtp"
-    public string? AttachmentBase64 { get; set; } // raw base64 file bytes, sent inline
-    public string? AttachmentFilename { get; set; }
+    public string? AttachmentToken { get; set; } // returned by /api/artifacts/upload-attachment
 }
