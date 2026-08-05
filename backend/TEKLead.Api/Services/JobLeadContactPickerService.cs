@@ -41,6 +41,8 @@ public class JobLeadContactPickerService
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS idx_job_lead_contacts_lead ON job_lead_contacts(job_lead_id);
+            ALTER TABLE job_lead_contacts ADD COLUMN IF NOT EXISTS phone TEXT;
+            ALTER TABLE job_lead_contacts ADD COLUMN IF NOT EXISTS apollo_request_id BIGINT;
         ");
     }
 
@@ -49,12 +51,12 @@ public class JobLeadContactPickerService
         var cs = _settings.ConnectionString;
         await using var c = new NpgsqlConnection(cs);
         await c.OpenAsync();
-        var rows = await c.QueryAsync(@"SELECT id, job_lead_id, apollo_id, name, title, linkedin_url, email, source, selected, enriched, credits_used, created_at
+        var rows = await c.QueryAsync(@"SELECT id, job_lead_id, apollo_id, name, title, linkedin_url, email, phone, source, selected, enriched, credits_used, created_at
             FROM job_lead_contacts WHERE job_lead_id=@leadId ORDER BY source='poster' DESC, created_at ASC", new { leadId });
         return rows.Select(r => new JobLeadContact
         {
             Id = r.id, JobLeadId = r.job_lead_id, ApolloId = r.apollo_id, Name = r.name, Title = r.title,
-            LinkedinUrl = r.linkedin_url, Email = r.email, Source = r.source, Selected = r.selected,
+            LinkedinUrl = r.linkedin_url, Email = r.email, Phone = r.phone, Source = r.source, Selected = r.selected,
             Enriched = r.enriched, CreditsUsed = r.credits_used, CreatedAt = r.created_at,
         }).ToList();
     }
@@ -96,7 +98,7 @@ public class JobLeadContactPickerService
         p.Add("offset", (page - 1) * perPage);
 
         var rows = await c.QueryAsync<dynamic>($@"
-            SELECT jlc.id, jlc.job_lead_id, jlc.apollo_id, jlc.name, jlc.title, jlc.linkedin_url, jlc.email,
+            SELECT jlc.id, jlc.job_lead_id, jlc.apollo_id, jlc.name, jlc.title, jlc.linkedin_url, jlc.email, jlc.phone,
                    jlc.source, jlc.selected, jlc.enriched, jlc.credits_used, jlc.created_at,
                    jl.company AS lead_company, jl.job_title AS lead_job_title, jl.status AS lead_status
             FROM job_lead_contacts jlc
@@ -111,7 +113,7 @@ public class JobLeadContactPickerService
         var contacts = rows.Select(r => new JobLeadContactWithLead
         {
             Id = r.id, JobLeadId = r.job_lead_id, ApolloId = r.apollo_id, Name = r.name, Title = r.title,
-            LinkedinUrl = r.linkedin_url, Email = r.email, Source = r.source, Selected = r.selected,
+            LinkedinUrl = r.linkedin_url, Email = r.email, Phone = r.phone, Source = r.source, Selected = r.selected,
             Enriched = r.enriched, CreditsUsed = r.credits_used, CreatedAt = r.created_at,
             LeadCompany = r.lead_company ?? "", LeadJobTitle = r.lead_job_title ?? "", LeadStatus = r.lead_status ?? "",
         }).ToList();
@@ -291,5 +293,110 @@ public class JobLeadContactPickerService
         return anyEnriched
             ? (true, final != null ? "Enriched and saved." : "Enriched, but no email found on selected contacts.")
             : (false, "No emails found for selected contacts.");
+    }
+
+    // ── Per-contact Email / Phone / All enrich (mirrors Quick Outreach reveal-email / reveal-phone) ──
+
+    public async Task<(bool ok, string message, string? email)> EnrichContactEmail(Guid leadId, Guid contactId)
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var row = await c.QuerySingleOrDefaultAsync(
+            "SELECT id, apollo_id, name, title FROM job_lead_contacts WHERE id=@contactId AND job_lead_id=@leadId",
+            new { contactId, leadId });
+        if (row == null) return (false, "Contact not found.", null);
+        string? apolloId = row.apollo_id;
+        if (string.IsNullOrWhiteSpace(apolloId)) return (false, "No Apollo ID — cannot enrich.", null);
+
+        var enriched = await _apollo.EnrichEmailOnly(apolloId);
+        var email = enriched.Emails.FirstOrDefault();
+        await c.ExecuteAsync(@"
+            UPDATE job_lead_contacts SET email=COALESCE(NULLIF(@email,''), email),
+                name=COALESCE(NULLIF(@name,''), name), title=COALESCE(NULLIF(@title,''), title),
+                selected=TRUE, enriched = enriched OR @found, credits_used=credits_used+1
+            WHERE id=@contactId",
+            new { contactId, email = email ?? "", name = enriched.FullName, title = enriched.Title, found = !string.IsNullOrWhiteSpace(email) });
+
+        if (!string.IsNullOrWhiteSpace(email)) await SyncLeadContact(leadId);
+        return string.IsNullOrWhiteSpace(email) ? (true, "No email found.", null) : (true, "Email saved.", email);
+    }
+
+    public async Task<(bool ok, string message, string[] phones, bool pending)> EnrichContactPhone(Guid leadId, Guid contactId, string webhookUrl)
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var row = await c.QuerySingleOrDefaultAsync(
+            "SELECT id, apollo_id, name, title FROM job_lead_contacts WHERE id=@contactId AND job_lead_id=@leadId",
+            new { contactId, leadId });
+        if (row == null) return (false, "Contact not found.", Array.Empty<string>(), false);
+        string? apolloId = row.apollo_id;
+        if (string.IsNullOrWhiteSpace(apolloId)) return (false, "No Apollo ID — cannot enrich.", Array.Empty<string>(), false);
+
+        var result = await _apollo.EnrichPhoneOnly(apolloId, webhookUrl);
+        var phones = (result.Phones ?? new List<string>()).ToArray();
+
+        await c.ExecuteAsync(@"
+            UPDATE job_lead_contacts SET apollo_request_id=@reqId,
+                name=COALESCE(NULLIF(@name,''), name), title=COALESCE(NULLIF(@title,''), title),
+                selected=TRUE, credits_used=credits_used+1
+            WHERE id=@contactId",
+            new { contactId, reqId = result.RequestId, name = result.FullName, title = result.Title });
+
+        if (phones.Length > 0)
+        {
+            await c.ExecuteAsync("UPDATE job_lead_contacts SET phone=@phone, enriched=TRUE WHERE id=@contactId", new { contactId, phone = phones[0] });
+            await SyncLeadContact(leadId);
+            return (true, "Phone saved.", phones, false);
+        }
+
+        return (true, "Phone request sent — polling.", phones, true);
+    }
+
+    public async Task<(string[] phones, bool ready)> PollContactPhone(Guid leadId, Guid contactId)
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var row = await c.QuerySingleOrDefaultAsync(
+            "SELECT apollo_request_id FROM job_lead_contacts WHERE id=@contactId AND job_lead_id=@leadId", new { contactId, leadId });
+        if (row == null || row.apollo_request_id == null) return (Array.Empty<string>(), true);
+
+        var (phones, isReady) = await _apollo.PollWebhookResult((long)row.apollo_request_id);
+        if (phones.Length > 0)
+        {
+            await c.ExecuteAsync("UPDATE job_lead_contacts SET phone=@phone, enriched=TRUE WHERE id=@contactId", new { contactId, phone = phones[0] });
+            await SyncLeadContact(leadId);
+        }
+        return (phones, isReady);
+    }
+
+    // Pushes best-selected enriched contact's email+phone onto the parent job_leads row (same rule as EnrichSelected).
+    private async Task SyncLeadContact(Guid leadId)
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var final = (await c.QueryAsync(@"
+            SELECT id, apollo_id, name, title, linkedin_url, email, phone, source FROM job_lead_contacts
+            WHERE job_lead_id=@leadId AND selected=TRUE AND (email IS NOT NULL OR phone IS NOT NULL)
+            ORDER BY source='poster' DESC, created_at ASC LIMIT 1", new { leadId })).FirstOrDefault();
+        if (final == null) return;
+
+        await c.ExecuteAsync(@"
+            UPDATE job_leads SET
+                status = CASE WHEN status='scraped' THEN 'enriched' ELSE status END,
+                apollo_person_id=@apolloId, contact_name=@name, contact_title=@title,
+                contact_email=COALESCE(@email, contact_email), contact_phone=COALESCE(@phone, contact_phone),
+                contact_linkedin=@linkedin, enriched_at=NOW(), updated_at=NOW()
+            WHERE id=@leadId",
+            new { leadId, apolloId = (string)final.apollo_id, name = (string)final.name, title = (string)final.title,
+                  email = (string?)final.email, phone = (string?)final.phone, linkedin = (string?)final.linkedin_url });
+        await _jobs.AddEvent(leadId, $"Enriched contact: {(string)final.name}");
     }
 }

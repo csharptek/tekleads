@@ -9,6 +9,7 @@ public class JobLeadContact
     public string Title { get; set; } = "";
     public string? LinkedinUrl { get; set; }
     public string? Email { get; set; }
+    public string? Phone { get; set; }
     public string Source { get; set; } = ""; // "poster" | "priority"
     public bool Selected { get; set; }
     public bool Enriched { get; set; }

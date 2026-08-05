@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using TEKLead.Api.Services;
+using System.Linq;
 
 namespace TEKLead.Api.Controllers;
 
@@ -189,7 +190,9 @@ public class ArtifactsController : ControllerBase
     [HttpGet("quick-outreach/status")]
     public async Task<IActionResult> QuickOutreachStatus()
     {
-        var jobs = await _queue.GetByChannel("gmail_smtp");
+        var gmailJobs = await _queue.GetByChannel("gmail_smtp");
+        var graphJobs = await _queue.GetByChannel("graph");
+        var jobs = gmailJobs.Concat(graphJobs).OrderByDescending(j => j.ScheduledAt);
         return Ok(jobs.Select(j => new
         {
             id            = j.Id,
@@ -203,6 +206,7 @@ public class ArtifactsController : ControllerBase
             followUpStage = j.FollowUpStage,
             subject       = j.Subject,
             hasAttachment = !string.IsNullOrWhiteSpace(j.AttachmentPath),
+            channel       = j.Channel,
         }));
     }
 

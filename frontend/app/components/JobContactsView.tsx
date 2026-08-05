@@ -10,6 +10,7 @@ interface JobContact {
   title: string;
   linkedinUrl?: string | null;
   email?: string | null;
+  phone?: string | null;
   source: "poster" | "priority" | string;
   selected: boolean;
   enriched: boolean;
@@ -50,6 +51,18 @@ export default function JobContactsView() {
   const [sourceFilter, setSourceFilter] = useState<"all" | "poster" | "priority">("all");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [compose, setCompose] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("Hi {{first_name}},\n\n");
+  const [useGmail, setUseGmail] = useState(false);
+  const [interval_, setInterval_] = useState(2);
+  const [fu1Enabled, setFu1Enabled] = useState(false);
+  const [fu1Subject, setFu1Subject] = useState("");
+  const [fu1Body, setFu1Body] = useState("Hi {{first_name}},\n\n");
+  const [fu1Delay, setFu1Delay] = useState(24);
+  const [sending, setSending] = useState(false);
+  const [sendMsg, setSendMsg] = useState("");
 
   const load = useCallback(async (p: number) => {
     setLoading(true);
@@ -75,6 +88,26 @@ export default function JobContactsView() {
 
   useEffect(() => { load(1); }, [load]);
 
+  const toggleSelect = (id: string) => setSelected(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected(selected.size === contacts.filter(c => c.email).length ? new Set() : new Set(contacts.filter(c => c.email).map(c => c.id)));
+
+  const sendBulk = async () => {
+    const recipients = contacts.filter(c => selected.has(c.id) && c.email).map(c => ({ email: c.email as string, name: c.name }));
+    if (recipients.length === 0 || !subject.trim() || !body.trim()) return;
+    setSending(true); setSendMsg("");
+    try {
+      await api.post("/api/job-leads/contacts/send-bulk", {
+        recipients, subject, body, intervalMinutes: interval_,
+        channel: useGmail ? "gmail_smtp" : "graph",
+        followUp1: fu1Enabled && fu1Subject.trim() && fu1Body.trim() ? { subject: fu1Subject, body: fu1Body, delayHours: fu1Delay } : null,
+      });
+      setSendMsg(`Queued ${recipients.length} email(s).`);
+      setSelected(new Set());
+    } catch (e: any) {
+      setSendMsg(e.message || "Send failed.");
+    } finally { setSending(false); }
+  };
+
   const totalPages = Math.ceil(total / PER_PAGE) || 1;
 
   return (
@@ -84,7 +117,43 @@ export default function JobContactsView() {
           <h1 className="page-title">Job Contacts</h1>
           <div className="page-sub">{total.toLocaleString()} enriched contact{total !== 1 ? "s" : ""} across job leads</div>
         </div>
+        <button className="btn btn-primary" disabled={selected.size === 0} onClick={() => setCompose(c => !c)}>
+          ✉️ Send Email ({selected.size})
+        </button>
       </div>
+
+      {compose && (
+        <div className="card" style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="field-label">Subject</div>
+          <input className="input" value={subject} onChange={e => setSubject(e.target.value)} />
+          <div className="field-label">Body</div>
+          <textarea className="input" rows={6} value={body} onChange={e => setBody(e.target.value)} style={{ resize: "vertical", fontFamily: "inherit" }} />
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+              <input type="checkbox" checked={useGmail} onChange={e => setUseGmail(e.target.checked)} /> Use Gmail
+            </label>
+            <label style={{ fontSize: 12, color: "var(--muted)" }}>Interval (min):</label>
+            <input type="number" min={1} className="input" style={{ width: 60 }} value={interval_} onChange={e => setInterval_(Number(e.target.value))} />
+          </div>
+          <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+            <input type="checkbox" checked={fu1Enabled} onChange={e => setFu1Enabled(e.target.checked)} /> Enable Follow-up 1
+          </label>
+          {fu1Enabled && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 20 }}>
+              <input className="input" placeholder="Follow-up subject" value={fu1Subject} onChange={e => setFu1Subject(e.target.value)} />
+              <textarea className="input" rows={4} placeholder="Follow-up body" value={fu1Body} onChange={e => setFu1Body(e.target.value)} style={{ resize: "vertical", fontFamily: "inherit" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <label style={{ fontSize: 12, color: "var(--muted)" }}>Delay (hrs):</label>
+                <input type="number" min={1} className="input" style={{ width: 60 }} value={fu1Delay} onChange={e => setFu1Delay(Number(e.target.value))} />
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button className="btn btn-primary btn-sm" disabled={sending} onClick={sendBulk}>{sending ? "Sending…" : "Send"}</button>
+            {sendMsg && <span style={{ fontSize: 12, color: "var(--muted)" }}>{sendMsg}</span>}
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
         <input className="input" placeholder="Search name, email, company…" value={search}
@@ -116,13 +185,15 @@ export default function JobContactsView() {
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 32 }}><input type="checkbox" checked={selected.size > 0 && selected.size === contacts.filter(c => c.email).length} onChange={toggleAll} /></th>
                   <th>Name</th><th>Title</th><th>Company</th><th>Source</th>
-                  <th>Email</th><th>Lead Status</th><th>Enriched</th>
+                  <th>Email</th><th>Phone</th><th>Lead Status</th><th>Enriched</th>
                 </tr>
               </thead>
               <tbody>
                 {contacts.map(c => (
                   <tr key={c.id}>
+                    <td><input type="checkbox" disabled={!c.email} checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} /></td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{c.name || "—"}</div>
                       {c.linkedinUrl && (
@@ -150,6 +221,7 @@ export default function JobContactsView() {
                           </span>
                         : <span style={{ color: "var(--dim)" }}>—</span>}
                     </td>
+                    <td style={{ fontSize: 12 }}>{c.phone || <span style={{ color: "var(--dim)" }}>—</span>}</td>
                     <td style={{ fontSize: 11 }}>
                       <span className="chip" style={{ fontSize: 10 }}>{c.leadStatus}</span>
                     </td>

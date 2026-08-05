@@ -121,9 +121,10 @@ public class EmailSendWorker : BackgroundService
                     var settings = await settingsSvc.GetAll();
                     sig = settings.GetValueOrDefault("email_signature", "");
                 }
-                var effectiveSig = job.Channel == "gmail_smtp" ? null : sig;
+                var isGmail = job.Channel == "gmail_smtp" || job.Channel == "job_contacts_gmail";
+                var effectiveSig = isGmail ? null : sig;
 
-                var (ok, error) = job.Channel == "gmail_smtp"
+                var (ok, error) = isGmail
                     ? await gmailSmtp.SendEmail(job.ToEmail, job.ToName, subject, bodyText, effectiveSig, job.AttachmentPath)
                     : await graphEmail.SendEmail(job.ToEmail, job.ToName, subject, bodyText, string.IsNullOrWhiteSpace(effectiveSig) ? null : effectiveSig, "manjika.tantia@csharptek.com");
 

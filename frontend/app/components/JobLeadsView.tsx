@@ -21,6 +21,7 @@ interface JobLeadContact {
   title: string;
   linkedinUrl?: string | null;
   email?: string | null;
+  phone?: string | null;
   source: "poster" | "priority" | string;
   selected: boolean;
   enriched: boolean;
@@ -195,6 +196,10 @@ export default function JobLeadsView() {
   const [candidates, setCandidates] = useState<JobLeadContact[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [pickedContactIds, setPickedContactIds] = useState<Set<string>>(new Set());
+  const [contactEmailBusy, setContactEmailBusy] = useState<Set<string>>(new Set());
+  const [contactPhoneBusy, setContactPhoneBusy] = useState<Set<string>>(new Set());
+  const [contactAllBusy, setContactAllBusy] = useState<Set<string>>(new Set());
+  const [contactPhonePending, setContactPhonePending] = useState<Set<string>>(new Set());
 
   const [scrapeOpen, setScrapeOpen] = useState(false);
   const [scraping, setScraping] = useState(false);
@@ -443,6 +448,77 @@ export default function JobLeadsView() {
     await refreshLead(id);
   });
 
+  const setBusySet = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string, on: boolean) =>
+    setter(prev => { const n = new Set(prev); on ? n.add(id) : n.delete(id); return n; });
+
+  const enrichContactEmail = async (leadId: string, contactId: string) => {
+    setBusySet(setContactEmailBusy, contactId, true);
+    setActionError("");
+    try {
+      const res = await api.post<{ contacts: JobLeadContact[] }>(`/api/job-leads/${leadId}/contacts/${contactId}/enrich-email`, {});
+      setCandidates(res.contacts);
+      await refreshLead(leadId);
+    } catch (e: any) {
+      setActionError(e.message || "Enrich email failed.");
+    } finally {
+      setBusySet(setContactEmailBusy, contactId, false);
+    }
+  };
+
+  const pollContactPhone = (leadId: string, contactId: string) => {
+    let elapsed = 0;
+    const INTERVAL = 10000;
+    const MAX_TIME = 600000;
+    const timer = setInterval(async () => {
+      elapsed += INTERVAL;
+      try {
+        const polled = await api.post<{ phones: string[]; notReady: boolean; contacts: JobLeadContact[] }>(
+          `/api/job-leads/${leadId}/contacts/${contactId}/poll-phone`, {});
+        if (polled.phones?.length > 0) {
+          clearInterval(timer);
+          setBusySet(setContactPhonePending, contactId, false);
+          setCandidates(polled.contacts);
+          await refreshLead(leadId);
+        }
+      } catch { }
+      if (elapsed >= MAX_TIME) {
+        clearInterval(timer);
+        setBusySet(setContactPhonePending, contactId, false);
+      }
+    }, INTERVAL);
+  };
+
+  const enrichContactPhone = async (leadId: string, contactId: string) => {
+    setBusySet(setContactPhoneBusy, contactId, true);
+    setActionError("");
+    try {
+      const res = await api.post<{ phones: string[]; pending: boolean; contacts: JobLeadContact[] }>(
+        `/api/job-leads/${leadId}/contacts/${contactId}/enrich-phone`, {});
+      setCandidates(res.contacts);
+      if (res.pending) {
+        setBusySet(setContactPhonePending, contactId, true);
+        pollContactPhone(leadId, contactId);
+      } else {
+        await refreshLead(leadId);
+      }
+    } catch (e: any) {
+      setActionError(e.message || "Enrich phone failed.");
+    } finally {
+      setBusySet(setContactPhoneBusy, contactId, false);
+    }
+  };
+
+  const enrichContactAll = async (leadId: string, contactId: string) => {
+    setBusySet(setContactAllBusy, contactId, true);
+    setActionError("");
+    try {
+      await enrichContactEmail(leadId, contactId);
+      await enrichContactPhone(leadId, contactId);
+    } finally {
+      setBusySet(setContactAllBusy, contactId, false);
+    }
+  };
+
   const toggleCandidate = (id: string) => {
     setPickedContactIds(prev => {
       const next = new Set(prev);
@@ -531,8 +607,8 @@ export default function JobLeadsView() {
     if (drawerId === id) setDrawerLead(d => d ? { ...d, emailSubject: subject, emailBody: body } : d);
   });
 
-  const sendEmail = (id: string, sender: string, scheduledAt?: string) => withBusy(id, async () => {
-    await api.post(`/api/job-leads/${id}/send`, { sender, scheduledAt: scheduledAt || null });
+  const sendEmail = (id: string, sender: string, scheduledAt?: string, channel?: string) => withBusy(id, async () => {
+    await api.post(`/api/job-leads/${id}/send`, { sender, scheduledAt: scheduledAt || null, channel: channel || "graph" });
     await refreshLead(id);
   });
 
@@ -1007,7 +1083,23 @@ export default function JobLeadsView() {
                                 </div>
                                 <div style={{ fontSize: 12, color: "var(--muted)" }}>{c.title}</div>
                                 {c.email && <div style={{ fontSize: 12, marginTop: 2 }}>{c.email}</div>}
+                                {c.phone && <div style={{ fontSize: 12, marginTop: 2 }}>📞 {c.phone}</div>}
+                                {contactPhonePending.has(c.id) && <div style={{ fontSize: 11, color: "var(--muted)" }}>phone pending…</div>}
                                 {c.linkedinUrl && <a href={c.linkedinUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 11, color: "var(--accent)" }}>LinkedIn ↗</a>}
+                                <div style={{ display: "flex", gap: 4, marginTop: 6 }} onClick={e => e.stopPropagation()}>
+                                  <button className="btn btn-ghost btn-sm" disabled={contactEmailBusy.has(c.id) || contactAllBusy.has(c.id)}
+                                    onClick={() => enrichContactEmail(drawerLead.id, c.id)} title="Email only — uses Apollo credits">
+                                    {contactEmailBusy.has(c.id) ? "…" : "Email"}
+                                  </button>
+                                  <button className="btn btn-ghost btn-sm" disabled={contactPhoneBusy.has(c.id) || contactAllBusy.has(c.id) || contactPhonePending.has(c.id)}
+                                    onClick={() => enrichContactPhone(drawerLead.id, c.id)} title="Phone only — uses Apollo credits">
+                                    {contactPhoneBusy.has(c.id) || contactPhonePending.has(c.id) ? "…" : "Phone"}
+                                  </button>
+                                  <button className="btn btn-ghost btn-sm" disabled={contactAllBusy.has(c.id)}
+                                    onClick={() => enrichContactAll(drawerLead.id, c.id)} title="Email + phone — uses Apollo credits">
+                                    {contactAllBusy.has(c.id) ? "…" : "Enrich"}
+                                  </button>
+                                </div>
                               </div>
                             </label>
                           ))}
@@ -1040,7 +1132,7 @@ export default function JobLeadsView() {
                         busy={busy.has(drawerLead.id)}
                         onGenerate={() => generateEmailOne(drawerLead.id)}
                         onSave={(subject, body) => saveEmailEdits(drawerLead.id, subject, body)}
-                        onSend={(sender, scheduledAt) => sendEmail(drawerLead.id, sender, scheduledAt)}
+                        onSend={(sender, scheduledAt, channel) => sendEmail(drawerLead.id, sender, scheduledAt, channel)}
                         onPromptClick={() => openPromptModal("email")}
                       />
                       <FollowUpPanel
@@ -1062,11 +1154,6 @@ export default function JobLeadsView() {
                         busy={busy.has(drawerLead.id)}
                         onGenerate={() => generateFollowUp(drawerLead.id, 2)}
                         onPromptClick={() => openPromptModal("followUp2")}
-                      />
-                      <OutreachQueuePanel
-                        leadId={drawerLead.id}
-                        emailReady={!!drawerLead.emailSubject && !!drawerLead.emailBody}
-                        candidates={candidates}
                       />
                     </div>
                   )}
@@ -1164,12 +1251,10 @@ function EmailPanel({
 }: {
   subject?: string | null; body?: string | null; sender?: string | null; provider: Provider; setProvider: (p: Provider) => void;
   canGenerate: boolean; busy: boolean; onGenerate: () => void; onSave: (subject: string, body: string) => void;
-  onSend: (sender: string, scheduledAt?: string) => void; onPromptClick: () => void;
+  onSend: (sender: string, scheduledAt?: string, channel?: string) => void; onPromptClick: () => void;
 }) {
   const [localSubject, setLocalSubject] = useState(subject || "");
   const [localBody, setLocalBody] = useState(body || "");
-  const [localSender, setLocalSender] = useState(sender || "all");
-  const [scheduleAt, setScheduleAt] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onEdit = (s: string, b: string) => {
@@ -1206,19 +1291,8 @@ function EmailPanel({
         <div className="field-label">Body</div>
         <textarea className="input" rows={10} value={localBody} onChange={e => onEdit(localSubject, e.target.value)} style={{ resize: "vertical", fontFamily: "inherit" }} />
       </div>
-      <div>
-        <div className="field-label">Send From</div>
-        <select className="input" value={localSender} onChange={e => setLocalSender(e.target.value)}>
-          <option value="all">All senders — round robin</option>
-        </select>
-      </div>
-      <div>
-        <div className="field-label">Schedule for (optional)</div>
-        <input type="datetime-local" className="input" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} />
-      </div>
+      <div style={{ fontSize: 12, color: "var(--muted)" }}>Send this from the Job Contacts page.</div>
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onSend(localSender)}>{busy ? "Sending…" : "Send Now"}</button>
-        <button className="btn btn-ghost btn-sm" disabled={busy || !scheduleAt} onClick={() => onSend(localSender, new Date(scheduleAt).toISOString())}>Schedule</button>
         <PromptBtn onClick={onPromptClick} />
         <button className="icon-btn" style={{ marginLeft: "auto" }} disabled={busy} onClick={onGenerate}>Regenerate</button>
       </div>
@@ -1274,6 +1348,7 @@ function OutreachQueuePanel({ leadId, emailReady, candidates }: { leadId: string
   const [fu1Delay, setFu1Delay] = useState(24);
   const [fu2Delay, setFu2Delay] = useState(48);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [useGmail, setUseGmail] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const emailCandidates = candidates.filter(c => c.email);
@@ -1312,6 +1387,7 @@ function OutreachQueuePanel({ leadId, emailReady, candidates }: { leadId: string
     if (recipients.length === 0) return;
     await api.post(`/api/job-leads/${leadId}/send-bulk`, {
       recipients, sender: "all", intervalMinutes: interval_,
+      channel: useGmail ? "gmail_smtp" : "graph",
       followUp1: { delayHours: fu1Delay }, followUp2: { delayHours: fu2Delay },
     });
     setQueued(true);
@@ -1398,6 +1474,10 @@ function OutreachQueuePanel({ leadId, emailReady, candidates }: { leadId: string
             <label style={{ fontSize: 12, color: "var(--muted)" }}>FU2 (hrs):</label>
             <input type="number" min={1} value={fu2Delay} onChange={e => setFu2Delay(Number(e.target.value))}
               style={{ width: 50, fontSize: 12, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)" }} />
+            <label style={{ fontSize: 12, color: "var(--muted)", display: "flex", alignItems: "center", gap: 4 }}>
+              <input type="checkbox" checked={useGmail} onChange={e => setUseGmail(e.target.checked)} />
+              Use Gmail
+            </label>
           </div>
         )}
       </div>

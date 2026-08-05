@@ -18,6 +18,7 @@ public class JobLeadSendEmailRequest
 {
     public string Sender { get; set; } = "all"; // specific email, or "all" for round-robin
     public DateTime? ScheduledAt { get; set; } // null = send now
+    public string? Channel { get; set; } // "graph" (default) or "gmail_smtp"
 }
 
 public class SaveEmailRequest
@@ -49,10 +50,22 @@ public class JobLeadBulkSendEmailRequest
     public List<JobLeadBulkSendRecipient> Recipients { get; set; } = new();
     public string Sender { get; set; } = "all";
     public int IntervalMinutes { get; set; } = 5;
+    public string? Channel { get; set; } // "graph" (default) or "gmail_smtp"
     public FollowUpSpecRequest? FollowUp1 { get; set; }
     public FollowUpSpecRequest? FollowUp2 { get; set; }
 }
 public class JobLeadCancelFollowUpsRequest { public string? ContactEmail { get; set; } public int? Stage { get; set; } }
+
+public class JobContactsSendRequest
+{
+    public List<JobLeadBulkSendRecipient> Recipients { get; set; } = new();
+    public string Subject { get; set; } = "";
+    public string Body { get; set; } = "";
+    public string Channel { get; set; } = "graph";
+    public int IntervalMinutes { get; set; } = 5;
+    public FollowUpSpecRequest? FollowUp1 { get; set; }
+    public FollowUpSpecRequest? FollowUp2 { get; set; }
+}
 
 public class JobLeadBulkSendRequest
 {
@@ -69,18 +82,20 @@ public class JobLeadsController : ControllerBase
     private readonly JobLeadContactPickerService _picker;
     private readonly JobLeadArtifactsService _artifacts;
     private readonly JobLeadEmailQueueService _emailQueue;
+    private readonly EmailSendQueueService _contactsQueue;
     private readonly SettingsService _settings;
     private readonly ILogger<JobLeadsController> _log;
 
     public JobLeadsController(
         JobScraperService jobs, JobLeadContactService contacts, JobLeadContactPickerService picker, JobLeadArtifactsService artifacts,
-        JobLeadEmailQueueService emailQueue, SettingsService settings, ILogger<JobLeadsController> log)
+        JobLeadEmailQueueService emailQueue, EmailSendQueueService contactsQueue, SettingsService settings, ILogger<JobLeadsController> log)
     {
         _jobs = jobs;
         _contacts = contacts;
         _picker = picker;
         _artifacts = artifacts;
         _emailQueue = emailQueue;
+        _contactsQueue = contactsQueue;
         _settings = settings;
         _log = log;
     }
@@ -202,12 +217,78 @@ public class JobLeadsController : ControllerBase
         return Ok(new { contacts, total });
     }
 
+    [HttpPost("contacts/send-bulk")]
+    public async Task<IActionResult> ContactsSendBulk([FromBody] JobContactsSendRequest req)
+    {
+        if (req.Recipients == null || req.Recipients.Count == 0) return BadRequest(new { error = "No recipients." });
+        if (string.IsNullOrWhiteSpace(req.Subject) || string.IsNullOrWhiteSpace(req.Body)) return BadRequest(new { error = "Subject and body required." });
+        if (req.IntervalMinutes < 1) req.IntervalMinutes = 1;
+
+        var channel = req.Channel == "gmail_smtp" ? "job_contacts_gmail" : "job_contacts_graph";
+        var list = req.Recipients.Select(r => (r.Email, r.Name ?? "")).ToList();
+        var batchId = Guid.NewGuid();
+
+        FollowUpSpec? fu1 = null, fu2 = null;
+        if (req.FollowUp1 != null && !string.IsNullOrWhiteSpace(req.FollowUp1.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp1.Body))
+            fu1 = new FollowUpSpec { Subject = req.FollowUp1.Subject!, Body = req.FollowUp1.Body!, DelayHours = req.FollowUp1.DelayHours > 0 ? req.FollowUp1.DelayHours : 6 };
+        if (req.FollowUp2 != null && !string.IsNullOrWhiteSpace(req.FollowUp2.Subject) && !string.IsNullOrWhiteSpace(req.FollowUp2.Body))
+            fu2 = new FollowUpSpec { Subject = req.FollowUp2.Subject!, Body = req.FollowUp2.Body!, DelayHours = req.FollowUp2.DelayHours > 0 ? req.FollowUp2.DelayHours : 12 };
+
+        await _contactsQueue.EnqueueBulk(batchId, list, req.IntervalMinutes, fu1, fu2, null, req.Subject, req.Body, channel, null);
+        return Ok(new { queued = list.Count, batchId });
+    }
+
+    [HttpGet("contacts/send-bulk/status")]
+    public async Task<IActionResult> ContactsSendStatus()
+    {
+        var graphJobs = await _contactsQueue.GetByChannel("job_contacts_graph");
+        var gmailJobs = await _contactsQueue.GetByChannel("job_contacts_gmail");
+        var all = graphJobs.Concat(gmailJobs).OrderByDescending(j => j.ScheduledAt);
+        return Ok(all.Select(j => new
+        {
+            id = j.Id, toEmail = j.ToEmail, toName = j.ToName, scheduledAt = j.ScheduledAt,
+            sentAt = j.SentAt, status = j.Status, error = j.Error, followUpStage = j.FollowUpStage,
+            subject = j.Subject, channel = j.Channel,
+        }));
+    }
+
     [HttpPost("{id}/contacts/enrich")]
     public async Task<IActionResult> EnrichContacts(Guid id, [FromBody] ContactIdsRequest req)
     {
         var (ok, message) = await _picker.EnrichSelected(id, req.ContactIds);
         var list = await _picker.GetForLead(id);
         return ok ? Ok(new { ok, message, contacts = list }) : BadRequest(new { ok, error = message, contacts = list });
+    }
+
+    [HttpPost("{id}/contacts/{contactId}/enrich-email")]
+    public async Task<IActionResult> EnrichContactEmail(Guid id, Guid contactId)
+    {
+        var (ok, message, email) = await _picker.EnrichContactEmail(id, contactId);
+        var list = await _picker.GetForLead(id);
+        return ok ? Ok(new { ok, message, email, contacts = list }) : BadRequest(new { ok, error = message, contacts = list });
+    }
+
+    [HttpPost("{id}/contacts/{contactId}/enrich-phone")]
+    public async Task<IActionResult> EnrichContactPhone(Guid id, Guid contactId)
+    {
+        var webhookUrl = await BuildWebhookUrl($"/api/job-leads/{id}/contacts/{contactId}/phone-webhook");
+        var (ok, message, phones, pending) = await _picker.EnrichContactPhone(id, contactId, webhookUrl);
+        var list = await _picker.GetForLead(id);
+        return ok ? Ok(new { ok, message, phones, pending, contacts = list }) : BadRequest(new { ok, error = message, contacts = list });
+    }
+
+    [HttpPost("{id}/contacts/{contactId}/poll-phone")]
+    public async Task<IActionResult> PollContactPhone(Guid id, Guid contactId)
+    {
+        var (phones, ready) = await _picker.PollContactPhone(id, contactId);
+        var list = await _picker.GetForLead(id);
+        return Ok(new { phones, notReady = !ready, contacts = list });
+    }
+
+    private async Task<string> BuildWebhookUrl(string path)
+    {
+        var baseUrl = Request.Scheme + "://" + Request.Host;
+        return baseUrl + path;
     }
 
     [HttpPost("{id}/generate-email")]
@@ -246,8 +327,9 @@ public class JobLeadsController : ControllerBase
         if (string.IsNullOrWhiteSpace(lead.ContactEmail)) return BadRequest(new { error = "No contact email on this lead." });
         if (string.IsNullOrWhiteSpace(lead.EmailSubject) || string.IsNullOrWhiteSpace(lead.EmailBody)) return BadRequest(new { error = "Generate the email before sending." });
 
-        var fromEmail = await ResolveSender(req.Sender);
-        await _emailQueue.Enqueue(id, 0, lead.ContactEmail!, lead.ContactName ?? "", fromEmail, lead.EmailSubject!, lead.EmailBody!, req.ScheduledAt);
+        var channel = string.IsNullOrWhiteSpace(req.Channel) ? "graph" : req.Channel;
+        var fromEmail = channel == "gmail_smtp" ? "" : await ResolveSender(req.Sender);
+        await _emailQueue.Enqueue(id, 0, lead.ContactEmail!, lead.ContactName ?? "", fromEmail, lead.EmailSubject!, lead.EmailBody!, req.ScheduledAt, channel);
 
         var cs = _settings.ConnectionString;
         await using var c = new NpgsqlConnection(cs);
@@ -256,7 +338,7 @@ public class JobLeadsController : ControllerBase
         await c.ExecuteAsync("UPDATE job_leads SET status='scheduled', sender_email=@from, updated_at=NOW() WHERE id=@id", new { id, from = fromEmail });
         await _jobs.AddEvent(id, isImmediate ? "Queued to send now" : "Scheduled to send");
 
-        return Ok(new { ok = true, sender = fromEmail });
+        return Ok(new { ok = true, sender = fromEmail, channel });
     }
 
     [HttpDelete("{id}")]

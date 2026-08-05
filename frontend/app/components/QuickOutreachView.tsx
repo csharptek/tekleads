@@ -72,6 +72,7 @@ export default function QuickOutreachView() {
   const [waTemplate, setWaTemplate] = useState("Hi {name}, I'd love to connect!");
   const [compose, setCompose] = useState<ComposeState>(null);
   const [sending, setSending] = useState(false);
+  const [useGmail, setUseGmail] = useState(false);
   const [sendResult, setSendResult] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusJobs, setStatusJobs] = useState<any[]>([]);
@@ -199,7 +200,7 @@ export default function QuickOutreachView() {
         intervalMinutes: 1,
         subject: compose.subject,
         body: compose.body,
-        channel: "gmail_smtp",
+        channel: useGmail ? "gmail_smtp" : "graph",
         attachmentToken,
         followUp1: compose.fu1Enabled && compose.fu1Subject.trim() && compose.fu1Body.trim()
           ? { subject: compose.fu1Subject, body: compose.fu1Body, delayHours: compose.fu1DelayHours || 6 }
@@ -639,6 +640,11 @@ export default function QuickOutreachView() {
                 <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => setCompose(c => c && { ...c, attachmentFile: null })}>Remove</button>
               </div>
             )}
+
+            <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
+              <input type="checkbox" checked={useGmail} onChange={e => setUseGmail(e.target.checked)} />
+              Send via Gmail (default: Graph API)
+            </label>
 
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 10 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
