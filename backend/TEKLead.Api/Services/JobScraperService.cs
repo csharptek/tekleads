@@ -235,6 +235,9 @@ public class JobScraperService
                         var companyLinkedinUrl = GetStr(item, "companyLinkedinUrl") ?? GetStr(item, "companyLinkedInUrl") ?? GetStr(item, "companyUrl");
                         int? employeeCount = item.TryGetProperty("companyEmployeesCount", out var ce) && ce.ValueKind == JsonValueKind.Number && ce.TryGetInt32(out var ceInt)
                             ? ceInt : null;
+                        // Hard cap at 200 employees regardless of the Company Size dropdown/f_CS
+                        // sent to LinkedIn — that param only scopes the search, this filter is the
+                        // actual lead-qualification rule and stays fixed intentionally.
                         if (!employeeCount.HasValue || employeeCount.Value > 200) { skippedSize++; continue; }
                         var scrapedCompanySize = $"{employeeCount:N0} employees";
                         var postedAtRaw = GetStr(item, "postedAt");
