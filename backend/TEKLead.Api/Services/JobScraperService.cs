@@ -280,7 +280,9 @@ public class JobScraperService
     private async Task<List<JsonElement>> RunApifyActor(string token, string searchQuery, string location, string datePostedCode, string companySizeCode)
     {
         const string actorId = "curious_coder~linkedin-jobs-scraper";
-        var runUrl = $"https://api.apify.com/v2/acts/{actorId}/run-sync-get-dataset-items?token={Uri.EscapeDataString(token)}&timeout=280";
+        const int actorTimeoutSeconds = 600; // actor-side timeout budget; run-sync's own 280s edge was truncating long searches
+        const int pollTimeoutSeconds = 900;  // how long we're willing to wait client-side
+        const int pollIntervalMs = 5000;
 
         var searchUrl = "https://www.linkedin.com/jobs/search/"
             + $"?keywords={Uri.EscapeDataString(searchQuery)}"
@@ -290,17 +292,75 @@ public class JobScraperService
             searchUrl += $"&f_CS={Uri.EscapeDataString(companySizeCode)}";
 
         var payload = new { urls = new[] { searchUrl } };
-
         var client = _http.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(290);
-        var res = await client.PostAsJsonAsync(runUrl, payload);
-        var body = await res.Content.ReadAsStringAsync();
-        if (!res.IsSuccessStatusCode)
-            throw new Exception($"Apify {(int)res.StatusCode}: {body[..Math.Min(500, body.Length)]}");
 
-        using var doc = JsonDocument.Parse(body);
+        // Start the run async instead of run-sync-get-dataset-items: that endpoint enforces its
+        // own request-level timeout window and returns whatever's in the dataset at that instant,
+        // even though the actor keeps running server-side afterward (confirmed: Apify console
+        // showed the run finishing with 358 items well after our sync call had already given up).
+        var startUrl = $"https://api.apify.com/v2/acts/{actorId}/runs?token={Uri.EscapeDataString(token)}&timeout={actorTimeoutSeconds}";
+        var startRes = await RetryOn502(() => client.PostAsJsonAsync(startUrl, payload), maxAttempts: 3);
+        var startBody = await startRes.Content.ReadAsStringAsync();
+        if (!startRes.IsSuccessStatusCode)
+            throw new Exception($"Apify start {(int)startRes.StatusCode}: {startBody[..Math.Min(500, startBody.Length)]}");
+
+        using var startDoc = JsonDocument.Parse(startBody);
+        var data = startDoc.RootElement.GetProperty("data");
+        var runId = data.GetProperty("id").GetString();
+        var datasetId = data.GetProperty("defaultDatasetId").GetString();
+
+        // Poll run status until it leaves RUNNING/READY, rather than trusting a single
+        // synchronous HTTP call's own timeout to line up with the actor's actual finish time.
+        var deadline = DateTime.UtcNow.AddSeconds(pollTimeoutSeconds);
+        string status = "READY";
+        while (DateTime.UtcNow < deadline)
+        {
+            var statusUrl = $"https://api.apify.com/v2/actor-runs/{runId}?token={Uri.EscapeDataString(token)}";
+            var statusRes = await RetryOn502(() => client.GetAsync(statusUrl), maxAttempts: 3);
+            var statusBody = await statusRes.Content.ReadAsStringAsync();
+            if (!statusRes.IsSuccessStatusCode)
+                throw new Exception($"Apify status {(int)statusRes.StatusCode}: {statusBody[..Math.Min(500, statusBody.Length)]}");
+
+            using var statusDoc = JsonDocument.Parse(statusBody);
+            status = statusDoc.RootElement.GetProperty("data").GetProperty("status").GetString() ?? "UNKNOWN";
+
+            if (status is "SUCCEEDED" or "FAILED" or "ABORTED" or "TIMED-OUT") break;
+            await Task.Delay(pollIntervalMs);
+        }
+
+        // Even on TIMED-OUT, fetch whatever items landed in the dataset — the actor's own log
+        // (and the resurrect-timeout you saw in the Apify UI) confirms partial results are still
+        // written to the dataset before the actor stops, so don't discard them.
+        if (status is "FAILED" or "ABORTED")
+            throw new Exception($"Apify run ended with status {status}");
+        if (status != "SUCCEEDED" && status != "TIMED-OUT")
+            throw new Exception($"Apify run did not finish within {pollTimeoutSeconds}s (last status: {status})");
+
+        var itemsUrl = $"https://api.apify.com/v2/datasets/{datasetId}/items?token={Uri.EscapeDataString(token)}&clean=true";
+        var itemsRes = await RetryOn502(() => client.GetAsync(itemsUrl), maxAttempts: 3);
+        var itemsBody = await itemsRes.Content.ReadAsStringAsync();
+        if (!itemsRes.IsSuccessStatusCode)
+            throw new Exception($"Apify items {(int)itemsRes.StatusCode}: {itemsBody[..Math.Min(500, itemsBody.Length)]}");
+
+        using var doc = JsonDocument.Parse(itemsBody);
         if (doc.RootElement.ValueKind != JsonValueKind.Array) return new List<JsonElement>();
         return doc.RootElement.EnumerateArray().Select(e => e.Clone()).ToList();
+    }
+
+    /// <summary>
+    /// LinkedIn search occasionally returns a transient 502 through Apify (seen directly in a
+    /// live run) — retry with backoff before failing the whole role search.
+    /// </summary>
+    private static async Task<HttpResponseMessage> RetryOn502(Func<Task<HttpResponseMessage>> call, int maxAttempts)
+    {
+        HttpResponseMessage? last = null;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            last = await call();
+            if (last.StatusCode != System.Net.HttpStatusCode.BadGateway) return last;
+            if (attempt < maxAttempts) await Task.Delay(2000 * attempt);
+        }
+        return last!;
     }
 
     private static string? GetStr(JsonElement e, string prop) =>
