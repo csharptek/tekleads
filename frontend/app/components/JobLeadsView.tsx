@@ -100,7 +100,6 @@ const STATUS_CHIP: Record<LeadStatus, string> = {
 const ROLE_OPTIONS = ["Software Engineer", "Full Stack Engineer", "Backend Engineer", "Frontend Engineer", "AI Engineer", "ML Engineer"];
 const COUNTRIES = ["United States", "United Kingdom", "Canada", "Australia", "India"];
 const EMPLOYEE_BUCKETS = ["1–9", "10–50", "51–200", "201–1000", "1000+", "Unknown"];
-const POSTED_WITHIN = [1, 3, 7, 14, 30];
 const PER_PAGE = 20;
 
 /* ─── Small building blocks ─────────────────────────────────────────── */
@@ -204,8 +203,8 @@ export default function JobLeadsView() {
   const [scrapeOpen, setScrapeOpen] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [scrapeParams, setScrapeParams] = useState({
-    country: COUNTRIES[0], postedWithin: 7, companySize: "",
-    roles: [ROLE_OPTIONS[0], ROLE_OPTIONS[1]],
+    country: COUNTRIES[0], postedWithin: 1, companySize: "",
+    roles: [ROLE_OPTIONS[0]],
   });
   const [scrapeRun, setScrapeRun] = useState<ScrapeRun | null>(null);
   const [lastScrapeRunId, setLastScrapeRunId] = useState<string | null>(null);
@@ -355,8 +354,9 @@ export default function JobLeadsView() {
   };
 
   // ── Scrape run + polling ──────────────────────────────────────────────
+  // Single-select: clicking a role replaces the selection instead of toggling it in/out.
   const toggleRole = (r: string) =>
-    setScrapeParams(p => ({ ...p, roles: p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r] }));
+    setScrapeParams(p => ({ ...p, roles: [r] }));
 
   // Shared by both "Run Scraper" and "Find next 100" — takes a promise that kicks off a run
   // and returns its id, then polls status the same way for either.
@@ -775,9 +775,7 @@ export default function JobLeadsView() {
                 {COUNTRIES.map(c => <option key={c}>{c}</option>)}
               </select>
               <div className="field-label">Posted Within</div>
-              <select className="input" value={scrapeParams.postedWithin} onChange={e => setScrapeParams(p => ({ ...p, postedWithin: +e.target.value }))} style={{ marginBottom: 10 }}>
-                {POSTED_WITHIN.map(d => <option key={d} value={d}>Last {d} day{d > 1 ? "s" : ""}</option>)}
-              </select>
+              <div className="input" style={{ marginBottom: 10, color: "var(--muted)", background: "var(--bg)", cursor: "default" }}>Last 24 hours</div>
               <div className="field-label">Company Size</div>
               <select className="input" value={scrapeParams.companySize} onChange={e => setScrapeParams(p => ({ ...p, companySize: e.target.value }))} style={{ marginBottom: 10 }}>
                 <option value="">Any size</option>
