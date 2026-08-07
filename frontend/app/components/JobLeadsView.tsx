@@ -208,6 +208,7 @@ export default function JobLeadsView() {
     roles: [ROLE_OPTIONS[0], ROLE_OPTIONS[1]],
   });
   const [scrapeRun, setScrapeRun] = useState<ScrapeRun | null>(null);
+  const [lastScrapeRunId, setLastScrapeRunId] = useState<string | null>(null);
   const [scrapeElapsed, setScrapeElapsed] = useState(0);
   const scrapeBtnRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -357,7 +358,9 @@ export default function JobLeadsView() {
   const toggleRole = (r: string) =>
     setScrapeParams(p => ({ ...p, roles: p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r] }));
 
-  const runScrape = async () => {
+  // Shared by both "Run Scraper" and "Find next 100" — takes a promise that kicks off a run
+  // and returns its id, then polls status the same way for either.
+  const pollScrapeRun = (startCall: () => Promise<{ runId: string }>) => async () => {
     setScraping(true);
     setScrapeRun(null);
     setScrapeElapsed(0);
@@ -365,10 +368,8 @@ export default function JobLeadsView() {
     if (elapsedRef.current) clearInterval(elapsedRef.current);
     elapsedRef.current = setInterval(() => setScrapeElapsed(s => s + 1), 1000);
     try {
-      const { runId } = await api.post<{ runId: string }>("/api/job-leads/scrape", {
-        roles: scrapeParams.roles, country: scrapeParams.country, postedWithinDays: scrapeParams.postedWithin,
-        companySize: scrapeParams.companySize,
-      });
+      const { runId } = await startCall();
+      setLastScrapeRunId(runId);
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
         try {
@@ -389,6 +390,19 @@ export default function JobLeadsView() {
       if (elapsedRef.current) clearInterval(elapsedRef.current);
     }
   };
+
+  const runScrape = pollScrapeRun(() => api.post<{ runId: string }>("/api/job-leads/scrape", {
+    roles: scrapeParams.roles, country: scrapeParams.country, postedWithinDays: scrapeParams.postedWithin,
+    companySize: scrapeParams.companySize, numberOfJobs: 100,
+  }));
+
+  // Re-runs the same search asking the actor for 100 more total than last time. The actor has
+  // no offset param, so this re-scrapes from the top — existing job_url dedupe on the backend
+  // means only genuinely new postings get inserted, so it's safe to call repeatedly.
+  const findMoreLeads = pollScrapeRun(() => {
+    if (!lastScrapeRunId) throw new Error("No previous scrape to continue.");
+    return api.post<{ runId: string }>(`/api/job-leads/scrape/${lastScrapeRunId}/continue`, { additionalJobs: 100 });
+  });
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); if (elapsedRef.current) clearInterval(elapsedRef.current); }, []);
 
@@ -803,6 +817,11 @@ export default function JobLeadsView() {
                   {scrapeRun.status === "completed" && <div style={{ color: "var(--green)", fontWeight: 600, marginTop: 4 }}>Done — {scrapeRun.leadsFound} leads added.</div>}
                   {scrapeRun.status === "failed" && <div style={{ color: "var(--red)", fontWeight: 600, marginTop: 4 }}>Failed: {scrapeRun.error}</div>}
                 </div>
+              )}
+              {scrapeRun && scrapeRun.status !== "running" && (
+                <button className="btn" style={{ width: "100%", marginTop: 8 }} disabled={scraping} onClick={findMoreLeads}>
+                  Find next 100
+                </button>
               )}
             </div>
           )}

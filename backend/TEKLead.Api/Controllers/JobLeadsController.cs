@@ -12,6 +12,12 @@ public class ScrapeRunRequest
     public string Country { get; set; } = "United States";
     public string CompanySize { get; set; } = "";
     public int PostedWithinDays { get; set; } = 7;
+    public int NumberOfJobs { get; set; } = 100;
+}
+
+public class ContinueScrapeRequest
+{
+    public int AdditionalJobs { get; set; } = 100;
 }
 
 public class JobLeadSendEmailRequest
@@ -168,8 +174,15 @@ public class JobLeadsController : ControllerBase
     public async Task<IActionResult> StartScrape([FromBody] ScrapeRunRequest req)
     {
         if (req.Roles.Count == 0) return BadRequest(new { error = "Select at least one role." });
-        var runId = await _jobs.StartRun(req.Roles, req.Country, req.CompanySize, req.PostedWithinDays);
+        var runId = await _jobs.StartRun(req.Roles, req.Country, req.CompanySize, req.PostedWithinDays, req.NumberOfJobs);
         return Ok(new { runId });
+    }
+
+    [HttpPost("scrape/{runId}/continue")]
+    public async Task<IActionResult> ContinueScrape(Guid runId, [FromBody] ContinueScrapeRequest req)
+    {
+        var nextRunId = await _jobs.ContinueRun(runId, req.AdditionalJobs);
+        return Ok(new { runId = nextRunId });
     }
 
     [HttpGet("scrape/{runId}")]

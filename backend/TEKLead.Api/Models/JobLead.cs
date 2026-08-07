@@ -61,6 +61,7 @@ public class JobScraperRun
     public string Country { get; set; } = "";
     public string CompanySize { get; set; } = "";
     public int PostedWithinDays { get; set; }
+    public int RequestedJobs { get; set; } = 100;
     public string Status { get; set; } = "running"; // running | completed | failed
     public int LeadsFound { get; set; }
     public string? Error { get; set; }

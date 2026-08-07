@@ -57,6 +57,7 @@ public class JobScraperService
                 started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 finished_at TIMESTAMPTZ
             );
+            ALTER TABLE job_scraper_runs ADD COLUMN IF NOT EXISTS requested_jobs INT NOT NULL DEFAULT 100;
 
             CREATE TABLE IF NOT EXISTS job_leads (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -122,20 +123,46 @@ public class JobScraperService
 
     // ── Scrape run ───────────────────────────────────────────────────────
 
-    public async Task<Guid> StartRun(List<string> roles, string country, string companySize, int postedWithinDays)
+    public async Task<Guid> StartRun(List<string> roles, string country, string companySize, int postedWithinDays, int numberOfJobs = 100)
     {
         var cs = _settings.ConnectionString;
         await using var c = new NpgsqlConnection(cs);
         await c.OpenAsync();
         var runId = await c.QuerySingleAsync<Guid>(@"
-            INSERT INTO job_scraper_runs (roles, country, company_size, posted_within_days, status)
-            VALUES (@roles, @country, @size, @days, 'running') RETURNING id",
-            new { roles = roles.ToArray(), country, size = companySize, days = postedWithinDays });
+            INSERT INTO job_scraper_runs (roles, country, company_size, posted_within_days, status, requested_jobs)
+            VALUES (@roles, @country, @size, @days, 'running', @numberOfJobs) RETURNING id",
+            new { roles = roles.ToArray(), country, size = companySize, days = postedWithinDays, numberOfJobs });
 
         // Fire and forget — caller polls GetRun(runId) for progress.
-        _ = Task.Run(() => Execute(runId, roles, country, companySize, postedWithinDays));
+        _ = Task.Run(() => Execute(runId, roles, country, companySize, postedWithinDays, numberOfJobs));
 
         return runId;
+    }
+
+    /// <summary>
+    /// "Find next N" — re-runs the same search with a larger numberOfJobs cap. The actor has no
+    /// offset/pagination param (confirmed against its Console input form), so we can't ask it for
+    /// "the next 100" directly; instead we ask for more total and rely on the existing job_url
+    /// dedupe check in Execute to skip postings already saved from the prior run. Net effect from
+    /// the person's side is the same — new leads land, no duplicates — at the cost of re-scraping
+    /// the first N each time.
+    /// </summary>
+    public async Task<Guid> ContinueRun(Guid previousRunId, int additionalJobs = 100)
+    {
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+        var prev = await c.QueryFirstOrDefaultAsync<dynamic>("SELECT * FROM job_scraper_runs WHERE id=@id", new { id = previousRunId });
+        if (prev == null) throw new Exception("Previous run not found.");
+
+        var roles = ((string[]?)prev.roles ?? Array.Empty<string>()).ToList();
+        var country = (string)(prev.country ?? "");
+        var companySize = (string)(prev.company_size ?? "");
+        var postedWithinDays = (int)(prev.posted_within_days ?? 7);
+        var priorRequested = (int)(prev.requested_jobs ?? 100);
+        var nextTotal = priorRequested + additionalJobs;
+
+        return await StartRun(roles, country, companySize, postedWithinDays, nextTotal);
     }
 
     public async Task<JobScraperRun?> GetRun(Guid runId)
@@ -159,7 +186,7 @@ public class JobScraperService
         catch (Exception ex) { _log.LogWarning(ex, "AppendLog failed for run {id}", runId); }
     }
 
-    private async Task Execute(Guid runId, List<string> roles, string country, string companySize, int postedWithinDays)
+    private async Task Execute(Guid runId, List<string> roles, string country, string companySize, int postedWithinDays, int numberOfJobs = 100)
     {
         var cs = _settings.ConnectionString;
         var leadsCreated = 0;
@@ -175,11 +202,11 @@ public class JobScraperService
 
             foreach (var role in roles)
             {
-                await AppendLog(runId, $"Searching LinkedIn for: {role}");
+                await AppendLog(runId, $"Searching LinkedIn for: {role} (up to {numberOfJobs} jobs)");
                 List<JsonElement> items;
                 try
                 {
-                    items = await RunApifyActor(token, role, country, datePosted, companySize);
+                    items = await RunApifyActor(token, role, country, datePosted, companySize, numberOfJobs);
                 }
                 catch (Exception ex)
                 {
@@ -277,7 +304,7 @@ public class JobScraperService
     /// collects structured filters. Output field names (title/companyName/link/descriptionText/
     /// industries/companyEmployeesCount) are confirmed from the actor's own README sample output.
     /// </summary>
-    private async Task<List<JsonElement>> RunApifyActor(string token, string searchQuery, string location, string datePostedCode, string companySizeCode)
+    private async Task<List<JsonElement>> RunApifyActor(string token, string searchQuery, string location, string datePostedCode, string companySizeCode, int numberOfJobs = 100)
     {
         const string actorId = "curious_coder~linkedin-jobs-scraper";
         const int actorTimeoutSeconds = 600; // actor-side timeout budget; run-sync's own 280s edge was truncating long searches
@@ -291,7 +318,16 @@ public class JobScraperService
         if (!string.IsNullOrWhiteSpace(companySizeCode))
             searchUrl += $"&f_CS={Uri.EscapeDataString(companySizeCode)}";
 
-        var payload = new { urls = new[] { searchUrl } };
+        // numberOfJobs caps how many the actor pulls per run (confirmed field via Apify Console
+        // input form — "Number of jobs needed", default 100). scrapeCompanyDetails matches the
+        // Console default (on) since our mapping relies on companyWebsite/companyLinkedinUrl/
+        // companyEmployeesCount, which only come through when this is enabled.
+        var payload = new
+        {
+            urls = new[] { searchUrl },
+            numberOfJobs,
+            scrapeCompanyDetails = true,
+        };
         var client = _http.CreateClient();
 
         // Start the run async instead of run-sync-get-dataset-items: that endpoint enforces its
@@ -702,7 +738,8 @@ public class JobScraperService
     private static JobScraperRun MapRun(dynamic r) => new()
     {
         Id = r.id, Roles = r.roles ?? Array.Empty<string>(), Country = r.country ?? "", CompanySize = r.company_size ?? "",
-        PostedWithinDays = (int)(r.posted_within_days ?? 7), Status = r.status ?? "running", LeadsFound = (int)(r.leads_found ?? 0),
+        PostedWithinDays = (int)(r.posted_within_days ?? 7), RequestedJobs = (int)(r.requested_jobs ?? 100),
+        Status = r.status ?? "running", LeadsFound = (int)(r.leads_found ?? 0),
         Error = r.error, LogLines = r.log_lines ?? Array.Empty<string>(), StartedAt = r.started_at, FinishedAt = r.finished_at,
     };
 
