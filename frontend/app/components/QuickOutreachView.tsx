@@ -77,21 +77,22 @@ export default function QuickOutreachView() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusJobs, setStatusJobs] = useState<any[]>([]);
   const [statusLoading, setStatusLoading] = useState(false);
-  const ENRICHED_STORAGE_KEY = "quick_outreach_enriched_contacts";
-
-  const [enrichedContacts, setEnrichedContacts] = useState<Lead[]>(() => {
-    try {
-      const raw = localStorage.getItem(ENRICHED_STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch { return []; }
-  });
+  const [enrichedContacts, setEnrichedContacts] = useState<Lead[]>([]);
   const [enrichedSelected, setEnrichedSelected] = useState<Set<string>>(new Set());
+  const [enrichedLoaded, setEnrichedLoaded] = useState(false);
 
   useEffect(() => {
-    try { localStorage.setItem(ENRICHED_STORAGE_KEY, JSON.stringify(enrichedContacts)); } catch {}
-  }, [enrichedContacts]);
+    (async () => {
+      try {
+        const rows = await api.get<Lead[]>("/api/quick-outreach/enriched");
+        setEnrichedContacts(rows || []);
+      } catch { /* ignore */ }
+      finally { setEnrichedLoaded(true); }
+    })();
+  }, []);
 
   useEffect(() => {
+    if (!enrichedLoaded) return;
     const withEmail = results.filter(l => l.emails?.[0]);
     if (withEmail.length === 0) return;
     setEnrichedContacts(prev => {
@@ -99,11 +100,13 @@ export default function QuickOutreachView() {
       for (const l of withEmail) byId.set(l.id, l);
       return Array.from(byId.values());
     });
-  }, [results]);
+    api.post("/api/quick-outreach/enriched", withEmail).catch(() => {});
+  }, [results, enrichedLoaded]);
 
   const removeEnrichedContact = (id: string) => {
     setEnrichedContacts(prev => prev.filter(l => l.id !== id));
     setEnrichedSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+    api.delete(`/api/quick-outreach/enriched/${id}`).catch(() => {});
   };
 
   const toggleEnrichedSelect = (id: string) =>
