@@ -12,6 +12,9 @@ public class PortfolioProject
     public string Outcomes { get; set; } = "";
     public string Links { get; set; } = "";
     public string YoutubeLinks { get; set; } = "";
+    public string IosLink { get; set; } = "";
+    public string AndroidLink { get; set; } = "";
+    public string WebLink { get; set; } = "";
     public bool EmbeddingIndexed { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

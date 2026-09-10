@@ -43,6 +43,8 @@ const KEYS = {
   ClaudeApiKey: "claude_api_key",
   ClaudeModel: "claude_model",
   VectorProvider: "vector_provider",
+  GeminiApiKey: "gemini_api_key",
+  GeminiEmbeddingModel: "gemini_embedding_model",
   // Provider-specific prompt keys
   ArtifactCoverLetterPromptAzure: "artifact_cover_letter_prompt_azure",
   ArtifactWhatsappPromptAzure:    "artifact_whatsapp_prompt_azure",
@@ -116,6 +118,14 @@ const TECH_GROUPS: Group[] = [
       { key: KEYS.AzureSearchEndpoint, label: "Endpoint", placeholder: "https://your-search.search.windows.net", full: true },
       { key: KEYS.AzureSearchKey, label: "Admin Key", placeholder: "Enter to set / replace", secret: true },
       { key: KEYS.AzureSearchIndex, label: "Index Name", placeholder: "portfolio" },
+    ],
+  },
+  {
+    title: "Gemini (Embeddings)",
+    subtitle: "Generates the embedding vectors for portfolio RAG search — required regardless of which Vector Provider is selected above. Free tier via Google AI Studio.",
+    fields: [
+      { key: KEYS.GeminiApiKey, label: "API Key", placeholder: "Enter to set / replace", secret: true, full: true },
+      { key: KEYS.GeminiEmbeddingModel, label: "Model", placeholder: "gemini-embedding-001" },
     ],
   },
   {
@@ -641,7 +651,7 @@ export default function SettingsView() {
               {reindexing ? <span className="spinner spinner-dark" /> : null}{reindexing ? "Reindexing..." : "Reindex All (pgvector)"}
             </button>
             <div style={{ marginTop: 6, fontSize: 11, color: "var(--dim)" }}>
-              Regenerates embeddings for all portfolio projects and stores them in PostgreSQL. Run once after switching to pgvector. Still uses Azure OpenAI for embeddings.
+              Regenerates embeddings for all portfolio projects and stores them in PostgreSQL. Uses the Gemini API key below — run once after adding/changing it, and again any time you bulk-edit portfolio content. Individual projects can also be indexed one at a time from the Portfolio tab.
             </div>
           </div>
         )}

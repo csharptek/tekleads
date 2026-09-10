@@ -22,7 +22,7 @@ public class PortfolioService
     // Explicit column list (excludes embedding_vec — Dapper/Npgsql can't map the
     // pgvector "vector" type to dynamic/object without the Pgvector.Npgsql plugin).
     private const string SelectColumns =
-        "id, title, industry, tags, problem, solution, tech_stack, outcomes, links, youtube_links, embedding_indexed, created_at";
+        "id, title, industry, tags, problem, solution, tech_stack, outcomes, links, youtube_links, ios_link, android_link, web_link, embedding_indexed, created_at";
 
     // ── Schema ────────────────────────────────────────────────────────────────
 
@@ -51,6 +51,12 @@ public class PortfolioService
 
         // Migration: add youtube_links if not exists
         try { await c.ExecuteAsync("ALTER TABLE portfolio_projects ADD COLUMN IF NOT EXISTS youtube_links TEXT NOT NULL DEFAULT \'\'"); } catch { }
+
+        // Migration: iOS / Android / Web links — all optional, default empty so existing
+        // projects and generation keep working untouched until these are filled in.
+        try { await c.ExecuteAsync("ALTER TABLE portfolio_projects ADD COLUMN IF NOT EXISTS ios_link TEXT NOT NULL DEFAULT \'\'"); } catch { }
+        try { await c.ExecuteAsync("ALTER TABLE portfolio_projects ADD COLUMN IF NOT EXISTS android_link TEXT NOT NULL DEFAULT \'\'"); } catch { }
+        try { await c.ExecuteAsync("ALTER TABLE portfolio_projects ADD COLUMN IF NOT EXISTS web_link TEXT NOT NULL DEFAULT \'\'"); } catch { }
 
         // Migration: pgvector support (alternative to Azure AI Search)
         try { await c.ExecuteAsync("CREATE EXTENSION IF NOT EXISTS vector"); } catch (Exception ex) { _log.LogWarning("pgvector extension not available: {0}", ex.Message); }
@@ -93,9 +99,9 @@ public class PortfolioService
 
         await c.ExecuteAsync(@"
             INSERT INTO portfolio_projects
-                (id, title, industry, tags, problem, solution, tech_stack, outcomes, links, youtube_links, embedding_indexed, created_at)
+                (id, title, industry, tags, problem, solution, tech_stack, outcomes, links, youtube_links, ios_link, android_link, web_link, embedding_indexed, created_at)
             VALUES
-                (@Id, @Title, @Industry, @Tags, @Problem, @Solution, @TechStack, @Outcomes, @Links, @YoutubeLinks, @EmbeddingIndexed, @CreatedAt)
+                (@Id, @Title, @Industry, @Tags, @Problem, @Solution, @TechStack, @Outcomes, @Links, @YoutubeLinks, @IosLink, @AndroidLink, @WebLink, @EmbeddingIndexed, @CreatedAt)
             ON CONFLICT (id) DO UPDATE SET
                 title = EXCLUDED.title,
                 industry = EXCLUDED.industry,
@@ -106,11 +112,15 @@ public class PortfolioService
                 outcomes = EXCLUDED.outcomes,
                 links = EXCLUDED.links,
                 youtube_links = EXCLUDED.youtube_links,
+                ios_link = EXCLUDED.ios_link,
+                android_link = EXCLUDED.android_link,
+                web_link = EXCLUDED.web_link,
                 embedding_indexed = EXCLUDED.embedding_indexed",
             new
             {
                 p.Id, p.Title, p.Industry, Tags = p.Tags,
                 p.Problem, p.Solution, p.TechStack, p.Outcomes, p.Links, p.YoutubeLinks,
+                p.IosLink, p.AndroidLink, p.WebLink,
                 p.EmbeddingIndexed, p.CreatedAt
             });
 
@@ -143,15 +153,9 @@ public class PortfolioService
         if (vectorProvider == "pgvector")
             return await IndexEmbeddingPgVector(project, settings);
 
-        var aoEndpoint  = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
-        var aoKey       = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
-        var aoEmbedDep  = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEmbeddingDeployment, "text-embedding-3-small");
         var searchEp    = settings.GetValueOrDefault(SettingKeys.AzureSearchEndpoint, "");
         var searchKey   = settings.GetValueOrDefault(SettingKeys.AzureSearchKey, "");
         var searchIndex = settings.GetValueOrDefault(SettingKeys.AzureSearchIndex, "portfolio");
-
-        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey))
-            return (false, "Azure OpenAI endpoint/key not configured in Settings.");
 
         if (string.IsNullOrWhiteSpace(searchEp) || string.IsNullOrWhiteSpace(searchKey))
             return (false, "Azure AI Search endpoint/key not configured in Settings.");
@@ -160,7 +164,7 @@ public class PortfolioService
         float[] embedding;
         try
         {
-            embedding = await GenerateEmbedding(aoEndpoint, aoKey, aoEmbedDep, BuildText(project));
+            embedding = await GenerateEmbedding(settings, BuildText(project));
         }
         catch (Exception ex)
         {
@@ -202,17 +206,14 @@ public class PortfolioService
         if (vectorProvider == "pgvector")
             return await SearchSimilarPgVector(query, topK, settings);
 
-        var aoEndpoint  = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
-        var aoKey       = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
-        var aoEmbedDep  = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEmbeddingDeployment, "text-embedding-3-small");
         var searchEp    = settings.GetValueOrDefault(SettingKeys.AzureSearchEndpoint, "");
         var searchKey   = settings.GetValueOrDefault(SettingKeys.AzureSearchKey, "");
         var searchIndex = settings.GetValueOrDefault(SettingKeys.AzureSearchIndex, "portfolio");
 
-        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(searchEp))
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")) || string.IsNullOrWhiteSpace(searchEp))
             return new List<PortfolioProject>();
 
-        var embedding = await GenerateEmbedding(aoEndpoint, aoKey, aoEmbedDep, query);
+        var embedding = await GenerateEmbedding(settings, query);
 
         var client = _http.CreateClient();
         client.DefaultRequestHeaders.Add("api-key", searchKey);
@@ -307,17 +308,13 @@ public class PortfolioService
 
     private async Task<(bool ok, string message)> IndexEmbeddingPgVector(PortfolioProject project, Dictionary<string, string> settings)
     {
-        var aoEndpoint = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
-        var aoKey      = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
-        var aoEmbedDep = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEmbeddingDeployment, "text-embedding-3-small");
-
-        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey))
-            return (false, "Azure OpenAI endpoint/key not configured in Settings (required for embeddings).");
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
+            return (false, "Gemini API key not configured in Settings (required for embeddings).");
 
         float[] embedding;
         try
         {
-            embedding = await GenerateEmbedding(aoEndpoint, aoKey, aoEmbedDep, BuildText(project));
+            embedding = await GenerateEmbedding(settings, BuildText(project));
         }
         catch (Exception ex)
         {
@@ -349,11 +346,9 @@ public class PortfolioService
     public async Task<(bool ok, string message)> ReindexAllPgVector()
     {
         var settings = await _settings.GetAll();
-        var aoEndpoint = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
-        var aoKey      = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
 
-        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey))
-            return (false, "Azure OpenAI endpoint/key not configured in Settings (required for embeddings).");
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
+            return (false, "Gemini API key not configured in Settings (required for embeddings).");
 
         var projects = await GetAll();
         int ok = 0, failed = 0;
@@ -369,17 +364,13 @@ public class PortfolioService
 
     private async Task<List<PortfolioProject>> SearchSimilarPgVector(string query, int topK, Dictionary<string, string> settings)
     {
-        var aoEndpoint = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
-        var aoKey      = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
-        var aoEmbedDep = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEmbeddingDeployment, "text-embedding-3-small");
-
-        if (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey))
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
             return new List<PortfolioProject>();
 
         float[] embedding;
         try
         {
-            embedding = await GenerateEmbedding(aoEndpoint, aoKey, aoEmbedDep, query);
+            embedding = await GenerateEmbedding(settings, query);
         }
         catch (Exception ex)
         {
@@ -664,24 +655,41 @@ DOCUMENT:
     private static string BuildText(PortfolioProject p) =>
         $"Title: {p.Title}\nIndustry: {p.Industry}\nProblem: {p.Problem}\nSolution: {p.Solution}\nTech Stack: {p.TechStack}\nOutcomes: {p.Outcomes}";
 
-    private async Task<float[]> GenerateEmbedding(string endpoint, string key, string deployment, string text)
-    {
-        var client = _http.CreateClient();
-        client.DefaultRequestHeaders.Add("api-key", key);
+    /// <summary>
+    /// Embedding generation — Google Gemini (gemini-embedding-001 by default), requested at
+    /// 1536 output dimensions so it matches the existing pgvector column / Azure AI Search
+    /// index schema with zero migration. Independent of AiProvider (chat) and VectorProvider
+    /// (storage) — this is the one place embedding vectors get created, regardless of which
+    /// LLM writes content or which store holds the result.
+    /// </summary>
+    private const int EmbeddingDimensions = 1536;
 
-        var url = $"{endpoint.TrimEnd('/')}/openai/deployments/{deployment}/embeddings?api-version=2024-02-01";
-        var body = JsonSerializer.Serialize(new { input = text });
+    private async Task<float[]> GenerateEmbedding(Dictionary<string, string> settings, string text)
+    {
+        var geminiKey   = settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "");
+        var geminiModel = settings.GetValueOrDefault(SettingKeys.GeminiEmbeddingModel, "gemini-embedding-001");
+
+        if (string.IsNullOrWhiteSpace(geminiKey))
+            throw new Exception("Gemini API key not configured in Settings (required for embeddings).");
+
+        var client = _http.CreateClient();
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{geminiModel}:embedContent?key={Uri.EscapeDataString(geminiKey)}";
+        var body = JsonSerializer.Serialize(new
+        {
+            content = new { parts = new[] { new { text } } },
+            outputDimensionality = EmbeddingDimensions
+        });
 
         var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var json = await resp.Content.ReadAsStringAsync();
 
         if (!resp.IsSuccessStatusCode)
-            throw new Exception($"OpenAI embedding error: {json}");
+            throw new Exception($"Gemini embedding error: {json}");
 
         var doc = JsonDocument.Parse(json);
         return doc.RootElement
-            .GetProperty("data")[0]
             .GetProperty("embedding")
+            .GetProperty("values")
             .EnumerateArray()
             .Select(v => v.GetSingle())
             .ToArray();
@@ -832,6 +840,9 @@ DOCUMENT:
         Outcomes         = r.outcomes ?? "",
         Links            = r.links ?? "",
         YoutubeLinks     = r.youtube_links ?? "",
+        IosLink          = r.ios_link ?? "",
+        AndroidLink      = r.android_link ?? "",
+        WebLink          = r.web_link ?? "",
         EmbeddingIndexed = r.embedding_indexed ?? false,
         CreatedAt        = r.created_at,
     };

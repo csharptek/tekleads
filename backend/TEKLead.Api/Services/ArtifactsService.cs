@@ -159,8 +159,10 @@ public class ArtifactsService
         {
             coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(clPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, provider, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq), context);
             whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(waPrompt, WhatsappPrompt, GroqWhatsappPrompt, provider, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq), context);
-            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt, GroqEmailPrompt, provider, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq), context);
+            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt, GroqEmailPrompt, provider, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq), context, forceLinkInBody: false);
             (emailSubject, emailBody) = ParseEmail(emailRaw);
+            var linkBlock = BuildLinkBlock(portfolioItems.FirstOrDefault());
+            if (linkBlock != null) emailBody = emailBody.TrimEnd() + "\n\n" + linkBlock;
         }
         catch (Exception ex)
         {
@@ -229,8 +231,10 @@ public class ArtifactsService
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
         var provider = !string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
         var prompt = customPrompt ?? GetPrompt(savedPrompt, EmailPrompt, GroqEmailPrompt, provider, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq);
-        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
+        var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context, forceLinkInBody: false);
         var (subject, body) = ParseEmail(raw);
+        var linkBlock = BuildLinkBlock(portfolioItems.FirstOrDefault());
+        if (linkBlock != null) body = body.TrimEnd() + "\n\n" + linkBlock;
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
         return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
@@ -486,15 +490,18 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Reference 1 (max 2) portfolio projects, and they MUST match the CLIENT INDUSTRY from context if a match exists.
-- YOUTUBE LINK RULE (MANDATORY): If the context contains an AVAILABLE YOUTUBE DEMOS section, you MUST include exactly one demo link in Para 2, on the format: Demo: [url]. Prefer the demo of the project you referenced. Omitting the demo link when one is available is a FAILURE.
-- Never use any link type other than YouTube Demo links from context. If context says NO YOUTUBE DEMOS AVAILABLE, include no link.
+- Do NOT include any link, URL, or "Demo:" line yourself anywhere in the body — a separate system step appends the project name and any available links (iOS/Android/Web/YouTube demo) after your text. Writing a link yourself creates a duplicate.
 
 Proposal rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
+- If CLIENT INFO says no name found, start with: Hi there,
+- If Title / Seniority / Headline are present in CLIENT INFO, let it shape tone and the APPROACH paragraph (e.g. a hands-on technical title → more specific tech detail; a founder/exec title → outcome-and-speed framing). Never state their title back to them verbatim, never say ""As a CTO...""
 - Subject: specific, 8-12 words, references their project — not generic
 - Body: 150-200 words MAX
 - Never mention ""Csharptek"" or any company name of Bhanu
+- No self-introduction paragraph — do not describe who Bhanu is or what the company does. Every sentence addresses their problem or proves relevant experience, never sender bio.
 - Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited""
+- No pricing, rates, or numbers about cost anywhere in this email
 - No name or company signature at the end (system appends it)
 
 STRUCTURE — exact order, no section titles:
@@ -504,25 +511,16 @@ Mirror their exact pain point. If deadline mentioned, acknowledge directly. Do N
 
 Para 2 — CREDIBILITY (1-2 sentences):
 The most industry-relevant past project with a specific outcome.
-Format: [What we built] — [measurable result]. Demo: [YouTube url]
-The Demo line is REQUIRED whenever AVAILABLE YOUTUBE DEMOS exists in context.
+Format: [What we built] — [measurable result]. No link here — links are appended separately.
 
 Para 3 — APPROACH (2-3 sentences prose, no bullets):
 Brief how. Name specific technologies. Show the work is already scoped in Bhanu's head.
 
-Para 4 — PRICING & CTA (2 sentences):
-Sentence 1 — pricing from PROPOSAL PRICING & TIMELINE section. Format: ""[Phase]: ~[hours] hrs at $[rate]/hr — $[total]. Starting today.""
-If no pricing set: ""Happy to share a detailed estimate on a call.""
-Sentence 2 — one clear next step that invites a reply.
+Para 4 — CTA (1-2 sentences):
+One clear, specific next step that invites a reply (e.g. ""Worth 15 min this week?""). No pricing, no rates, no numbers about cost anywhere in this email — even if PROPOSAL PRICING & TIMELINE is present in context, ignore it for this artifact.
 
 SCREENING ANSWERS (only if job post contains screening questions):
-Answer each directly, one line each: ""[topic]: [answer]""
-
-Pricing rules:
-- ALWAYS use figures from PROPOSAL PRICING & TIMELINE
-- If FinalPrice set, use it as exact fixed price
-- If only budget range, quote within range
-- Never invent a price";
+Answer each directly, one line each: ""[topic]: [answer]""";
 
     public static string FollowUp1Prompt() => @"Write Follow-up #1 — a SHORT nudge email sent 24 hours after the initial proposal email.
 
@@ -749,6 +747,59 @@ Return only the JSON.";
         return matched.Concat(rest).Take(topK).ToList();
     }
 
+    /// <summary>
+    /// Best-effort parse of the raw Apollo contact JSON already stored per-proposal.
+    /// Apollo's people/contact object shape varies slightly by endpoint, so this checks
+    /// the common field names defensively and never throws — a malformed/partial blob
+    /// just yields empty strings rather than breaking generation.
+    /// </summary>
+    private static (string title, string seniority, string headline) ParseApolloContact(string json)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            string Get(params string[] keys)
+            {
+                foreach (var k in keys)
+                    if (root.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String)
+                    {
+                        var s = v.GetString();
+                        if (!string.IsNullOrWhiteSpace(s)) return s!;
+                    }
+                return "";
+            }
+            return (Get("title", "job_title"), Get("seniority"), Get("headline"));
+        }
+        catch
+        {
+            return ("", "", "");
+        }
+    }
+
+    /// <summary>
+    /// Deterministic Project/iOS/Android/Web/YouTube block appended to the generated email
+    /// body — never left to the LLM's formatting. Any field that's empty on the record is
+    /// omitted entirely (never printed as "not found" or left blank).
+    /// </summary>
+    private static string? BuildLinkBlock(PortfolioProject? project)
+    {
+        if (project == null || string.IsNullOrWhiteSpace(project.Title)) return null;
+
+        var youtube = (project.YoutubeLinks ?? "")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault() ?? "";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Project Name: {project.Title}");
+        if (!string.IsNullOrWhiteSpace(project.IosLink))     sb.AppendLine($"iOS Link: {project.IosLink}");
+        if (!string.IsNullOrWhiteSpace(project.AndroidLink)) sb.AppendLine($"Android Link: {project.AndroidLink}");
+        if (!string.IsNullOrWhiteSpace(project.WebLink))     sb.AppendLine($"Web Link: {project.WebLink}");
+        if (!string.IsNullOrWhiteSpace(youtube))             sb.AppendLine($"Youtube Demo: {youtube}");
+
+        return sb.ToString().TrimEnd('\n', '\r');
+    }
+
     private string BuildContext(Proposal p, List<PortfolioProject> portfolio, ProposalCompanyContext? company = null)
     {
         var sb = new StringBuilder();
@@ -763,10 +814,28 @@ Return only the JSON.";
         {
             var firstName = p.ClientName.Split(new[]{' ','-'}, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? p.ClientName;
             sb.AppendLine($"Name: {p.ClientName}");
-            sb.AppendLine($"First Name (use ONLY this when addressing or greeting the client, never the full name): {firstName}");
+            if (!string.IsNullOrWhiteSpace(firstName))
+                sb.AppendLine($"First Name (use ONLY this when addressing or greeting the client, never the full name): {firstName}");
+            else
+                sb.AppendLine("No first name found — greet with \"Hi there,\" instead of a name.");
+        }
+        else
+        {
+            sb.AppendLine("No client name captured — greet with \"Hi there,\" instead of a name.");
         }
         if (!string.IsNullOrWhiteSpace(p.ClientCompany)) sb.AppendLine($"Company: {p.ClientCompany}");
         if (!string.IsNullOrWhiteSpace(p.ClientEmail))   sb.AppendLine($"Email: {p.ClientEmail}");
+
+        // Parsed from p.ApolloContactJson — captured from Apollo at lead time but previously
+        // never read back out. Gives the model real signal about who it's writing to instead
+        // of just a first name.
+        if (!string.IsNullOrWhiteSpace(p.ApolloContactJson))
+        {
+            var (title, seniority, headline) = ParseApolloContact(p.ApolloContactJson);
+            if (!string.IsNullOrWhiteSpace(title))     sb.AppendLine($"Title: {title}");
+            if (!string.IsNullOrWhiteSpace(seniority)) sb.AppendLine($"Seniority: {seniority}");
+            if (!string.IsNullOrWhiteSpace(headline))  sb.AppendLine($"Headline: {headline}");
+        }
 
         if (company != null)
         {
@@ -826,10 +895,13 @@ Return only the JSON.";
         return sb.ToString();
     }
 
-    private async Task<string> CallAI(string endpoint, string key, string deployment, string systemPrompt, string context)
+    private async Task<string> CallAI(string endpoint, string key, string deployment, string systemPrompt, string context, bool forceLinkInBody = true)
     {
         // Prepend a compact YouTube reminder directly into the user turn —
         // models attend most strongly to the end of the user message.
+        // forceLinkInBody=false for the Email artifact: it gets a deterministic,
+        // code-built Project/iOS/Android/Web/YouTube block appended after generation
+        // instead (see BuildLinkBlock) — forcing a link into the prose too would duplicate it.
         var hasYtDemos = context.Contains("AVAILABLE YOUTUBE DEMOS");
         _log.LogInformation("CallAI: hasYoutubeDemos={0}, contextLen={1}, contextSnippet={2}",
             hasYtDemos,
@@ -838,9 +910,13 @@ Return only the JSON.";
                 ? context.Substring(context.IndexOf("AVAILABLE YOUTUBE DEMOS"), Math.Min(300, context.Length - context.IndexOf("AVAILABLE YOUTUBE DEMOS")))
                 : "(no demos block)");
 
-        var ytSection = hasYtDemos
-            ? "IMPORTANT: The context below contains an AVAILABLE YOUTUBE DEMOS section. You MUST include exactly one of those YouTube URLs as a Demo link in your output. Do not omit it.\n\n"
-            : "IMPORTANT: No YouTube demo links are available in the context. Do not invent or include any links.\n\n";
+        string ytSection;
+        if (!forceLinkInBody)
+            ytSection = "IMPORTANT: Do not include any link, URL, or \"Demo:\" line in your output — links are appended separately by the system.\n\n";
+        else
+            ytSection = hasYtDemos
+                ? "IMPORTANT: The context below contains an AVAILABLE YOUTUBE DEMOS section. You MUST include exactly one of those YouTube URLs as a Demo link in your output. Do not omit it.\n\n"
+                : "IMPORTANT: No YouTube demo links are available in the context. Do not invent or include any links.\n\n";
 
         var messages = new List<object>
         {
@@ -853,7 +929,9 @@ Return only the JSON.";
         text = text.Replace("**", "");
 
         // Post-inject: if context had YouTube demos but model skipped them, append
-        text = EnsureYouTubeLinks(text, context);
+        // (skipped for Email — BuildLinkBlock handles that artifact's link block instead)
+        if (forceLinkInBody)
+            text = EnsureYouTubeLinks(text, context);
 
         _log.LogInformation("CallAI result length: {0}, first 200: {1}", text.Length, text.Length > 200 ? text[..200] : text);
         return text;

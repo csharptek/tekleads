@@ -13,6 +13,9 @@ interface Project {
   outcomes: string;
   links: string;
   youtubeLinks: string;
+  iosLink: string;
+  androidLink: string;
+  webLink: string;
   embeddingIndexed: boolean;
   createdAt: string;
 }
@@ -21,6 +24,7 @@ interface FormState {
   title: string; industry: string; tags: string[];
   problem: string; solution: string; techStack: string;
   outcomes: string; links: string[]; youtubeLinks: string[];
+  iosLink: string; androidLink: string; webLink: string;
 }
 
 type ViewMode = "card" | "list";
@@ -29,6 +33,7 @@ type SortKey = "date" | "title" | "indexed";
 const empty = (): FormState => ({
   title: "", industry: "", tags: [], problem: "",
   solution: "", techStack: "", outcomes: "", links: [""], youtubeLinks: [""],
+  iosLink: "", androidLink: "", webLink: "",
 });
 
 function Banner({ b, onClose }: { b: { kind: "error" | "success" | "info"; text: string }; onClose: () => void }) {
@@ -115,6 +120,7 @@ export default function PortfolioView() {
       solution: p.solution, techStack: p.techStack, outcomes: p.outcomes,
       links: linksArr,
       youtubeLinks: ytLinksArr,
+      iosLink: p.iosLink || "", androidLink: p.androidLink || "", webLink: p.webLink || "",
     });
     setShowForm(true);
     setTimeout(() => {
@@ -146,6 +152,7 @@ export default function PortfolioView() {
         techStack: p.techStack || "", outcomes: p.outcomes || "",
         links: linksArr.length ? linksArr : [""],
         youtubeLinks: [""],
+        iosLink: "", androidLink: "", webLink: "",
       });
       setShowForm(true);
       setBanner({ kind: "success", text: "Fields extracted — review and save." });
@@ -363,6 +370,18 @@ export default function PortfolioView() {
                 ))}
                 <button className="btn btn-ghost btn-sm" style={{ marginTop: 2 }}
                   onClick={() => setForm(p => ({ ...p, youtubeLinks: [...p.youtubeLinks, ""] }))}>+ Add YouTube Link</button>
+              </div>
+              <div>
+                <div className="field-label">iOS Link</div>
+                <input className="input" value={form.iosLink} onChange={e => f("iosLink")(e.target.value)} placeholder="https://apps.apple.com/..." />
+              </div>
+              <div>
+                <div className="field-label">Android Link</div>
+                <input className="input" value={form.androidLink} onChange={e => f("androidLink")(e.target.value)} placeholder="https://play.google.com/..." />
+              </div>
+              <div>
+                <div className="field-label">Web Link</div>
+                <input className="input" value={form.webLink} onChange={e => f("webLink")(e.target.value)} placeholder="https://yourdemo.up.railway.app" />
               </div>
               <div className="full">
                 <div className="field-label">Other Links</div>
@@ -638,6 +657,16 @@ export default function PortfolioView() {
                             <div>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Tech Stack</div>
                               <div style={{ fontSize: 12 }}>{p.techStack}</div>
+                            </div>
+                          )}
+                          {(p.iosLink || p.androidLink || p.webLink) && (
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>App / Web Links</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {p.iosLink && <a href={p.iosLink} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ fontSize: 11, textDecoration: "none" }}>↗ iOS</a>}
+                                {p.androidLink && <a href={p.androidLink} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ fontSize: 11, textDecoration: "none" }}>↗ Android</a>}
+                                {p.webLink && <a href={p.webLink} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ fontSize: 11, textDecoration: "none" }}>↗ Web</a>}
+                              </div>
                             </div>
                           )}
                           {p.links && p.links.split("\n").filter(Boolean).length > 0 && (

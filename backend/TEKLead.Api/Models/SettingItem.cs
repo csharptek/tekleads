@@ -38,6 +38,10 @@ public static class SettingKeys
     public const string AzureSearchIndex           = "azure_search_index";
     public const string AzureOpenAiEmbeddingDeployment = "azure_openai_embedding_deployment";
 
+    // Embedding provider (portfolio RAG) — independent of AiProvider (chat) and VectorProvider (storage)
+    public const string GeminiApiKey               = "gemini_api_key";
+    public const string GeminiEmbeddingModel        = "gemini_embedding_model";
+
     // LLM provider toggle
     public const string AiProvider                 = "ai_provider";          // "azure" | "groq" | "claude"
     public const string GroqApiKey                 = "groq_api_key";
@@ -115,6 +119,7 @@ public static class SettingKeys
         WhatsappCloudPhoneNumberId, WhatsappCloudWabaId, WhatsappCloudAccessToken, WhatsappCloudVerifyToken,
         WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion, WhatsappBlobContainer,
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
+        GeminiApiKey, GeminiEmbeddingModel,
         AiProvider, GroqApiKey, GroqModel, ClaudeApiKey, ClaudeModel, VectorProvider,
         ArtifactCoverLetterPromptAzure, ArtifactWhatsappPromptAzure, ArtifactEmailPromptAzure, ArtifactFollowUp1PromptAzure, ArtifactFollowUp2PromptAzure,
         ArtifactCoverLetterPromptGroq,  ArtifactWhatsappPromptGroq,  ArtifactEmailPromptGroq,  ArtifactFollowUp1PromptGroq,  ArtifactFollowUp2PromptGroq,
@@ -135,6 +140,7 @@ public static class SettingKeys
     public static readonly HashSet<string> Secrets = new()
     {
         AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey,
-        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey, ClaudeApiKey, ApifyApiKey, GmailSmtpAppPassword
+        WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey, ClaudeApiKey, ApifyApiKey, GmailSmtpAppPassword,
+        GeminiApiKey
     };
 }
