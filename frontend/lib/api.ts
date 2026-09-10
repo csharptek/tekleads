@@ -24,7 +24,7 @@ async function call<T>(path: string, init?: RequestInit, timeoutMs = 30000): Pro
     let data: any = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     if (!res.ok) {
-      const msg = (data && data.error) ? data.error : (typeof data === "string" ? data : res.statusText);
+      const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (typeof data === "string" ? data : res.statusText);
       throw new Error(`${res.status}: ${msg}`);
     }
     return data as T;
@@ -75,7 +75,7 @@ export const api = {
       let data: any = null;
       try { data = text ? JSON.parse(text) : null; } catch { data = text; }
       if (!res.ok) {
-        const msg = (data && data.error) ? data.error : (typeof data === "string" ? data : res.statusText);
+        const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (typeof data === "string" ? data : res.statusText);
         throw new Error(`${res.status}: ${msg}`);
       }
       return data as T;

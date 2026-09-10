@@ -318,6 +318,7 @@ public class PortfolioService
         }
         catch (Exception ex)
         {
+            _log.LogWarning(ex, "Gemini embedding failed for project {0}", project.Id);
             return (false, $"Embedding failed: {ex.Message}");
         }
 
@@ -332,6 +333,7 @@ public class PortfolioService
         }
         catch (Exception ex)
         {
+            _log.LogWarning(ex, "pgvector write failed for project {0}", project.Id);
             return (false, $"pgvector write failed: {ex.Message}");
         }
 
