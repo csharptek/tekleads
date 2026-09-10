@@ -686,7 +686,12 @@ DOCUMENT:
         var json = await resp.Content.ReadAsStringAsync();
 
         if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Gemini embedding error: {json}");
+        {
+            var keyLen = geminiKey.Length;
+            var keyPreview = keyLen > 6 ? $"{geminiKey[..3]}...{geminiKey[^3..]}" : "(short)";
+            var bodyPreview = string.IsNullOrEmpty(json) ? "(empty body)" : json;
+            throw new Exception($"Gemini embedding error: HTTP {(int)resp.StatusCode} {resp.ReasonPhrase} | model={geminiModel} | key len={keyLen} preview={keyPreview} | body={bodyPreview}");
+        }
 
         var doc = JsonDocument.Parse(json);
         return doc.RootElement
