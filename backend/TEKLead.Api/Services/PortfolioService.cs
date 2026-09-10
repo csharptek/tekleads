@@ -668,8 +668,9 @@ DOCUMENT:
 
     private async Task<float[]> GenerateEmbedding(Dictionary<string, string> settings, string text)
     {
-        var geminiKey   = settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "");
-        var geminiModel = settings.GetValueOrDefault(SettingKeys.GeminiEmbeddingModel, "gemini-embedding-001");
+        var geminiKey      = settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "").Trim();
+        var geminiModelRaw = settings.GetValueOrDefault(SettingKeys.GeminiEmbeddingModel, "");
+        var geminiModel    = string.IsNullOrWhiteSpace(geminiModelRaw) ? "gemini-embedding-001" : geminiModelRaw.Trim();
 
         if (string.IsNullOrWhiteSpace(geminiKey))
             throw new Exception("Gemini API key not configured in Settings (required for embeddings).");
