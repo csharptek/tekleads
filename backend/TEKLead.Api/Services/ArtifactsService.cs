@@ -490,7 +490,7 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Reference 1 (max 2) portfolio projects, and they MUST match the CLIENT INDUSTRY from context if a match exists.
-- Do NOT include any link, URL, or "Demo:" line yourself anywhere in the body — a separate system step appends the project name and any available links (iOS/Android/Web/YouTube demo) after your text. Writing a link yourself creates a duplicate.
+- Do NOT include any link, URL, or ""Demo:"" line yourself anywhere in the body — a separate system step appends the project name and any available links (iOS/Android/Web/YouTube demo) after your text. Writing a link yourself creates a duplicate.
 
 Proposal rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
