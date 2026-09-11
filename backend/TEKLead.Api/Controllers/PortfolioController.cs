@@ -116,7 +116,7 @@ public class PortfolioController : ControllerBase
     [HttpPost("test-email-preview")]
     public async Task<IActionResult> TestEmailPreview([FromBody] TestMatchRequest req)
     {
-        var (ok, message, preview, thresholdLevel, thresholdScore, matches, totalPortfolioItems, indexedPortfolioItems) = await _svc.TestGenerateEmailPreview(req.JobText, req.TopK);
+        var (ok, message, preview, thresholdLevel, thresholdScore, matches, totalPortfolioItems, indexedPortfolioItems) = await _svc.TestGenerateEmailPreview(req.JobText, req.TopK, req.ClientName);
         return ok
             ? Ok(new { ok, preview, thresholdLevel, thresholdScore, matches, totalPortfolioItems, indexedPortfolioItems })
             : BadRequest(new { ok, message, thresholdLevel, thresholdScore, totalPortfolioItems, indexedPortfolioItems });
@@ -166,4 +166,5 @@ public class TestMatchRequest
 {
     public string JobText { get; set; } = "";
     public int TopK { get; set; } = 5;
+    public string ClientName { get; set; } = "";
 }

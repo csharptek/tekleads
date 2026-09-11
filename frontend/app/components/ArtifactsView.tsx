@@ -102,7 +102,7 @@ type EnhancedMatchResult = {
   matchedTags: string[]; tier: string; passesThreshold: boolean;
 };
 
-function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobText?: string; proposalId?: string }) {
+function PortfolioMatchTestPanel({ defaultJobText, proposalId, clientName }: { defaultJobText?: string; proposalId?: string; clientName?: string }) {
   const [jobText, setJobText] = useState(defaultJobText || "");
   const [autoLoaded, setAutoLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -175,7 +175,7 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
     try {
       const res = await api.post<{ ok: boolean; preview: TestEmailPreview; thresholdLevel: number; thresholdScore: number; matches: PortfolioMatchResult[]; totalPortfolioItems: number; indexedPortfolioItems: number }>(
         "/api/portfolio/test-email-preview",
-        { jobText, topK: 5 }
+        { jobText, topK: 5, clientName: clientName || "" }
       );
       setPreview(res.preview);
       setThresholdLevel(res.thresholdLevel);
@@ -847,7 +847,7 @@ export default function ArtifactsView({
 
   return (
     <div className="page" style={{ paddingBottom: 40 }}>
-      <PortfolioMatchTestPanel defaultJobText={proposalHeadline} proposalId={proposalId} />
+      <PortfolioMatchTestPanel defaultJobText={proposalHeadline} proposalId={proposalId} clientName={clientName} />
 
       <div className="page-header">
         <div>

@@ -544,45 +544,71 @@ public class PortfolioService
         public int MatchesUsed { get; set; }
     }
 
-    private static string TestNoMatchFallbackPrompt() => @"You are writing a short PROPOSAL EMAIL BODY on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years experience and 40+ projects delivered. This is a preview for a case where we do NOT have a closely matching past project to cite by name.
+    // Greeting mirrors the live EmailPrompt's rule: first name if we have a client
+    // name for this test, else the generic fallback.
+    private static string TestGreetingRule(string clientFirstName) =>
+        string.IsNullOrWhiteSpace(clientFirstName)
+            ? "Start with exactly: \"Hi there,\" on its own line (no client name available in this test)."
+            : $"Start with exactly: \"Hi {clientFirstName},\" on its own line.";
 
-STRUCTURE (prose, no headers, no bullets):
+    // Structure/order/word-count now mirror the live ArtifactsService.EmailPrompt()
+    // (HOOK -> CREDIBILITY -> APPROACH -> CTA, 150-200 words) instead of a thinner
+    // custom shape — this prompt is still separate code, not the live prompt itself.
+    private static string TestNoMatchFallbackPrompt(string clientFirstName) => $@"You are writing a short PROPOSAL EMAIL BODY on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years experience and 40+ projects delivered. This is a preview for a case where we do NOT have a closely matching past project to cite by name.
+
+STRUCTURE — exact order, no section titles, no bullets:
 1. HOOK (1-2 sentences): Mirror the client's core problem from the job description, in your own words. Do NOT start with ""I"".
-2. APPROACH (2-3 sentences): Name concrete technologies/approach based on the job description. Show the work is already scoped.
-3. CREDIBILITY (1 sentence): General only — e.g. ""we've delivered similar solutions in this space before."" Do NOT name any specific project, client, or company. No links.
-4. CTA (1 sentence): Invite a reply, e.g. ""Worth 15 min this week?"" No pricing, no rates, no numbers about cost.
+2. CREDIBILITY (1 sentence): General only — e.g. ""We've delivered similar solutions in this space before."" Do NOT name any specific project, client, or company. No links.
+3. APPROACH (2-3 sentences): Name concrete technologies/approach based on the job description. Show the work is already scoped.
+4. CTA (1-2 sentences): Invite a reply, e.g. ""Worth 15 min this week?"" No pricing, no rates, no numbers about cost.
 
 RULES:
-- Start with exactly: ""Hi there,"" on its own line (no client name available in this test).
+- {TestGreetingRule(clientFirstName)}
 - Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"", ""context-aware"", ""cutting-edge"", ""seamless"".
-- Max 150 words total.
+- Body: 150-200 words.
 - No signature, no subject line.
 
 Return only the email body text.";
 
-    private static string TestMultiMatchLinkPrompt() => @"You are writing a short PROPOSAL EMAIL BODY on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years experience and 40+ projects delivered. This is a preview for a case where we DO have relevant past project(s) — their names and links will be appended automatically right after your text. Do not write any links yourself, and do not describe project details beyond the name you were given.
+    private static string TestMultiMatchLinkPrompt(string clientFirstName) => $@"You are writing a short PROPOSAL EMAIL BODY on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years experience and 40+ projects delivered. This is a preview for a case where we DO have relevant past project(s) — their names and links will be appended automatically right after your text. Do not write any links yourself, and do not describe project details beyond the name(s) you were given.
 
-STRUCTURE (prose, no headers, no bullets):
+STRUCTURE — exact order, no section titles, no bullets:
 1. HOOK (1-2 sentences): Mirror the client's core problem from the job description, in your own words. Do NOT start with ""I"".
-2. APPROACH (2-3 sentences): Name concrete technologies/approach based on the job description. Show the work is already scoped.
-3. CREDIBILITY LEAD-IN (1 sentence, max 25 words): Naturally introduce the past project(s) given to you by name as proof of relevant experience. The system appends full project details/links directly after this sentence.
-4. CTA (1 sentence): Invite a reply, e.g. ""Worth 15 min this week?"" No pricing, no rates.
+2. CREDIBILITY (1-2 sentences): Introduce the given past project(s) by name as proof of relevant experience, format like ""On a comparable project, I built [what] — [why it's relevant here]."" The system appends full project details/links directly after this.
+3. APPROACH (2-3 sentences): Name concrete technologies/approach based on the job description. Show the work is already scoped.
+4. CTA (1-2 sentences): Invite a reply, e.g. ""Worth 15 min this week?"" No pricing, no rates.
 
 RULES:
-- Start with exactly: ""Hi there,"" on its own line (no client name available in this test).
+- {TestGreetingRule(clientFirstName)}
 - Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"", ""context-aware"", ""cutting-edge"", ""seamless"".
-- Max 150 words total (excluding the link block appended after).
+- Body: 150-200 words (excluding the link block appended after).
 - No signature, no subject line.
 
 Return only the email body text.";
 
-    public async Task<(bool ok, string message, TestEmailPreview? preview, int thresholdLevel, double thresholdScore, List<PortfolioMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestGenerateEmailPreview(string jobText, int topK = 5)
+    public async Task<(bool ok, string message, TestEmailPreview? preview, int thresholdLevel, double thresholdScore, List<PortfolioMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestGenerateEmailPreview(string jobText, int topK = 5, string clientName = "")
     {
         var (ok, message, thresholdLevel, thresholdScore, matches, total, indexed) = await TestMatchWithScores(jobText, topK);
         if (!ok) return (false, message, null, thresholdLevel, thresholdScore, matches, total, indexed);
 
         var settings = await _settings.GetAll();
-        var passing = matches.Where(m => m.PassesThreshold).OrderByDescending(m => m.Score).Take(2).ToList();
+        var clientFirstName = string.IsNullOrWhiteSpace(clientName) ? "" : clientName.Trim().Split(' ')[0];
+
+        // Only cite a project by name if it actually has a link to back it up — naming
+        // a project with zero proof (no iOS/Android/Web/YouTube link on file) reads as
+        // padding. Check every passing candidate, not just the top-scored ones, and
+        // skip linkless ones even if their score is higher than a linked runner-up.
+        var passingByScore = matches.Where(m => m.PassesThreshold).OrderByDescending(m => m.Score).ToList();
+        var passing = new List<(PortfolioMatchResult match, PortfolioProject full)>();
+        foreach (var m in passingByScore)
+        {
+            if (passing.Count == 2) break;
+            var full = await GetById(m.Id);
+            if (full == null) continue;
+            bool hasLink = !string.IsNullOrWhiteSpace(full.IosLink) || !string.IsNullOrWhiteSpace(full.AndroidLink)
+                        || !string.IsNullOrWhiteSpace(full.WebLink) || !string.IsNullOrWhiteSpace(full.YoutubeLinks);
+            if (hasLink) passing.Add((m, full));
+        }
 
         try
         {
@@ -592,22 +618,20 @@ Return only the email body text.";
 
             if (passing.Count == 0)
             {
-                messages.Add(new { role = "system", content = TestNoMatchFallbackPrompt() });
+                messages.Add(new { role = "system", content = TestNoMatchFallbackPrompt(clientFirstName) });
                 messages.Add(new { role = "user", content = $"JOB DESCRIPTION:\n{jobText}" });
                 leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 600);
             }
             else
             {
-                messages.Add(new { role = "system", content = TestMultiMatchLinkPrompt() });
-                var projTitles = string.Join(", ", passing.Select(p => p.Title));
+                messages.Add(new { role = "system", content = TestMultiMatchLinkPrompt(clientFirstName) });
+                var projTitles = string.Join(", ", passing.Select(p => p.match.Title));
                 messages.Add(new { role = "user", content = $"JOB DESCRIPTION:\n{jobText}\n\nPROJECT(S): {projTitles}" });
                 leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 600);
 
                 var sb = new StringBuilder();
-                foreach (var m in passing)
+                foreach (var (_, full) in passing)
                 {
-                    var full = await GetById(m.Id);
-                    if (full == null) continue;
                     sb.AppendLine();
                     sb.AppendLine($"Project Name: {full.Title}");
                     var yt = (full.YoutubeLinks ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
