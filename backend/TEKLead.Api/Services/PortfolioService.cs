@@ -520,17 +520,37 @@ public class PortfolioService
         public int MatchesUsed { get; set; }
     }
 
-    private static string TestNoMatchFallbackPrompt() => @"You are writing the CREDIBILITY + APPROACH section of a freelance proposal email, for a case where we do NOT have a closely matching past project to cite by name.
+    private static string TestNoMatchFallbackPrompt() => @"You are writing a short PROPOSAL EMAIL BODY on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years experience and 40+ projects delivered. This is a preview for a case where we do NOT have a closely matching past project to cite by name.
 
-Write 2 short paragraphs (max 90 words total):
-1. How we would approach THIS specific project — 2-3 concrete sentences naming the likely technical approach based on the job description. Show the work is already scoped.
-2. Why we're a good fit — one sentence, general credibility (e.g. ""we've delivered similar solutions in this space before""). Do NOT name any specific project, client, or company. No links.
+STRUCTURE (prose, no headers, no bullets):
+1. HOOK (1-2 sentences): Mirror the client's core problem from the job description, in your own words. Do NOT start with ""I"".
+2. APPROACH (2-3 sentences): Name concrete technologies/approach based on the job description. Show the work is already scoped.
+3. CREDIBILITY (1 sentence): General only — e.g. ""we've delivered similar solutions in this space before."" Do NOT name any specific project, client, or company. No links.
+4. CTA (1 sentence): Invite a reply, e.g. ""Worth 15 min this week?"" No pricing, no rates, no numbers about cost.
 
-Tone: confident, concise, no filler like 'great fit' or 'passionate'. Return only the 2 paragraphs as plain text, no headers, no JSON.";
+RULES:
+- Start with exactly: ""Hi there,"" on its own line (no client name available in this test).
+- Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"", ""context-aware"", ""cutting-edge"", ""seamless"".
+- Max 150 words total.
+- No signature, no subject line.
 
-    private static string TestMultiMatchLinkPrompt() => @"You are writing a short lead-in sentence introducing 1-2 relevant past projects that will be listed right after your text (links appended separately, do not write links yourself).
+Return only the email body text.";
 
-Write exactly 1 sentence (max 25 words) that naturally introduces the project(s) as proof of relevant experience. Return only that sentence, no preamble, no links.";
+    private static string TestMultiMatchLinkPrompt() => @"You are writing a short PROPOSAL EMAIL BODY on behalf of Bhanu Gupta, a senior full-stack developer and AI consultant with 15+ years experience and 40+ projects delivered. This is a preview for a case where we DO have relevant past project(s) — their names and links will be appended automatically right after your text. Do not write any links yourself, and do not describe project details beyond the name you were given.
+
+STRUCTURE (prose, no headers, no bullets):
+1. HOOK (1-2 sentences): Mirror the client's core problem from the job description, in your own words. Do NOT start with ""I"".
+2. APPROACH (2-3 sentences): Name concrete technologies/approach based on the job description. Show the work is already scoped.
+3. CREDIBILITY LEAD-IN (1 sentence, max 25 words): Naturally introduce the past project(s) given to you by name as proof of relevant experience. The system appends full project details/links directly after this sentence.
+4. CTA (1 sentence): Invite a reply, e.g. ""Worth 15 min this week?"" No pricing, no rates.
+
+RULES:
+- Start with exactly: ""Hi there,"" on its own line (no client name available in this test).
+- Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"", ""context-aware"", ""cutting-edge"", ""seamless"".
+- Max 150 words total (excluding the link block appended after).
+- No signature, no subject line.
+
+Return only the email body text.";
 
     public async Task<(bool ok, string message, TestEmailPreview? preview, int thresholdLevel, List<PortfolioMatchResult> matches)> TestGenerateEmailPreview(string jobText, int topK = 5)
     {
@@ -557,7 +577,7 @@ Write exactly 1 sentence (max 25 words) that naturally introduces the project(s)
                 messages.Add(new { role = "system", content = TestMultiMatchLinkPrompt() });
                 var projTitles = string.Join(", ", passing.Select(p => p.Title));
                 messages.Add(new { role = "user", content = $"JOB DESCRIPTION:\n{jobText}\n\nPROJECT(S): {projTitles}" });
-                leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 100);
+                leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 300);
 
                 var sb = new StringBuilder();
                 foreach (var m in passing)
