@@ -127,25 +127,35 @@ public class ArtifactsService
 
         var companyCtx = await _companyCtx.GetByProposalId(proposal.Id);
 
-        // RAG: industry-first portfolio retrieval (embedding may fail if not configured)
+        // RAG: industry+tags+semantic tiered portfolio retrieval (see PortfolioService.
+        // SearchSimilarEnhanced). Throws only on real infra failure (no embedding key,
+        // embedding call failed, DB error) — that's the only case that falls back to
+        // RankByIndustry below. A clean empty result means "nothing genuinely relevant",
+        // which is left empty on purpose so the prompt doesn't force an unrelated citation.
         List<PortfolioProject> portfolioItems;
+        var portfolioSearchFailed = false;
         try
         {
             var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
             if (query.Length > 500) query = query[..500];
-            portfolioItems = await _portfolio.SearchSimilarSmart(query, companyCtx?.Industry, topK: 3);
+            portfolioItems = await _portfolio.SearchSimilarEnhanced(query, companyCtx?.Industry, topK: 3);
         }
-        catch
+        catch (Exception ex)
         {
+            _log.LogWarning(ex, "Portfolio search failed for proposal {0}, falling back to industry ranking", proposalId);
             portfolioItems = new List<PortfolioProject>();
+            portfolioSearchFailed = true;
         }
-        if (portfolioItems.Count == 0)
+        if (portfolioSearchFailed)
         {
             var all = await _portfolio.GetAll();
             portfolioItems = RankByIndustry(all.Where(p => p.EmbeddingIndexed).ToList(), companyCtx?.Industry, 3);
             if (portfolioItems.Count == 0)
                 portfolioItems = RankByIndustry(all, companyCtx?.Industry, 3);
         }
+        // Never cite a project with zero proof (no iOS/Android/Web/YouTube link on file) —
+        // a name-drop with nothing to back it up reads as padding.
+        portfolioItems = portfolioItems.Where(HasAnyLink).ToList();
         var context = BuildContext(proposal, portfolioItems, companyCtx);
 
         var clPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
@@ -161,7 +171,7 @@ public class ArtifactsService
             whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(waPrompt, WhatsappPrompt, GroqWhatsappPrompt, provider, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq), context);
             var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt, GroqEmailPrompt, provider, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq), context, forceLinkInBody: false);
             (emailSubject, emailBody) = ParseEmail(emailRaw);
-            var linkBlock = BuildLinkBlock(portfolioItems.FirstOrDefault());
+            var linkBlock = BuildLinkBlocks(portfolioItems);
             if (linkBlock != null) emailBody = emailBody.TrimEnd() + "\n\n" + linkBlock;
         }
         catch (Exception ex)
@@ -233,7 +243,7 @@ public class ArtifactsService
         var prompt = customPrompt ?? GetPrompt(savedPrompt, EmailPrompt, GroqEmailPrompt, provider, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context, forceLinkInBody: false);
         var (subject, body) = ParseEmail(raw);
-        var linkBlock = BuildLinkBlock(portfolioItems.FirstOrDefault());
+        var linkBlock = BuildLinkBlocks(portfolioItems);
         if (linkBlock != null) body = body.TrimEnd() + "\n\n" + linkBlock;
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
@@ -331,20 +341,27 @@ public class ArtifactsService
         var company = await _companyCtx.GetByProposalId(proposal.Id);
 
         List<PortfolioProject> portfolioItems;
+        var portfolioSearchFailed = false;
         try
         {
             var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
             if (query.Length > 500) query = query[..500];
-            portfolioItems = await _portfolio.SearchSimilarSmart(query, company?.Industry, topK: 3);
+            portfolioItems = await _portfolio.SearchSimilarEnhanced(query, company?.Industry, topK: 3);
         }
-        catch { portfolioItems = new List<PortfolioProject>(); }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Portfolio search failed for proposal {0}, falling back to industry ranking", proposalId);
+            portfolioItems = new List<PortfolioProject>();
+            portfolioSearchFailed = true;
+        }
 
-        if (portfolioItems.Count == 0)
+        if (portfolioSearchFailed)
         {
             var all = await _portfolio.GetAll();
             portfolioItems = RankByIndustry(all.Where(p => p.EmbeddingIndexed).ToList(), company?.Industry, 3);
             if (portfolioItems.Count == 0) portfolioItems = RankByIndustry(all, company?.Industry, 3);
         }
+        portfolioItems = portfolioItems.Where(HasAnyLink).ToList();
 
         return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null, company);
     }
@@ -778,26 +795,43 @@ Return only the JSON.";
     }
 
     /// <summary>
+    /// True if a project has at least one link on file (iOS/Android/Web/YouTube).
+    /// Used to filter out projects before they're ever offered to a prompt as
+    /// something to cite by name — a name-drop with zero proof reads as padding.
+    /// </summary>
+    private static bool HasAnyLink(PortfolioProject p) =>
+        !string.IsNullOrWhiteSpace(p.IosLink) || !string.IsNullOrWhiteSpace(p.AndroidLink)
+     || !string.IsNullOrWhiteSpace(p.WebLink) || !string.IsNullOrWhiteSpace(p.YoutubeLinks);
+
+    /// <summary>
     /// Deterministic Project/iOS/Android/Web/YouTube block appended to the generated email
     /// body — never left to the LLM's formatting. Any field that's empty on the record is
-    /// omitted entirely (never printed as "not found" or left blank).
+    /// omitted entirely (never printed as "not found" or left blank). Cites up to 2 projects
+    /// (matches the "PORTFOLIO SELECTION RULE" allowance of 1-2 references in the prompts).
     /// </summary>
-    private static string? BuildLinkBlock(PortfolioProject? project)
+    private static string? BuildLinkBlocks(List<PortfolioProject> projects, int max = 2)
     {
-        if (project == null || string.IsNullOrWhiteSpace(project.Title)) return null;
-
-        var youtube = (project.YoutubeLinks ?? "")
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault() ?? "";
+        var chosen = projects.Where(p => p != null && !string.IsNullOrWhiteSpace(p.Title)).Take(max).ToList();
+        if (chosen.Count == 0) return null;
 
         var sb = new StringBuilder();
-        sb.AppendLine("For reference, here's a similar project we delivered:");
-        sb.AppendLine();
-        sb.AppendLine($"Project Name: {project.Title}");
-        if (!string.IsNullOrWhiteSpace(project.IosLink))     sb.AppendLine($"iOS Link: {project.IosLink}");
-        if (!string.IsNullOrWhiteSpace(project.AndroidLink)) sb.AppendLine($"Android Link: {project.AndroidLink}");
-        if (!string.IsNullOrWhiteSpace(project.WebLink))     sb.AppendLine($"Web Link: {project.WebLink}");
-        if (!string.IsNullOrWhiteSpace(youtube))             sb.AppendLine($"Youtube Demo: {youtube}");
+        sb.AppendLine(chosen.Count > 1
+            ? "For reference, here are similar projects we've delivered:"
+            : "For reference, here's a similar project we delivered:");
+
+        foreach (var project in chosen)
+        {
+            var youtube = (project.YoutubeLinks ?? "")
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault() ?? "";
+
+            sb.AppendLine();
+            sb.AppendLine($"Project Name: {project.Title}");
+            if (!string.IsNullOrWhiteSpace(project.IosLink))     sb.AppendLine($"iOS Link: {project.IosLink}");
+            if (!string.IsNullOrWhiteSpace(project.AndroidLink)) sb.AppendLine($"Android Link: {project.AndroidLink}");
+            if (!string.IsNullOrWhiteSpace(project.WebLink))     sb.AppendLine($"Web Link: {project.WebLink}");
+            if (!string.IsNullOrWhiteSpace(youtube))             sb.AppendLine($"Youtube Demo: {youtube}");
+        }
 
         return sb.ToString().TrimEnd('\n', '\r');
     }
@@ -892,6 +926,14 @@ Return only the JSON.";
             {
                 sb.AppendLine("\n## NO YOUTUBE DEMOS AVAILABLE — do not include any demo link.");
             }
+        }
+        else
+        {
+            // No past project cleared the relevance bar for this job — this single line
+            // covers every artifact prompt (cover letter, WhatsApp, email, follow-ups)
+            // without needing to edit each one: don't let the model fabricate or force
+            // a citation just because its structure has a "portfolio" section.
+            sb.AppendLine("\n## RELEVANT PORTFOLIO PROJECTS: none found for this job. Do NOT reference any past project by name, do NOT invent one, and do NOT include any project link — keep credibility/proof language general only (e.g., \"we've delivered comparable solutions in this space before\").");
         }
 
         return sb.ToString();

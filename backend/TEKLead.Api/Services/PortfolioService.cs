@@ -828,6 +828,95 @@ Return only the email body text.";
     /// matches the target industry come first. Guarantees at most topK results,
     /// with industry matches prioritised (1-2 industry matches + best semantic rest).
     /// </summary>
+    // ── LIVE: promoted from the test panel's "enhanced tiered matching" ────────
+    // Same tiering as TestMatchEnhanced (industry+tags full-phrase overlap boosts
+    // semantic score; a bare industry/semantic-only match must still clear the
+    // configured threshold). This is now the retrieval used by live proposal
+    // generation (see ArtifactsService), replacing SearchSimilarSmart below —
+    // that method is left in place, just unused by the live path now.
+    //
+    // Throws on real infra failure (no embedding key configured, embedding call
+    // failed, DB error) so the caller can tell "search broke" apart from "search
+    // ran fine and genuinely nothing cleared a tier" (an empty list here means the
+    // latter — callers should NOT paper over that with an unrelated fallback project,
+    // that's the exact bug this whole feature exists to fix).
+    public async Task<List<PortfolioProject>> SearchSimilarEnhanced(string query, string? industry, int topK = 3)
+    {
+        var settings = await _settings.GetAll();
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
+            throw new Exception("Gemini API key not configured in Settings (required for embeddings).");
+
+        if (string.IsNullOrWhiteSpace(query))
+            return new List<PortfolioProject>();
+
+        var thresholdLevel = GetPortfolioMatchLevel(settings);
+        var thresholdScore = MatchLevelToScore[thresholdLevel - 1];
+
+        var embedding = await GenerateEmbedding(settings, query); // exceptions propagate to caller on purpose
+
+        var jdTokens = Tokenize(query);
+        if (!string.IsNullOrWhiteSpace(industry))
+            foreach (var t in Tokenize(industry)) jdTokens.Add(t);
+
+        var poolSize = Math.Max(topK * 4, 20);
+
+        var cs = _settings.ConnectionString;
+        await using var c = new NpgsqlConnection(cs);
+        await c.OpenAsync();
+
+        var rows = await c.QueryAsync<dynamic>(
+            $@"SELECT {SelectColumns}, (embedding_vec <=> @vec::vector) AS distance
+              FROM portfolio_projects
+              WHERE embedding_vec IS NOT NULL
+              ORDER BY embedding_vec <=> @vec::vector
+              LIMIT @poolSize",
+            new { vec = EmbeddingToVectorLiteral(embedding), poolSize });
+
+        var scored = rows.Select(r =>
+        {
+            var proj = Map(r);
+            double distance = (double)r.distance;
+            double semanticScore = 1.0 - distance;
+
+            bool industryMatch = TokenOverlap(jdTokens, Tokenize(proj.Industry));
+            var matchedTags = proj.Tags.Where(t => TokenOverlap(jdTokens, Tokenize(t))).ToList();
+            bool hasTagMatch = matchedTags.Count > 0;
+
+            double bonus;
+            bool passes;
+            if (industryMatch && hasTagMatch)
+            {
+                bonus = EnhancedIndustryBonus + Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
+                passes = true;
+            }
+            else if (hasTagMatch)
+            {
+                bonus = Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
+                passes = true;
+            }
+            else if (industryMatch)
+            {
+                bonus = EnhancedIndustryWeakBonus;
+                passes = semanticScore >= thresholdScore;
+            }
+            else
+            {
+                bonus = 0;
+                passes = semanticScore >= thresholdScore;
+            }
+
+            double combined = Math.Min(1.0, semanticScore + bonus);
+            return new { proj, combined, passes };
+        })
+        .Where(x => x.passes)
+        .OrderByDescending(x => x.combined)
+        .Take(topK)
+        .Select(x => x.proj)
+        .ToList();
+
+        return scored;
+    }
+
     public async Task<List<PortfolioProject>> SearchSimilarSmart(string query, string? industry, int topK = 3)
     {
         // Wide pool via hybrid search

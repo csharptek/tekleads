@@ -228,9 +228,9 @@ function PortfolioMatchThresholdCard() {
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Portfolio Matching (Testing)</div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Portfolio Match Threshold</div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-        Match threshold for the test panel on the Artifacts page. 1 = loose (more matches pass), 5 = strict (only close matches pass). Not wired into live proposal generation yet.
+        Used live in proposal generation (Email, WhatsApp, Cover Letter, Follow-ups) and the test panel on the Artifacts page. 1 = loose (more matches pass), 5 = strict (only close matches pass).
       </div>
       {loading ? (
         <span className="spinner" />
