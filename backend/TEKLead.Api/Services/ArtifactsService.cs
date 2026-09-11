@@ -791,6 +791,8 @@ Return only the JSON.";
             .FirstOrDefault() ?? "";
 
         var sb = new StringBuilder();
+        sb.AppendLine("For reference, here's a similar project we delivered:");
+        sb.AppendLine();
         sb.AppendLine($"Project Name: {project.Title}");
         if (!string.IsNullOrWhiteSpace(project.IosLink))     sb.AppendLine($"iOS Link: {project.IosLink}");
         if (!string.IsNullOrWhiteSpace(project.AndroidLink)) sb.AppendLine($"Android Link: {project.AndroidLink}");
