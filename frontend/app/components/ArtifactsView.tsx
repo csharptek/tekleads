@@ -97,8 +97,9 @@ function CardShell({ icon, title, subtitle, actions, children, loading }: {
 type PortfolioMatchResult = { id: string; title: string; industry: string; score: number; level: number; passesThreshold: boolean };
 type TestEmailPreview = { subject: string; body: string; matchesUsed: number };
 
-function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }) {
+function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobText?: string; proposalId?: string }) {
   const [jobText, setJobText] = useState(defaultJobText || "");
+  const [autoLoaded, setAutoLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [thresholdLevel, setThresholdLevel] = useState<number | null>(null);
@@ -155,6 +156,28 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
     }
   }
 
+  // Auto-fill from the proposal's actual job post — no reason to make the user
+  // re-paste a JD that's already saved on this page. Still fully editable
+  // afterward for repeated manual testing/tweaking.
+  useEffect(() => {
+    if (!proposalId) return; // defaultJobText (headline only) is just the initial seed value
+    api.get<{ jobPostHeadline?: string; jobPostBody?: string }>(`/api/proposals/${proposalId}`)
+      .then(p => {
+        const full = `${p.jobPostHeadline || ""}\n\n${p.jobPostBody || ""}`.trim();
+        if (full) {
+          setJobText(full);
+          setAutoLoaded(true);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalId]);
+
+  useEffect(() => {
+    if (autoLoaded && jobText.trim()) runTest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoaded]);
+
   return (
     <div style={{
       border: "2px solid #dc2626", borderRadius: 10, padding: 16, marginBottom: 20,
@@ -166,6 +189,12 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
       <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 12, opacity: 0.85 }}>
         Portfolio Matching (Testing) — experimental, not wired into proposal generation. Nothing below this box is affected.
       </div>
+
+      {autoLoaded && (
+        <div style={{ fontSize: 11, color: "#dc2626", opacity: 0.8, marginBottom: 6 }}>
+          Auto-loaded from this proposal's job post — edit freely below, still not saved anywhere.
+        </div>
+      )}
 
       <textarea
         value={jobText}
@@ -725,7 +754,7 @@ export default function ArtifactsView({
 
   return (
     <div className="page" style={{ paddingBottom: 40 }}>
-      <PortfolioMatchTestPanel defaultJobText={proposalHeadline} />
+      <PortfolioMatchTestPanel defaultJobText={proposalHeadline} proposalId={proposalId} />
 
       <div className="page-header">
         <div>
