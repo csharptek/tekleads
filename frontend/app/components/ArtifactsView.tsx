@@ -94,7 +94,7 @@ function CardShell({ icon, title, subtitle, actions, children, loading }: {
 // Self-contained, isolated section. Does not read or modify anything below it —
 // own state, own API calls. Safe to ignore / remove later without touching the
 // rest of this page.
-type PortfolioMatchResult = { id: string; title: string; industry: string; score: number; level: number; passesThreshold: boolean };
+type PortfolioMatchResult = { id: string; title: string; industry: string; score: number; distance: number; level: number; passesThreshold: boolean };
 type TestEmailPreview = { subject: string; body: string; matchesUsed: number };
 
 function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobText?: string; proposalId?: string }) {
@@ -103,6 +103,7 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [thresholdLevel, setThresholdLevel] = useState<number | null>(null);
+  const [thresholdScore, setThresholdScore] = useState<number | null>(null);
   const [matches, setMatches] = useState<PortfolioMatchResult[]>([]);
   const [ranOnce, setRanOnce] = useState(false);
   const [totalPortfolioItems, setTotalPortfolioItems] = useState<number | null>(null);
@@ -118,11 +119,12 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
     setPreview(null);
     setPreviewError("");
     try {
-      const res = await api.post<{ ok: boolean; thresholdLevel: number; matches: PortfolioMatchResult[]; totalPortfolioItems: number; indexedPortfolioItems: number }>(
+      const res = await api.post<{ ok: boolean; thresholdLevel: number; thresholdScore: number; matches: PortfolioMatchResult[]; totalPortfolioItems: number; indexedPortfolioItems: number }>(
         "/api/portfolio/test-match-scores",
         { jobText, topK: 5 }
       );
       setThresholdLevel(res.thresholdLevel);
+      setThresholdScore(res.thresholdScore);
       setMatches(res.matches || []);
       setTotalPortfolioItems(res.totalPortfolioItems ?? null);
       setIndexedPortfolioItems(res.indexedPortfolioItems ?? null);
@@ -139,12 +141,13 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
     setPreviewLoading(true);
     setPreviewError("");
     try {
-      const res = await api.post<{ ok: boolean; preview: TestEmailPreview; thresholdLevel: number; matches: PortfolioMatchResult[]; totalPortfolioItems: number; indexedPortfolioItems: number }>(
+      const res = await api.post<{ ok: boolean; preview: TestEmailPreview; thresholdLevel: number; thresholdScore: number; matches: PortfolioMatchResult[]; totalPortfolioItems: number; indexedPortfolioItems: number }>(
         "/api/portfolio/test-email-preview",
         { jobText, topK: 5 }
       );
       setPreview(res.preview);
       setThresholdLevel(res.thresholdLevel);
+      setThresholdScore(res.thresholdScore);
       setMatches(res.matches || []);
       setTotalPortfolioItems(res.totalPortfolioItems ?? null);
       setIndexedPortfolioItems(res.indexedPortfolioItems ?? null);
@@ -221,7 +224,7 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
       {ranOnce && !error && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
-            Threshold level: <strong>{thresholdLevel}/5</strong> (match rating ≥ threshold = would be used)
+            Threshold level: <strong>{thresholdLevel}/5</strong> (raw cutoff ≥ <strong>{thresholdScore?.toFixed(2)}</strong> similarity — score ≥ this passes)
           </div>
           {totalPortfolioItems !== null && (
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
@@ -237,8 +240,11 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+                  <th style={{ padding: "4px 8px" }}>ID</th>
                   <th style={{ padding: "4px 8px" }}>Title</th>
                   <th style={{ padding: "4px 8px" }}>Industry</th>
+                  <th style={{ padding: "4px 8px" }}>Raw Score</th>
+                  <th style={{ padding: "4px 8px" }}>Distance</th>
                   <th style={{ padding: "4px 8px" }}>Rating</th>
                   <th style={{ padding: "4px 8px" }}>Result</th>
                 </tr>
@@ -246,8 +252,11 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
               <tbody>
                 {matches.map(m => (
                   <tr key={m.id} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "4px 8px", fontFamily: "monospace", fontSize: 10, color: "var(--muted)" }}>{m.id.slice(0, 8)}</td>
                     <td style={{ padding: "4px 8px" }}>{m.title}</td>
                     <td style={{ padding: "4px 8px" }}>{m.industry}</td>
+                    <td style={{ padding: "4px 8px", fontFamily: "monospace" }}>{m.score.toFixed(4)}</td>
+                    <td style={{ padding: "4px 8px", fontFamily: "monospace", color: "var(--muted)" }}>{m.distance.toFixed(4)}</td>
                     <td style={{ padding: "4px 8px" }}>{m.level}/5</td>
                     <td style={{ padding: "4px 8px", color: m.passesThreshold ? "var(--green)" : "#dc2626" }}>
                       {m.passesThreshold ? "PASS (match)" : "FAIL (no match)"}

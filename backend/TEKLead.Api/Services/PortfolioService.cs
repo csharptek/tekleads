@@ -413,6 +413,7 @@ public class PortfolioService
         public string Title { get; set; } = "";
         public string Industry { get; set; } = "";
         public double Score { get; set; } // similarity 0..1 (1 = identical), derived from cosine distance
+        public double Distance { get; set; } // raw cosine distance from pgvector, 0 = identical (Score = 1 - Distance)
         public int Level { get; set; } // 1-5 display rating derived from Score, see ScoreToMatchLevel
         public bool PassesThreshold { get; set; }
     }
@@ -470,7 +471,7 @@ public class PortfolioService
         }
     }
 
-    public async Task<(bool ok, string message, int thresholdLevel, List<PortfolioMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestMatchWithScores(string jobText, int topK = 5)
+    public async Task<(bool ok, string message, int thresholdLevel, double thresholdScore, List<PortfolioMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestMatchWithScores(string jobText, int topK = 5)
     {
         var settings = await _settings.GetAll();
         var thresholdLevel = GetPortfolioMatchLevel(settings);
@@ -478,10 +479,10 @@ public class PortfolioService
         var (total, indexed) = await GetPortfolioIndexCounts();
 
         if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
-            return (false, "Gemini API key not configured in Settings (required for embeddings).", thresholdLevel, new(), total, indexed);
+            return (false, "Gemini API key not configured in Settings (required for embeddings).", thresholdLevel, thresholdScore, new(), total, indexed);
 
         if (string.IsNullOrWhiteSpace(jobText))
-            return (false, "Job text is required.", thresholdLevel, new(), total, indexed);
+            return (false, "Job text is required.", thresholdLevel, thresholdScore, new(), total, indexed);
 
         float[] embedding;
         try
@@ -490,7 +491,7 @@ public class PortfolioService
         }
         catch (Exception ex)
         {
-            return (false, $"Embedding failed: {ex.Message}", thresholdLevel, new(), total, indexed);
+            return (false, $"Embedding failed: {ex.Message}", thresholdLevel, thresholdScore, new(), total, indexed);
         }
 
         try
@@ -517,17 +518,18 @@ public class PortfolioService
                     Title = (string)r.title,
                     Industry = (string)r.industry,
                     Score = Math.Round(score, 4),
+                    Distance = Math.Round(distance, 4),
                     Level = ScoreToMatchLevel(score),
                     PassesThreshold = score >= thresholdScore,
                 };
             }).ToList();
 
-            return (true, "ok", thresholdLevel, matches, total, indexed);
+            return (true, "ok", thresholdLevel, thresholdScore, matches, total, indexed);
         }
         catch (Exception ex)
         {
             _log.LogWarning("Test match-with-scores failed: {0}", ex.Message);
-            return (false, $"Search failed: {ex.Message}", thresholdLevel, new(), total, indexed);
+            return (false, $"Search failed: {ex.Message}", thresholdLevel, thresholdScore, new(), total, indexed);
         }
     }
 
@@ -574,10 +576,10 @@ RULES:
 
 Return only the email body text.";
 
-    public async Task<(bool ok, string message, TestEmailPreview? preview, int thresholdLevel, List<PortfolioMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestGenerateEmailPreview(string jobText, int topK = 5)
+    public async Task<(bool ok, string message, TestEmailPreview? preview, int thresholdLevel, double thresholdScore, List<PortfolioMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestGenerateEmailPreview(string jobText, int topK = 5)
     {
-        var (ok, message, thresholdLevel, matches, total, indexed) = await TestMatchWithScores(jobText, topK);
-        if (!ok) return (false, message, null, thresholdLevel, matches, total, indexed);
+        var (ok, message, thresholdLevel, thresholdScore, matches, total, indexed) = await TestMatchWithScores(jobText, topK);
+        if (!ok) return (false, message, null, thresholdLevel, thresholdScore, matches, total, indexed);
 
         var settings = await _settings.GetAll();
         var passing = matches.Where(m => m.PassesThreshold).OrderByDescending(m => m.Score).Take(2).ToList();
@@ -628,12 +630,12 @@ Return only the email body text.";
                 MatchesUsed = passing.Count,
             };
 
-            return (true, "ok", preview, thresholdLevel, matches, total, indexed);
+            return (true, "ok", preview, thresholdLevel, thresholdScore, matches, total, indexed);
         }
         catch (Exception ex)
         {
             _log.LogWarning("Test email preview generation failed: {0}", ex.Message);
-            return (false, $"Preview generation failed: {ex.Message}", null, thresholdLevel, matches, total, indexed);
+            return (false, $"Preview generation failed: {ex.Message}", null, thresholdLevel, thresholdScore, matches, total, indexed);
         }
     }
 
