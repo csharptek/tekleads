@@ -13,6 +13,15 @@ public class UsedPortfolioItem
     public string Industry { get; set; } = "";
     public string YoutubeLinks { get; set; } = "";
     public bool HasYoutubeLink => !string.IsNullOrWhiteSpace(YoutubeLinks);
+
+    // Match transparency — mirrors the test panel. SemanticScore/CombinedScore are 0
+    // and Tier is "Manual selection" when the project came from the manual picker
+    // rather than auto-retrieval, since there's no score to show for a manual pick.
+    public double SemanticScore { get; set; }
+    public double CombinedScore { get; set; }
+    public string Tier { get; set; } = "";
+    public bool IndustryMatch { get; set; }
+    public List<string> MatchedTags { get; set; } = new();
 }
 
 public class ArtifactsResult
@@ -132,30 +141,32 @@ public class ArtifactsService
         // embedding call failed, DB error) — that's the only case that falls back to
         // RankByIndustry below. A clean empty result means "nothing genuinely relevant",
         // which is left empty on purpose so the prompt doesn't force an unrelated citation.
-        List<PortfolioProject> portfolioItems;
+        List<PortfolioService.PortfolioMatchInfo> matchInfos;
         var portfolioSearchFailed = false;
         try
         {
             var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
             if (query.Length > 500) query = query[..500];
-            portfolioItems = await _portfolio.SearchSimilarEnhanced(query, companyCtx?.Industry, topK: 3);
+            matchInfos = await _portfolio.SearchSimilarEnhanced(query, companyCtx?.Industry, topK: 3);
         }
         catch (Exception ex)
         {
             _log.LogWarning(ex, "Portfolio search failed for proposal {0}, falling back to industry ranking", proposalId);
-            portfolioItems = new List<PortfolioProject>();
+            matchInfos = new List<PortfolioService.PortfolioMatchInfo>();
             portfolioSearchFailed = true;
         }
         if (portfolioSearchFailed)
         {
             var all = await _portfolio.GetAll();
-            portfolioItems = RankByIndustry(all.Where(p => p.EmbeddingIndexed).ToList(), companyCtx?.Industry, 3);
-            if (portfolioItems.Count == 0)
-                portfolioItems = RankByIndustry(all, companyCtx?.Industry, 3);
+            var fallback = RankByIndustry(all.Where(p => p.EmbeddingIndexed).ToList(), companyCtx?.Industry, 3);
+            if (fallback.Count == 0)
+                fallback = RankByIndustry(all, companyCtx?.Industry, 3);
+            matchInfos = fallback.Select(p => new PortfolioService.PortfolioMatchInfo { Project = p, Tier = "Fallback" }).ToList();
         }
         // Never cite a project with zero proof (no iOS/Android/Web/YouTube link on file) —
         // a name-drop with nothing to back it up reads as padding.
-        portfolioItems = portfolioItems.Where(HasAnyLink).ToList();
+        matchInfos = matchInfos.Where(m => HasAnyLink(m.Project)).ToList();
+        var portfolioItems = matchInfos.Select(m => m.Project).ToList();
         var context = BuildContext(proposal, portfolioItems, companyCtx);
 
         var clPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
@@ -203,13 +214,13 @@ public class ArtifactsService
             EmailSubject = emailSubject,
             EmailBody = emailBody,
             GeneratedAt = DateTime.UtcNow,
-            UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList()
+            UsedProjects = matchInfos.Select(ToUsedItem).ToList()
         };
     }
 
     public async Task<ArtifactsResult> GenerateCoverLetter(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company, matchInfos) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
@@ -217,12 +228,12 @@ public class ArtifactsService
         var prompt = customPrompt ?? GetPrompt(savedPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, provider, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_cover_letter", result);
-        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company, matchInfos) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
@@ -230,12 +241,12 @@ public class ArtifactsService
         var prompt = customPrompt ?? GetPrompt(savedPrompt, WhatsappPrompt, GroqWhatsappPrompt, provider, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_whatsapp", result);
-        return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateEmail(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company, matchInfos) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
@@ -247,12 +258,12 @@ public class ArtifactsService
         if (linkBlock != null) body = body.TrimEnd() + "\n\n" + linkBlock;
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
-        return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company, matchInfos) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
 
         // Load initial email so FU1 can reference it
@@ -275,12 +286,12 @@ public class ArtifactsService
 
         await SaveField(proposalId, "artifact_followup1_subject", subject);
         await SaveField(proposalId, "artifact_followup1_body", body);
-        return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, FollowUp1Subject = subject, FollowUp1Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
     }
 
     public async Task<ArtifactsResult> GenerateFollowUp2(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
-        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company) = await GetContext(proposalId, portfolioIds);
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company, matchInfos) = await GetContext(proposalId, portfolioIds);
         if (err != null) return Fail(err);
 
         var existing = await GetExisting(proposalId);
@@ -306,28 +317,28 @@ public class ArtifactsService
 
         await SaveField(proposalId, "artifact_followup2_subject", subject);
         await SaveField(proposalId, "artifact_followup2_body", body);
-        return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = portfolioItems.Select(p => new UsedPortfolioItem { Id = p.Id, Title = p.Title, Industry = p.Industry, YoutubeLinks = p.YoutubeLinks }).ToList() };
+        return new ArtifactsResult { Ok = true, FollowUp2Subject = subject, FollowUp2Body = body, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
     }
 
     public async Task<object> GetDebugContext(Guid proposalId)
     {
-        var (proposal, _, _, _, portfolioItems, _, err, company) = await GetContext(proposalId);
+        var (proposal, _, _, _, portfolioItems, _, err, company, matchInfos) = await GetContext(proposalId);
         if (proposal == null) return new { error = err ?? "proposal not found" };
         var context = BuildContext(proposal, portfolioItems, company);
         return new
         {
             industry        = company?.Industry ?? "(none)",
             portfolioCount  = portfolioItems.Count,
-            portfolioItems  = portfolioItems.Select(p => new { p.Id, p.Title, p.Industry, p.YoutubeLinks }),
+            portfolioItems  = matchInfos.Select(m => new { m.Project.Id, m.Project.Title, m.Project.Industry, m.Project.YoutubeLinks, m.SemanticScore, m.CombinedScore, m.Tier }),
             hasYoutubeLinks = portfolioItems.Any(p => !string.IsNullOrWhiteSpace(p.YoutubeLinks)),
             fullContext     = context
         };
     }
 
-    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company)> GetContext(Guid proposalId)
+    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company, List<PortfolioService.PortfolioMatchInfo> matchInfos)> GetContext(Guid proposalId)
     {
         var proposal = await _proposals.GetById(proposalId);
-        if (proposal == null) return (null, null, null, null, new(), new(), "Proposal not found.", null);
+        if (proposal == null) return (null, null, null, null, new(), new(), "Proposal not found.", null, new());
 
         var settings = await _settings.GetAll();
         var aoEndpoint   = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
@@ -336,34 +347,36 @@ public class ArtifactsService
         var activeProvider = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
 
         if (activeProvider == "azure" && (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment)))
-            return (null, null, null, null, new(), new(), "Azure OpenAI not configured in Settings.", null);
+            return (null, null, null, null, new(), new(), "Azure OpenAI not configured in Settings.", null, new());
 
         var company = await _companyCtx.GetByProposalId(proposal.Id);
 
-        List<PortfolioProject> portfolioItems;
+        List<PortfolioService.PortfolioMatchInfo> matchInfos;
         var portfolioSearchFailed = false;
         try
         {
             var query = $"{proposal.JobPostHeadline} {proposal.JobPostBody}".Trim();
             if (query.Length > 500) query = query[..500];
-            portfolioItems = await _portfolio.SearchSimilarEnhanced(query, company?.Industry, topK: 3);
+            matchInfos = await _portfolio.SearchSimilarEnhanced(query, company?.Industry, topK: 3);
         }
         catch (Exception ex)
         {
             _log.LogWarning(ex, "Portfolio search failed for proposal {0}, falling back to industry ranking", proposalId);
-            portfolioItems = new List<PortfolioProject>();
+            matchInfos = new List<PortfolioService.PortfolioMatchInfo>();
             portfolioSearchFailed = true;
         }
 
         if (portfolioSearchFailed)
         {
             var all = await _portfolio.GetAll();
-            portfolioItems = RankByIndustry(all.Where(p => p.EmbeddingIndexed).ToList(), company?.Industry, 3);
-            if (portfolioItems.Count == 0) portfolioItems = RankByIndustry(all, company?.Industry, 3);
+            var fallback = RankByIndustry(all.Where(p => p.EmbeddingIndexed).ToList(), company?.Industry, 3);
+            if (fallback.Count == 0) fallback = RankByIndustry(all, company?.Industry, 3);
+            matchInfos = fallback.Select(p => new PortfolioService.PortfolioMatchInfo { Project = p, Tier = "Fallback" }).ToList();
         }
-        portfolioItems = portfolioItems.Where(HasAnyLink).ToList();
+        matchInfos = matchInfos.Where(m => HasAnyLink(m.Project)).ToList();
+        var portfolioItems = matchInfos.Select(m => m.Project).ToList();
 
-        return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null, company);
+        return (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, null, company, matchInfos);
     }
 
     /// <summary>
@@ -371,7 +384,7 @@ public class ArtifactsService
     /// manually selected items in the UI) instead of auto-ranked search results.
     /// Falls back to the 1-arg GetContext behavior when portfolioIds is null/empty.
     /// </summary>
-    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company)> GetContext(Guid proposalId, List<Guid>? portfolioIds)
+    private async Task<(Proposal? proposal, string? aoEndpoint, string? aoKey, string? aoDeployment, List<PortfolioProject> portfolio, Dictionary<string,string> settings, string? error, ProposalCompanyContext? company, List<PortfolioService.PortfolioMatchInfo> matchInfos)> GetContext(Guid proposalId, List<Guid>? portfolioIds)
     {
         var ctx = await GetContext(proposalId);
         if (ctx.error != null || portfolioIds == null || portfolioIds.Count == 0)
@@ -386,7 +399,10 @@ public class ArtifactsService
 
         if (selected.Count == 0) return ctx;
 
-        return (ctx.proposal, ctx.aoEndpoint, ctx.aoKey, ctx.aoDeployment, selected, ctx.settings, ctx.error, ctx.company);
+        // Manual pick — no auto-score to show, label it plainly instead of a number.
+        var manualMatchInfos = selected.Select(p => new PortfolioService.PortfolioMatchInfo { Project = p, Tier = "Manual selection" }).ToList();
+
+        return (ctx.proposal, ctx.aoEndpoint, ctx.aoKey, ctx.aoDeployment, selected, ctx.settings, ctx.error, ctx.company, manualMatchInfos);
     }
 
     private async Task SaveField(Guid proposalId, string column, string value)
@@ -802,6 +818,23 @@ Return only the JSON.";
     private static bool HasAnyLink(PortfolioProject p) =>
         !string.IsNullOrWhiteSpace(p.IosLink) || !string.IsNullOrWhiteSpace(p.AndroidLink)
      || !string.IsNullOrWhiteSpace(p.WebLink) || !string.IsNullOrWhiteSpace(p.YoutubeLinks);
+
+    /// <summary>
+    /// Carries match transparency (score/tier/matched tags) from PortfolioService's
+    /// scoring into what the live "Portfolio projects used" UI displays.
+    /// </summary>
+    private static UsedPortfolioItem ToUsedItem(PortfolioService.PortfolioMatchInfo m) => new()
+    {
+        Id = m.Project.Id,
+        Title = m.Project.Title,
+        Industry = m.Project.Industry,
+        YoutubeLinks = m.Project.YoutubeLinks,
+        SemanticScore = m.SemanticScore,
+        CombinedScore = m.CombinedScore,
+        Tier = m.Tier,
+        IndustryMatch = m.IndustryMatch,
+        MatchedTags = m.MatchedTags,
+    };
 
     /// <summary>
     /// Deterministic Project/iOS/Android/Web/YouTube block appended to the generated email

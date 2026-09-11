@@ -2,7 +2,10 @@
 import React, { useState, useEffect } from "react";
 import { api } from "../../lib/api";
 
-type UsedPortfolioItem = { title: string; industry: string; youtubeLinks: string; hasYoutubeLink: boolean; id?: string; };
+type UsedPortfolioItem = {
+  title: string; industry: string; youtubeLinks: string; hasYoutubeLink: boolean; id?: string;
+  semanticScore?: number; combinedScore?: number; tier?: string; industryMatch?: boolean; matchedTags?: string[];
+};
 type AllPortfolioItem = { id: string; title: string; industry: string; youtubeLinks: string; embeddingIndexed: boolean; };
 
 type Artifacts = {
@@ -901,6 +904,7 @@ export default function ArtifactsView({
                   <th style={{ padding: "8px 10px", width: 32, borderBottom: "1px solid var(--border)" }}></th>
                   <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Project</th>
                   <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Industry</th>
+                  <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>Match</th>
                   <th style={{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>YouTube Demo</th>
                 </tr>
               </thead>
@@ -916,6 +920,21 @@ export default function ArtifactsView({
                     </td>
                     <td style={{ padding: "8px 14px", fontWeight: 500 }}>{p.title}</td>
                     <td style={{ padding: "8px 14px", color: "var(--muted)" }}>{p.industry || "—"}</td>
+                    <td style={{ padding: "8px 14px", fontSize: 12 }}>
+                      {p.tier ? (
+                        <div>
+                          <div style={{ fontWeight: 600, color: "var(--text)" }}>{p.tier}</div>
+                          {typeof p.combinedScore === "number" && p.combinedScore > 0 && (
+                            <div style={{ color: "var(--muted)", fontFamily: "monospace" }}>
+                              {p.combinedScore.toFixed(2)} ({p.semanticScore?.toFixed(2)} semantic)
+                            </div>
+                          )}
+                          {!!p.matchedTags?.length && (
+                            <div style={{ color: "var(--muted)" }}>tags: {p.matchedTags.join(", ")}</div>
+                          )}
+                        </div>
+                      ) : "—"}
+                    </td>
                     <td style={{ padding: "8px 14px" }}>
                       {p.hasYoutubeLink
                         ? <a href={p.youtubeLinks} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "underline", wordBreak: "break-all" }}>{p.youtubeLinks}</a>

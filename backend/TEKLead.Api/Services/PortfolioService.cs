@@ -840,14 +840,27 @@ Return only the email body text.";
     // ran fine and genuinely nothing cleared a tier" (an empty list here means the
     // latter — callers should NOT paper over that with an unrelated fallback project,
     // that's the exact bug this whole feature exists to fix).
-    public async Task<List<PortfolioProject>> SearchSimilarEnhanced(string query, string? industry, int topK = 3)
+    // Carries the score/tier info behind a match, alongside the project itself, so
+    // callers (the live "Portfolio projects used" UI) can show why something was
+    // picked instead of just the bare project.
+    public class PortfolioMatchInfo
+    {
+        public PortfolioProject Project { get; set; } = null!;
+        public double SemanticScore { get; set; }
+        public double CombinedScore { get; set; }
+        public string Tier { get; set; } = ""; // "Industry Match" | "Task Match" | "Industry (weak)" | "Semantic Only" | "Manual selection" | "Fallback"
+        public bool IndustryMatch { get; set; }
+        public List<string> MatchedTags { get; set; } = new();
+    }
+
+    public async Task<List<PortfolioMatchInfo>> SearchSimilarEnhanced(string query, string? industry, int topK = 3)
     {
         var settings = await _settings.GetAll();
         if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
             throw new Exception("Gemini API key not configured in Settings (required for embeddings).");
 
         if (string.IsNullOrWhiteSpace(query))
-            return new List<PortfolioProject>();
+            return new List<PortfolioMatchInfo>();
 
         var thresholdLevel = GetPortfolioMatchLevel(settings);
         var thresholdScore = MatchLevelToScore[thresholdLevel - 1];
@@ -882,36 +895,50 @@ Return only the email body text.";
             var matchedTags = proj.Tags.Where(t => TokenOverlap(jdTokens, Tokenize(t))).ToList();
             bool hasTagMatch = matchedTags.Count > 0;
 
+            string tier;
             double bonus;
             bool passes;
             if (industryMatch && hasTagMatch)
             {
+                tier = "Industry Match";
                 bonus = EnhancedIndustryBonus + Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
                 passes = true;
             }
             else if (hasTagMatch)
             {
+                tier = "Task Match";
                 bonus = Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
                 passes = true;
             }
             else if (industryMatch)
             {
+                tier = "Industry (weak)";
                 bonus = EnhancedIndustryWeakBonus;
                 passes = semanticScore >= thresholdScore;
             }
             else
             {
+                tier = "Semantic Only";
                 bonus = 0;
                 passes = semanticScore >= thresholdScore;
             }
 
             double combined = Math.Min(1.0, semanticScore + bonus);
-            return new { proj, combined, passes };
+            var info = new PortfolioMatchInfo
+            {
+                Project = proj,
+                SemanticScore = Math.Round(semanticScore, 4),
+                CombinedScore = Math.Round(combined, 4),
+                Tier = tier,
+                IndustryMatch = industryMatch,
+                MatchedTags = matchedTags,
+            };
+            return new { info, passes };
         })
         .Where(x => x.passes)
-        .OrderByDescending(x => x.combined)
+        .OrderByDescending(x => x.info.CombinedScore)
         .Take(topK)
-        .Select(x => x.proj)
+        .Select(x => x.info)
         .ToList();
 
         return scored;
