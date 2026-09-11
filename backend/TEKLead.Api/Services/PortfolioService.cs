@@ -449,17 +449,39 @@ public class PortfolioService
         return 1;
     }
 
-    public async Task<(bool ok, string message, int thresholdLevel, List<PortfolioMatchResult> matches)> TestMatchWithScores(string jobText, int topK = 5)
+    // TESTING ONLY — total vs indexed portfolio item counts, shown in the test
+    // panel so a "nothing matches" result can be told apart from "nothing is
+    // indexed". Read-only, isolated helper, not used by any live code path.
+    private async Task<(int total, int indexed)> GetPortfolioIndexCounts()
+    {
+        try
+        {
+            var cs = _settings.ConnectionString;
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+            var total   = await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM portfolio_projects");
+            var indexed = await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM portfolio_projects WHERE embedding_vec IS NOT NULL");
+            return (total, indexed);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning("GetPortfolioIndexCounts failed: {0}", ex.Message);
+            return (0, 0);
+        }
+    }
+
+    public async Task<(bool ok, string message, int thresholdLevel, List<PortfolioMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestMatchWithScores(string jobText, int topK = 5)
     {
         var settings = await _settings.GetAll();
         var thresholdLevel = GetPortfolioMatchLevel(settings);
         var thresholdScore = MatchLevelToScore[thresholdLevel - 1];
+        var (total, indexed) = await GetPortfolioIndexCounts();
 
         if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
-            return (false, "Gemini API key not configured in Settings (required for embeddings).", thresholdLevel, new());
+            return (false, "Gemini API key not configured in Settings (required for embeddings).", thresholdLevel, new(), total, indexed);
 
         if (string.IsNullOrWhiteSpace(jobText))
-            return (false, "Job text is required.", thresholdLevel, new());
+            return (false, "Job text is required.", thresholdLevel, new(), total, indexed);
 
         float[] embedding;
         try
@@ -468,7 +490,7 @@ public class PortfolioService
         }
         catch (Exception ex)
         {
-            return (false, $"Embedding failed: {ex.Message}", thresholdLevel, new());
+            return (false, $"Embedding failed: {ex.Message}", thresholdLevel, new(), total, indexed);
         }
 
         try
@@ -500,12 +522,12 @@ public class PortfolioService
                 };
             }).ToList();
 
-            return (true, "ok", thresholdLevel, matches);
+            return (true, "ok", thresholdLevel, matches, total, indexed);
         }
         catch (Exception ex)
         {
             _log.LogWarning("Test match-with-scores failed: {0}", ex.Message);
-            return (false, $"Search failed: {ex.Message}", thresholdLevel, new());
+            return (false, $"Search failed: {ex.Message}", thresholdLevel, new(), total, indexed);
         }
     }
 
@@ -552,10 +574,10 @@ RULES:
 
 Return only the email body text.";
 
-    public async Task<(bool ok, string message, TestEmailPreview? preview, int thresholdLevel, List<PortfolioMatchResult> matches)> TestGenerateEmailPreview(string jobText, int topK = 5)
+    public async Task<(bool ok, string message, TestEmailPreview? preview, int thresholdLevel, List<PortfolioMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestGenerateEmailPreview(string jobText, int topK = 5)
     {
-        var (ok, message, thresholdLevel, matches) = await TestMatchWithScores(jobText, topK);
-        if (!ok) return (false, message, null, thresholdLevel, matches);
+        var (ok, message, thresholdLevel, matches, total, indexed) = await TestMatchWithScores(jobText, topK);
+        if (!ok) return (false, message, null, thresholdLevel, matches, total, indexed);
 
         var settings = await _settings.GetAll();
         var passing = matches.Where(m => m.PassesThreshold).OrderByDescending(m => m.Score).Take(2).ToList();
@@ -570,14 +592,14 @@ Return only the email body text.";
             {
                 messages.Add(new { role = "system", content = TestNoMatchFallbackPrompt() });
                 messages.Add(new { role = "user", content = $"JOB DESCRIPTION:\n{jobText}" });
-                leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 300);
+                leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 600);
             }
             else
             {
                 messages.Add(new { role = "system", content = TestMultiMatchLinkPrompt() });
                 var projTitles = string.Join(", ", passing.Select(p => p.Title));
                 messages.Add(new { role = "user", content = $"JOB DESCRIPTION:\n{jobText}\n\nPROJECT(S): {projTitles}" });
-                leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 300);
+                leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 600);
 
                 var sb = new StringBuilder();
                 foreach (var m in passing)
@@ -606,12 +628,12 @@ Return only the email body text.";
                 MatchesUsed = passing.Count,
             };
 
-            return (true, "ok", preview, thresholdLevel, matches);
+            return (true, "ok", preview, thresholdLevel, matches, total, indexed);
         }
         catch (Exception ex)
         {
             _log.LogWarning("Test email preview generation failed: {0}", ex.Message);
-            return (false, $"Preview generation failed: {ex.Message}", null, thresholdLevel, matches);
+            return (false, $"Preview generation failed: {ex.Message}", null, thresholdLevel, matches, total, indexed);
         }
     }
 

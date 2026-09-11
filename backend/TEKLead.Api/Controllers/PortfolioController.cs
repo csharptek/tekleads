@@ -105,10 +105,10 @@ public class PortfolioController : ControllerBase
     [HttpPost("test-match-scores")]
     public async Task<IActionResult> TestMatchScores([FromBody] TestMatchRequest req)
     {
-        var (ok, message, thresholdLevel, matches) = await _svc.TestMatchWithScores(req.JobText, req.TopK);
+        var (ok, message, thresholdLevel, matches, totalPortfolioItems, indexedPortfolioItems) = await _svc.TestMatchWithScores(req.JobText, req.TopK);
         return ok
-            ? Ok(new { ok, thresholdLevel, matches })
-            : BadRequest(new { ok, message, thresholdLevel });
+            ? Ok(new { ok, thresholdLevel, matches, totalPortfolioItems, indexedPortfolioItems })
+            : BadRequest(new { ok, message, thresholdLevel, totalPortfolioItems, indexedPortfolioItems });
     }
 
     // TESTING ONLY — preview email generation with fallback / multi-link logic.
@@ -116,10 +116,10 @@ public class PortfolioController : ControllerBase
     [HttpPost("test-email-preview")]
     public async Task<IActionResult> TestEmailPreview([FromBody] TestMatchRequest req)
     {
-        var (ok, message, preview, thresholdLevel, matches) = await _svc.TestGenerateEmailPreview(req.JobText, req.TopK);
+        var (ok, message, preview, thresholdLevel, matches, totalPortfolioItems, indexedPortfolioItems) = await _svc.TestGenerateEmailPreview(req.JobText, req.TopK);
         return ok
-            ? Ok(new { ok, preview, thresholdLevel, matches })
-            : BadRequest(new { ok, message, thresholdLevel });
+            ? Ok(new { ok, preview, thresholdLevel, matches, totalPortfolioItems, indexedPortfolioItems })
+            : BadRequest(new { ok, message, thresholdLevel, totalPortfolioItems, indexedPortfolioItems });
     }
 
     [HttpPost("extract")]

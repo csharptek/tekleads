@@ -104,6 +104,8 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
   const [thresholdLevel, setThresholdLevel] = useState<number | null>(null);
   const [matches, setMatches] = useState<PortfolioMatchResult[]>([]);
   const [ranOnce, setRanOnce] = useState(false);
+  const [totalPortfolioItems, setTotalPortfolioItems] = useState<number | null>(null);
+  const [indexedPortfolioItems, setIndexedPortfolioItems] = useState<number | null>(null);
 
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
@@ -115,12 +117,14 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
     setPreview(null);
     setPreviewError("");
     try {
-      const res = await api.post<{ ok: boolean; thresholdLevel: number; matches: PortfolioMatchResult[] }>(
+      const res = await api.post<{ ok: boolean; thresholdLevel: number; matches: PortfolioMatchResult[]; totalPortfolioItems: number; indexedPortfolioItems: number }>(
         "/api/portfolio/test-match-scores",
         { jobText, topK: 5 }
       );
       setThresholdLevel(res.thresholdLevel);
       setMatches(res.matches || []);
+      setTotalPortfolioItems(res.totalPortfolioItems ?? null);
+      setIndexedPortfolioItems(res.indexedPortfolioItems ?? null);
       setRanOnce(true);
     } catch (e: any) {
       setError(e.message || "Test failed");
@@ -134,13 +138,15 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
     setPreviewLoading(true);
     setPreviewError("");
     try {
-      const res = await api.post<{ ok: boolean; preview: TestEmailPreview; thresholdLevel: number; matches: PortfolioMatchResult[] }>(
+      const res = await api.post<{ ok: boolean; preview: TestEmailPreview; thresholdLevel: number; matches: PortfolioMatchResult[]; totalPortfolioItems: number; indexedPortfolioItems: number }>(
         "/api/portfolio/test-email-preview",
         { jobText, topK: 5 }
       );
       setPreview(res.preview);
       setThresholdLevel(res.thresholdLevel);
       setMatches(res.matches || []);
+      setTotalPortfolioItems(res.totalPortfolioItems ?? null);
+      setIndexedPortfolioItems(res.indexedPortfolioItems ?? null);
       setRanOnce(true);
     } catch (e: any) {
       setPreviewError(e.message || "Preview generation failed");
@@ -185,9 +191,17 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
 
       {ranOnce && !error && (
         <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
             Threshold level: <strong>{thresholdLevel}/5</strong> (match rating ≥ threshold = would be used)
           </div>
+          {totalPortfolioItems !== null && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+              Portfolio items indexed: <strong>{indexedPortfolioItems}</strong> / {totalPortfolioItems} total
+              {indexedPortfolioItems !== null && totalPortfolioItems !== null && indexedPortfolioItems < totalPortfolioItems && (
+                <span style={{ color: "#c2410c" }}> — {totalPortfolioItems - indexedPortfolioItems} not indexed, not searchable here</span>
+              )}
+            </div>
+          )}
           {matches.length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--muted)" }}>No indexed portfolio items with embeddings found.</div>
           ) : (
