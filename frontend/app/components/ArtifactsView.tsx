@@ -94,25 +94,32 @@ function CardShell({ icon, title, subtitle, actions, children, loading }: {
 // Self-contained, isolated section. Does not read or modify anything below it —
 // own state, own API calls. Safe to ignore / remove later without touching the
 // rest of this page.
-type PortfolioMatchResult = { id: string; title: string; industry: string; score: number; passesThreshold: boolean };
+type PortfolioMatchResult = { id: string; title: string; industry: string; score: number; level: number; passesThreshold: boolean };
+type TestEmailPreview = { subject: string; body: string; matchesUsed: number };
 
 function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }) {
   const [jobText, setJobText] = useState(defaultJobText || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [threshold, setThreshold] = useState<number | null>(null);
+  const [thresholdLevel, setThresholdLevel] = useState<number | null>(null);
   const [matches, setMatches] = useState<PortfolioMatchResult[]>([]);
   const [ranOnce, setRanOnce] = useState(false);
+
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [preview, setPreview] = useState<TestEmailPreview | null>(null);
 
   async function runTest() {
     setLoading(true);
     setError("");
+    setPreview(null);
+    setPreviewError("");
     try {
-      const res = await api.post<{ ok: boolean; threshold: number; matches: PortfolioMatchResult[] }>(
+      const res = await api.post<{ ok: boolean; thresholdLevel: number; matches: PortfolioMatchResult[] }>(
         "/api/portfolio/test-match-scores",
         { jobText, topK: 5 }
       );
-      setThreshold(res.threshold);
+      setThresholdLevel(res.thresholdLevel);
       setMatches(res.matches || []);
       setRanOnce(true);
     } catch (e: any) {
@@ -120,6 +127,25 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
       setRanOnce(true);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runPreview() {
+    setPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const res = await api.post<{ ok: boolean; preview: TestEmailPreview; thresholdLevel: number; matches: PortfolioMatchResult[] }>(
+        "/api/portfolio/test-email-preview",
+        { jobText, topK: 5 }
+      );
+      setPreview(res.preview);
+      setThresholdLevel(res.thresholdLevel);
+      setMatches(res.matches || []);
+      setRanOnce(true);
+    } catch (e: any) {
+      setPreviewError(e.message || "Preview generation failed");
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -145,16 +171,22 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
         }}
       />
 
-      <button className="btn btn-primary btn-sm" onClick={runTest} disabled={loading || !jobText.trim()}>
-        {loading ? <><span className="spinner" /> Testing...</> : "Test Match"}
-      </button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={runTest} disabled={loading || previewLoading || !jobText.trim()}>
+          {loading ? <><span className="spinner" /> Testing...</> : "Test Match"}
+        </button>
+        <button className="btn btn-secondary btn-sm" onClick={runPreview} disabled={loading || previewLoading || !jobText.trim()}>
+          {previewLoading ? <><span className="spinner" /> Generating...</> : "Generate Preview Email"}
+        </button>
+      </div>
 
       {error && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 10 }}>{error}</div>}
+      {previewError && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 10 }}>{previewError}</div>}
 
       {ranOnce && !error && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-            Threshold: <strong>{threshold}</strong> (score ≥ threshold = would be used as a match)
+            Threshold level: <strong>{thresholdLevel}/5</strong> (match rating ≥ threshold = would be used)
           </div>
           {matches.length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--muted)" }}>No indexed portfolio items with embeddings found.</div>
@@ -164,7 +196,7 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
                 <tr style={{ textAlign: "left", color: "var(--muted)" }}>
                   <th style={{ padding: "4px 8px" }}>Title</th>
                   <th style={{ padding: "4px 8px" }}>Industry</th>
-                  <th style={{ padding: "4px 8px" }}>Score</th>
+                  <th style={{ padding: "4px 8px" }}>Rating</th>
                   <th style={{ padding: "4px 8px" }}>Result</th>
                 </tr>
               </thead>
@@ -173,7 +205,7 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
                   <tr key={m.id} style={{ borderTop: "1px solid var(--border)" }}>
                     <td style={{ padding: "4px 8px" }}>{m.title}</td>
                     <td style={{ padding: "4px 8px" }}>{m.industry}</td>
-                    <td style={{ padding: "4px 8px" }}>{m.score}</td>
+                    <td style={{ padding: "4px 8px" }}>{m.level}/5</td>
                     <td style={{ padding: "4px 8px", color: m.passesThreshold ? "var(--green)" : "#dc2626" }}>
                       {m.passesThreshold ? "PASS (match)" : "FAIL (no match)"}
                     </td>
@@ -181,6 +213,16 @@ function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }
                 ))}
               </tbody>
             </table>
+          )}
+
+          {preview && (
+            <div style={{ marginTop: 14, background: "#fff", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "var(--text)" }}>
+                Preview — {preview.matchesUsed === 0 ? "no match (fallback text used)" : `${preview.matchesUsed} matched project(s) used`}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Subject: {preview.subject}</div>
+              <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 12, color: "var(--text)", margin: 0 }}>{preview.body}</pre>
+            </div>
           )}
         </div>
       )}

@@ -105,10 +105,21 @@ public class PortfolioController : ControllerBase
     [HttpPost("test-match-scores")]
     public async Task<IActionResult> TestMatchScores([FromBody] TestMatchRequest req)
     {
-        var (ok, message, threshold, matches) = await _svc.TestMatchWithScores(req.JobText, req.TopK);
+        var (ok, message, thresholdLevel, matches) = await _svc.TestMatchWithScores(req.JobText, req.TopK);
         return ok
-            ? Ok(new { ok, threshold, matches })
-            : BadRequest(new { ok, message, threshold });
+            ? Ok(new { ok, thresholdLevel, matches })
+            : BadRequest(new { ok, message, thresholdLevel });
+    }
+
+    // TESTING ONLY — preview email generation with fallback / multi-link logic.
+    // Separate endpoint, separate service method — does not touch live artifact generation.
+    [HttpPost("test-email-preview")]
+    public async Task<IActionResult> TestEmailPreview([FromBody] TestMatchRequest req)
+    {
+        var (ok, message, preview, thresholdLevel, matches) = await _svc.TestGenerateEmailPreview(req.JobText, req.TopK);
+        return ok
+            ? Ok(new { ok, preview, thresholdLevel, matches })
+            : BadRequest(new { ok, message, thresholdLevel });
     }
 
     [HttpPost("extract")]

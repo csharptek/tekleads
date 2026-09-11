@@ -413,6 +413,7 @@ public class PortfolioService
         public string Title { get; set; } = "";
         public string Industry { get; set; } = "";
         public double Score { get; set; } // similarity 0..1 (1 = identical), derived from cosine distance
+        public int Level { get; set; } // 1-5 display rating derived from Score, see ScoreToMatchLevel
         public bool PassesThreshold { get; set; }
     }
 
@@ -426,16 +427,39 @@ public class PortfolioService
             : DefaultPortfolioMatchThreshold;
     }
 
-    public async Task<(bool ok, string message, double threshold, List<PortfolioMatchResult> matches)> TestMatchWithScores(string jobText, int topK = 5)
+    // 1-5 match-level scale — user-facing replacement for the raw 0.75-style decimal
+    // above (that method/constant stay untouched for back-compat, just unused now).
+    // Settings now store an integer level 1-5; this maps it to the internal
+    // cosine-similarity cutoff used only by the test panel.
+    private static readonly double[] MatchLevelToScore = { 0.50, 0.60, 0.70, 0.80, 0.90 }; // index 0 = level 1
+
+    public const int DefaultPortfolioMatchLevel = 3;
+
+    public int GetPortfolioMatchLevel(Dictionary<string, string> settings)
+    {
+        var raw = settings.GetValueOrDefault(SettingKeys.PortfolioMatchThreshold, "");
+        if (!int.TryParse(raw, out var level)) level = DefaultPortfolioMatchLevel;
+        return Math.Clamp(level, 1, 5);
+    }
+
+    public static int ScoreToMatchLevel(double score)
+    {
+        for (int i = MatchLevelToScore.Length - 1; i >= 0; i--)
+            if (score >= MatchLevelToScore[i]) return i + 1;
+        return 1;
+    }
+
+    public async Task<(bool ok, string message, int thresholdLevel, List<PortfolioMatchResult> matches)> TestMatchWithScores(string jobText, int topK = 5)
     {
         var settings = await _settings.GetAll();
-        var threshold = GetPortfolioMatchThreshold(settings);
+        var thresholdLevel = GetPortfolioMatchLevel(settings);
+        var thresholdScore = MatchLevelToScore[thresholdLevel - 1];
 
         if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
-            return (false, "Gemini API key not configured in Settings (required for embeddings).", threshold, new());
+            return (false, "Gemini API key not configured in Settings (required for embeddings).", thresholdLevel, new());
 
         if (string.IsNullOrWhiteSpace(jobText))
-            return (false, "Job text is required.", threshold, new());
+            return (false, "Job text is required.", thresholdLevel, new());
 
         float[] embedding;
         try
@@ -444,7 +468,7 @@ public class PortfolioService
         }
         catch (Exception ex)
         {
-            return (false, $"Embedding failed: {ex.Message}", threshold, new());
+            return (false, $"Embedding failed: {ex.Message}", thresholdLevel, new());
         }
 
         try
@@ -471,16 +495,103 @@ public class PortfolioService
                     Title = (string)r.title,
                     Industry = (string)r.industry,
                     Score = Math.Round(score, 4),
-                    PassesThreshold = score >= threshold,
+                    Level = ScoreToMatchLevel(score),
+                    PassesThreshold = score >= thresholdScore,
                 };
             }).ToList();
 
-            return (true, "ok", threshold, matches);
+            return (true, "ok", thresholdLevel, matches);
         }
         catch (Exception ex)
         {
             _log.LogWarning("Test match-with-scores failed: {0}", ex.Message);
-            return (false, $"Search failed: {ex.Message}", threshold, new());
+            return (false, $"Search failed: {ex.Message}", thresholdLevel, new());
+        }
+    }
+
+    // ── TESTING: preview email generation (fallback / multi-link) ──────────────
+    // New, fully separate from ArtifactsService.EmailPrompt/BuildLinkBlock — does
+    // not read or modify those. Powers the "generated email preview" inside the
+    // test panel only. Not wired into any live proposal generation path.
+    public class TestEmailPreview
+    {
+        public string Subject { get; set; } = "";
+        public string Body { get; set; } = "";
+        public int MatchesUsed { get; set; }
+    }
+
+    private static string TestNoMatchFallbackPrompt() => @"You are writing the CREDIBILITY + APPROACH section of a freelance proposal email, for a case where we do NOT have a closely matching past project to cite by name.
+
+Write 2 short paragraphs (max 90 words total):
+1. How we would approach THIS specific project — 2-3 concrete sentences naming the likely technical approach based on the job description. Show the work is already scoped.
+2. Why we're a good fit — one sentence, general credibility (e.g. ""we've delivered similar solutions in this space before""). Do NOT name any specific project, client, or company. No links.
+
+Tone: confident, concise, no filler like 'great fit' or 'passionate'. Return only the 2 paragraphs as plain text, no headers, no JSON.";
+
+    private static string TestMultiMatchLinkPrompt() => @"You are writing a short lead-in sentence introducing 1-2 relevant past projects that will be listed right after your text (links appended separately, do not write links yourself).
+
+Write exactly 1 sentence (max 25 words) that naturally introduces the project(s) as proof of relevant experience. Return only that sentence, no preamble, no links.";
+
+    public async Task<(bool ok, string message, TestEmailPreview? preview, int thresholdLevel, List<PortfolioMatchResult> matches)> TestGenerateEmailPreview(string jobText, int topK = 5)
+    {
+        var (ok, message, thresholdLevel, matches) = await TestMatchWithScores(jobText, topK);
+        if (!ok) return (false, message, null, thresholdLevel, matches);
+
+        var settings = await _settings.GetAll();
+        var passing = matches.Where(m => m.PassesThreshold).OrderByDescending(m => m.Score).Take(2).ToList();
+
+        try
+        {
+            var messages = new List<object>();
+            string leadText;
+            string linkBlock = "";
+
+            if (passing.Count == 0)
+            {
+                messages.Add(new { role = "system", content = TestNoMatchFallbackPrompt() });
+                messages.Add(new { role = "user", content = $"JOB DESCRIPTION:\n{jobText}" });
+                leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 300);
+            }
+            else
+            {
+                messages.Add(new { role = "system", content = TestMultiMatchLinkPrompt() });
+                var projTitles = string.Join(", ", passing.Select(p => p.Title));
+                messages.Add(new { role = "user", content = $"JOB DESCRIPTION:\n{jobText}\n\nPROJECT(S): {projTitles}" });
+                leadText = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 100);
+
+                var sb = new StringBuilder();
+                foreach (var m in passing)
+                {
+                    var full = await GetById(m.Id);
+                    if (full == null) continue;
+                    sb.AppendLine();
+                    sb.AppendLine($"Project Name: {full.Title}");
+                    var yt = (full.YoutubeLinks ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
+                    if (!string.IsNullOrWhiteSpace(full.IosLink))     sb.AppendLine($"iOS Link: {full.IosLink}");
+                    if (!string.IsNullOrWhiteSpace(full.AndroidLink)) sb.AppendLine($"Android Link: {full.AndroidLink}");
+                    if (!string.IsNullOrWhiteSpace(full.WebLink))     sb.AppendLine($"Web Link: {full.WebLink}");
+                    if (!string.IsNullOrWhiteSpace(yt))               sb.AppendLine($"Youtube Demo: {yt}");
+                }
+                linkBlock = sb.ToString().TrimEnd('\n', '\r');
+            }
+
+            var body = leadText.Trim();
+            if (!string.IsNullOrWhiteSpace(linkBlock))
+                body = body + "\n\n" + linkBlock;
+
+            var preview = new TestEmailPreview
+            {
+                Subject = "(preview only — subject line generation not included in this test)",
+                Body = body,
+                MatchesUsed = passing.Count,
+            };
+
+            return (true, "ok", preview, thresholdLevel, matches);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning("Test email preview generation failed: {0}", ex.Message);
+            return (false, $"Preview generation failed: {ex.Message}", null, thresholdLevel, matches);
         }
     }
 

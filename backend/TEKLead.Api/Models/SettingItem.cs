@@ -45,6 +45,8 @@ public static class SettingKeys
     // TESTING ONLY — portfolio match-threshold experiment. Separate from the
     // settings above on purpose: this does not affect live proposal generation
     // yet, it only feeds the "Portfolio Matching (Testing)" panel.
+    // Value is an integer level "1".."5" (1=loose, 5=strict), default 3. Not a raw
+    // decimal — PortfolioService maps the level to an internal cosine cutoff.
     public const string PortfolioMatchThreshold     = "portfolio_match_threshold";
 
     // LLM provider toggle

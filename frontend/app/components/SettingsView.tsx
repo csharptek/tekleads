@@ -193,6 +193,67 @@ const USER_GROUPS: Group[] = [
   },
 ];
 
+// ── TESTING: portfolio match-threshold experiment ──────────────────────────
+// Self-contained isolated card — own state, own load/save calls to
+// /api/settings for just the "portfolio_match_threshold" key. Does not read
+// or touch the form/onSave state used by the groups above/below.
+function PortfolioMatchThresholdCard() {
+  const KEY = "portfolio_match_threshold";
+  const [level, setLevel] = useState(3);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get<{ values: Record<string, string> }>("/api/settings")
+      .then(d => {
+        const raw = parseInt(d.values?.[KEY] || "3", 10);
+        setLevel(Number.isFinite(raw) && raw >= 1 && raw <= 5 ? raw : 3);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async (v: number) => {
+    setLevel(v);
+    setSaving(true);
+    setSaved(false);
+    try {
+      await api.post("/api/settings", { values: { [KEY]: String(v) } });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch { /* non-critical */ }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Portfolio Matching (Testing)</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
+        Match threshold for the test panel on the Artifacts page. 1 = loose (more matches pass), 5 = strict (only close matches pass). Not wired into live proposal generation yet.
+      </div>
+      {loading ? (
+        <span className="spinner" />
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <select
+            value={level}
+            onChange={e => save(parseInt(e.target.value, 10))}
+            disabled={saving}
+            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13 }}
+          >
+            {[1, 2, 3, 4, 5].map(v => (
+              <option key={v} value={v}>{v} — {v === 1 ? "Loose" : v === 5 ? "Strict" : v === 3 ? "Default" : v === 2 ? "Loose-ish" : "Strict-ish"}</option>
+            ))}
+          </select>
+          {saving && <span className="spinner" />}
+          {saved && <span style={{ fontSize: 12, color: "var(--green)" }}>Saved</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Diag {
   connStringSet: boolean; connStringNormalized: boolean;
   dbReachable: boolean; tableExists: boolean;
@@ -599,6 +660,8 @@ export default function SettingsView() {
           <button className="icon-btn" onClick={() => setBanner(null)}>✕</button>
         </div>
       )}
+
+      <PortfolioMatchThresholdCard />
 
       {/* User config — always visible */}
       <div className="card">
