@@ -655,24 +655,38 @@ Return only the email body text.";
         public double CombinedScore { get; set; }
         public bool IndustryMatch { get; set; }
         public List<string> MatchedTags { get; set; } = new();
-        public string Tier { get; set; } = ""; // "Industry Match" | "Task Match" | "Semantic Only"
+        public string Tier { get; set; } = ""; // "Industry Match" | "Task Match" | "Industry (weak)" | "Semantic Only"
         public bool PassesThreshold { get; set; }
     }
 
-    private const double EnhancedIndustryBonus   = 0.15;
-    private const double EnhancedTagBonusPerTag  = 0.05;
-    private const double EnhancedTagBonusCap     = 0.15;
+    private const double EnhancedIndustryBonus     = 0.15; // industry match + a real tag overlap on top
+    private const double EnhancedIndustryWeakBonus = 0.05; // industry-only, no specific tag overlap — small nudge, doesn't auto-pass
+    private const double EnhancedTagBonusPerTag    = 0.05;
+    private const double EnhancedTagBonusCap       = 0.15;
 
+    // Stricter than a single-word overlap: for a multi-word field (tag/industry),
+    // ALL of its significant words must appear in the JD, not just one. A single
+    // shared generic word ("development", "compliance", "healthcare") used to be
+    // enough to call it a match — that's how an irrelevant project like a women's
+    // health app matched a Health Gorilla/FHIR job on nothing but "HIPAA Compliance"
+    // sharing the word "HIPAA". Requiring the whole phrase makes that much harder.
     private static bool TokenOverlap(HashSet<string> jdTokens, HashSet<string> fieldTokens)
     {
         if (jdTokens.Count == 0 || fieldTokens.Count == 0) return false;
-        foreach (var t in fieldTokens) if (jdTokens.Contains(t)) return true;
-        // substring fallback for close variants (healthcare vs health)
-        foreach (var a in fieldTokens)
-            foreach (var b in jdTokens)
-                if (a.Length >= 4 && b.Length >= 4 && (a.Contains(b) || b.Contains(a)))
-                    return true;
-        return false;
+        foreach (var t in fieldTokens)
+        {
+            bool present = jdTokens.Contains(t);
+            if (!present)
+            {
+                // substring fallback per-word for close variants (healthcare vs health)
+                foreach (var b in jdTokens)
+                {
+                    if (t.Length >= 5 && b.Length >= 5 && (t.Contains(b) || b.Contains(t))) { present = true; break; }
+                }
+            }
+            if (!present) return false;
+        }
+        return true;
     }
 
     public async Task<(bool ok, string message, int thresholdLevel, double thresholdScore, List<EnhancedMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestMatchEnhanced(string jobText, int topK = 5)
@@ -724,13 +738,38 @@ Return only the email body text.";
 
                 bool industryMatch = TokenOverlap(jdTokens, Tokenize(industry));
                 var matchedTags = tags.Where(t => TokenOverlap(jdTokens, Tokenize(t))).ToList();
+                bool hasTagMatch = matchedTags.Count > 0;
 
-                double bonus = (industryMatch ? EnhancedIndustryBonus : 0)
-                             + Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
+                string tier;
+                double bonus;
+                bool passes;
+
+                if (industryMatch && hasTagMatch)
+                {
+                    tier = "Industry Match";
+                    bonus = EnhancedIndustryBonus + Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
+                    passes = true; // strongest signal: right industry AND a specific overlapping tag
+                }
+                else if (hasTagMatch)
+                {
+                    tier = "Task Match";
+                    bonus = Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
+                    passes = true; // same task type, different industry — still a real signal on its own
+                }
+                else if (industryMatch)
+                {
+                    tier = "Industry (weak)";
+                    bonus = EnhancedIndustryWeakBonus; // industry label alone is weak — doesn't auto-pass
+                    passes = semanticScore >= thresholdScore;
+                }
+                else
+                {
+                    tier = "Semantic Only";
+                    bonus = 0;
+                    passes = semanticScore >= thresholdScore;
+                }
+
                 double combined = Math.Min(1.0, semanticScore + bonus);
-
-                string tier = industryMatch ? "Industry Match" : (matchedTags.Count > 0 ? "Task Match" : "Semantic Only");
-                bool passes = industryMatch || matchedTags.Count > 0 || semanticScore >= thresholdScore;
 
                 return new EnhancedMatchResult
                 {
