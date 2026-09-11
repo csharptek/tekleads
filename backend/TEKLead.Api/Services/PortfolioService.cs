@@ -874,7 +874,7 @@ Return only the email body text.";
 
         var scored = rows.Select(r =>
         {
-            var proj = Map(r);
+            var proj = (PortfolioProject)Map(r);
             double distance = (double)r.distance;
             double semanticScore = 1.0 - distance;
 
