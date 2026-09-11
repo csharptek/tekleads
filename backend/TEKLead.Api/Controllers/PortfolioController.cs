@@ -100,6 +100,17 @@ public class PortfolioController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+    // TESTING ONLY — does not affect live proposal generation. Powers the
+    // "Portfolio Matching (Testing)" panel only.
+    [HttpPost("test-match-scores")]
+    public async Task<IActionResult> TestMatchScores([FromBody] TestMatchRequest req)
+    {
+        var (ok, message, threshold, matches) = await _svc.TestMatchWithScores(req.JobText, req.TopK);
+        return ok
+            ? Ok(new { ok, threshold, matches })
+            : BadRequest(new { ok, message, threshold });
+    }
+
     [HttpPost("extract")]
     public async Task<IActionResult> Extract([FromBody] ExtractRequest req)
     {
@@ -126,4 +137,10 @@ public class ExtractRequest
 {
     public string FileName { get; set; } = "";
     public string Base64 { get; set; } = "";
+}
+
+public class TestMatchRequest
+{
+    public string JobText { get; set; } = "";
+    public int TopK { get; set; } = 5;
 }

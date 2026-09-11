@@ -402,6 +402,88 @@ public class PortfolioService
         }
     }
 
+    // ── TESTING: portfolio match-threshold experiment ──────────────────────────
+    // New, isolated method. Does not replace or alter SearchSimilarPgVector above
+    // — that method (and everything that calls it) is untouched. This is used only
+    // by the new "Portfolio Matching (Testing)" panel and its test-only endpoint,
+    // so nothing about existing proposal generation is affected by this code.
+    public class PortfolioMatchResult
+    {
+        public Guid Id { get; set; }
+        public string Title { get; set; } = "";
+        public string Industry { get; set; } = "";
+        public double Score { get; set; } // similarity 0..1 (1 = identical), derived from cosine distance
+        public bool PassesThreshold { get; set; }
+    }
+
+    public const double DefaultPortfolioMatchThreshold = 0.75;
+
+    public double GetPortfolioMatchThreshold(Dictionary<string, string> settings)
+    {
+        var raw = settings.GetValueOrDefault(SettingKeys.PortfolioMatchThreshold, "");
+        return double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? v
+            : DefaultPortfolioMatchThreshold;
+    }
+
+    public async Task<(bool ok, string message, double threshold, List<PortfolioMatchResult> matches)> TestMatchWithScores(string jobText, int topK = 5)
+    {
+        var settings = await _settings.GetAll();
+        var threshold = GetPortfolioMatchThreshold(settings);
+
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
+            return (false, "Gemini API key not configured in Settings (required for embeddings).", threshold, new());
+
+        if (string.IsNullOrWhiteSpace(jobText))
+            return (false, "Job text is required.", threshold, new());
+
+        float[] embedding;
+        try
+        {
+            embedding = await GenerateEmbedding(settings, jobText);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Embedding failed: {ex.Message}", threshold, new());
+        }
+
+        try
+        {
+            var cs = _settings.ConnectionString;
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+
+            var rows = await c.QueryAsync<dynamic>(
+                @"SELECT id, title, industry, (embedding_vec <=> @vec::vector) AS distance
+                  FROM portfolio_projects
+                  WHERE embedding_vec IS NOT NULL
+                  ORDER BY embedding_vec <=> @vec::vector
+                  LIMIT @topK",
+                new { vec = EmbeddingToVectorLiteral(embedding), topK });
+
+            var matches = rows.Select(r =>
+            {
+                double distance = (double)r.distance;
+                double score = 1.0 - distance; // cosine distance -> similarity
+                return new PortfolioMatchResult
+                {
+                    Id = (Guid)r.id,
+                    Title = (string)r.title,
+                    Industry = (string)r.industry,
+                    Score = Math.Round(score, 4),
+                    PassesThreshold = score >= threshold,
+                };
+            }).ToList();
+
+            return (true, "ok", threshold, matches);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning("Test match-with-scores failed: {0}", ex.Message);
+            return (false, $"Search failed: {ex.Message}", threshold, new());
+        }
+    }
+
     /// <summary>
     /// Industry-aware portfolio retrieval.
     /// Pulls a wide hybrid-search pool, then re-ranks so projects whose industry

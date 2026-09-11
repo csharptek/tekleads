@@ -90,6 +90,104 @@ function CardShell({ icon, title, subtitle, actions, children, loading }: {
   );
 }
 
+// ── TESTING: portfolio match-threshold experiment ──────────────────────────
+// Self-contained, isolated section. Does not read or modify anything below it —
+// own state, own API calls. Safe to ignore / remove later without touching the
+// rest of this page.
+type PortfolioMatchResult = { id: string; title: string; industry: string; score: number; passesThreshold: boolean };
+
+function PortfolioMatchTestPanel({ defaultJobText }: { defaultJobText?: string }) {
+  const [jobText, setJobText] = useState(defaultJobText || "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [threshold, setThreshold] = useState<number | null>(null);
+  const [matches, setMatches] = useState<PortfolioMatchResult[]>([]);
+  const [ranOnce, setRanOnce] = useState(false);
+
+  async function runTest() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.post<{ ok: boolean; threshold: number; matches: PortfolioMatchResult[] }>(
+        "/api/portfolio/test-match-scores",
+        { jobText, topK: 5 }
+      );
+      setThreshold(res.threshold);
+      setMatches(res.matches || []);
+      setRanOnce(true);
+    } catch (e: any) {
+      setError(e.message || "Test failed");
+      setRanOnce(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{
+      border: "2px solid #dc2626", borderRadius: 10, padding: 16, marginBottom: 20,
+      background: "rgba(220, 38, 38, 0.06)",
+    }}>
+      <div style={{ color: "#dc2626", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+        ⚠ TESTING IN PROGRESS — scroll below to work on the original sections. Don't touch this yet.
+      </div>
+      <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 12, opacity: 0.85 }}>
+        Portfolio Matching (Testing) — experimental, not wired into proposal generation. Nothing below this box is affected.
+      </div>
+
+      <textarea
+        value={jobText}
+        onChange={e => setJobText(e.target.value)}
+        placeholder="Paste job description text here to test portfolio match scores..."
+        style={{
+          width: "100%", minHeight: 90, fontSize: 13, padding: 10, borderRadius: 6,
+          border: "1px solid var(--border)", fontFamily: "inherit", resize: "vertical", marginBottom: 10,
+        }}
+      />
+
+      <button className="btn btn-primary btn-sm" onClick={runTest} disabled={loading || !jobText.trim()}>
+        {loading ? <><span className="spinner" /> Testing...</> : "Test Match"}
+      </button>
+
+      {error && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 10 }}>{error}</div>}
+
+      {ranOnce && !error && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+            Threshold: <strong>{threshold}</strong> (score ≥ threshold = would be used as a match)
+          </div>
+          {matches.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>No indexed portfolio items with embeddings found.</div>
+          ) : (
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+                  <th style={{ padding: "4px 8px" }}>Title</th>
+                  <th style={{ padding: "4px 8px" }}>Industry</th>
+                  <th style={{ padding: "4px 8px" }}>Score</th>
+                  <th style={{ padding: "4px 8px" }}>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matches.map(m => (
+                  <tr key={m.id} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "4px 8px" }}>{m.title}</td>
+                    <td style={{ padding: "4px 8px" }}>{m.industry}</td>
+                    <td style={{ padding: "4px 8px" }}>{m.score}</td>
+                    <td style={{ padding: "4px 8px", color: m.passesThreshold ? "var(--green)" : "#dc2626" }}>
+                      {m.passesThreshold ? "PASS (match)" : "FAIL (no match)"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type ArtifactsViewProps = {
   proposalId: string;
   proposalHeadline?: string;
@@ -571,6 +669,8 @@ export default function ArtifactsView({
 
   return (
     <div className="page" style={{ paddingBottom: 40 }}>
+      <PortfolioMatchTestPanel defaultJobText={proposalHeadline} />
+
       <div className="page-header">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

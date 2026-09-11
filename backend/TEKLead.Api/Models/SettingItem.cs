@@ -42,6 +42,11 @@ public static class SettingKeys
     public const string GeminiApiKey               = "gemini_api_key";
     public const string GeminiEmbeddingModel        = "gemini_embedding_model";
 
+    // TESTING ONLY — portfolio match-threshold experiment. Separate from the
+    // settings above on purpose: this does not affect live proposal generation
+    // yet, it only feeds the "Portfolio Matching (Testing)" panel.
+    public const string PortfolioMatchThreshold     = "portfolio_match_threshold";
+
     // LLM provider toggle
     public const string AiProvider                 = "ai_provider";          // "azure" | "groq" | "claude"
     public const string GroqApiKey                 = "groq_api_key";
@@ -119,7 +124,7 @@ public static class SettingKeys
         WhatsappCloudPhoneNumberId, WhatsappCloudWabaId, WhatsappCloudAccessToken, WhatsappCloudVerifyToken,
         WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion, WhatsappBlobContainer,
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
-        GeminiApiKey, GeminiEmbeddingModel,
+        GeminiApiKey, GeminiEmbeddingModel, PortfolioMatchThreshold,
         AiProvider, GroqApiKey, GroqModel, ClaudeApiKey, ClaudeModel, VectorProvider,
         ArtifactCoverLetterPromptAzure, ArtifactWhatsappPromptAzure, ArtifactEmailPromptAzure, ArtifactFollowUp1PromptAzure, ArtifactFollowUp2PromptAzure,
         ArtifactCoverLetterPromptGroq,  ArtifactWhatsappPromptGroq,  ArtifactEmailPromptGroq,  ArtifactFollowUp1PromptGroq,  ArtifactFollowUp2PromptGroq,
