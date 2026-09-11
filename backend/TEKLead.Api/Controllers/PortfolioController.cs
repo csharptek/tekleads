@@ -122,6 +122,18 @@ public class PortfolioController : ControllerBase
             : BadRequest(new { ok, message, thresholdLevel, thresholdScore, totalPortfolioItems, indexedPortfolioItems });
     }
 
+    // TESTING ONLY — enhanced tiered matching (industry + tags + semantic).
+    // Separate endpoint, separate service method — does not touch test-match-scores
+    // or live artifact generation.
+    [HttpPost("test-match-enhanced")]
+    public async Task<IActionResult> TestMatchEnhanced([FromBody] TestMatchRequest req)
+    {
+        var (ok, message, thresholdLevel, thresholdScore, matches, totalPortfolioItems, indexedPortfolioItems) = await _svc.TestMatchEnhanced(req.JobText, req.TopK);
+        return ok
+            ? Ok(new { ok, thresholdLevel, thresholdScore, matches, totalPortfolioItems, indexedPortfolioItems })
+            : BadRequest(new { ok, message, thresholdLevel, thresholdScore, totalPortfolioItems, indexedPortfolioItems });
+    }
+
     [HttpPost("extract")]
     public async Task<IActionResult> Extract([FromBody] ExtractRequest req)
     {

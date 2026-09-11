@@ -96,6 +96,11 @@ function CardShell({ icon, title, subtitle, actions, children, loading }: {
 // rest of this page.
 type PortfolioMatchResult = { id: string; title: string; industry: string; score: number; distance: number; level: number; passesThreshold: boolean };
 type TestEmailPreview = { subject: string; body: string; matchesUsed: number };
+type EnhancedMatchResult = {
+  id: string; title: string; industry: string; tags: string[];
+  semanticScore: number; combinedScore: number; industryMatch: boolean;
+  matchedTags: string[]; tier: string; passesThreshold: boolean;
+};
 
 function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobText?: string; proposalId?: string }) {
   const [jobText, setJobText] = useState(defaultJobText || "");
@@ -112,6 +117,33 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const [preview, setPreview] = useState<TestEmailPreview | null>(null);
+
+  // Enhanced tiered matching (industry + tags + semantic) — separate block,
+  // separate state, shares only the jobText textarea above with the original test.
+  const [enhLoading, setEnhLoading] = useState(false);
+  const [enhError, setEnhError] = useState("");
+  const [enhRanOnce, setEnhRanOnce] = useState(false);
+  const [enhThresholdLevel, setEnhThresholdLevel] = useState<number | null>(null);
+  const [enhMatches, setEnhMatches] = useState<EnhancedMatchResult[]>([]);
+
+  async function runEnhanced() {
+    setEnhLoading(true);
+    setEnhError("");
+    try {
+      const res = await api.post<{ ok: boolean; thresholdLevel: number; thresholdScore: number; matches: EnhancedMatchResult[]; totalPortfolioItems: number; indexedPortfolioItems: number }>(
+        "/api/portfolio/test-match-enhanced",
+        { jobText, topK: 5 }
+      );
+      setEnhThresholdLevel(res.thresholdLevel);
+      setEnhMatches(res.matches || []);
+      setEnhRanOnce(true);
+    } catch (e: any) {
+      setEnhError(e.message || "Enhanced test failed");
+      setEnhRanOnce(true);
+    } finally {
+      setEnhLoading(false);
+    }
+  }
 
   async function runTest() {
     setLoading(true);
@@ -216,7 +248,59 @@ function PortfolioMatchTestPanel({ defaultJobText, proposalId }: { defaultJobTex
         <button className="btn btn-secondary btn-sm" onClick={runPreview} disabled={loading || previewLoading || !jobText.trim()}>
           {previewLoading ? <><span className="spinner" /> Generating...</> : "Generate Preview Email"}
         </button>
+        <button className="btn btn-secondary btn-sm" onClick={runEnhanced} disabled={enhLoading || !jobText.trim()}>
+          {enhLoading ? <><span className="spinner" /> Testing...</> : "Test Enhanced Match (industry+tags)"}
+        </button>
       </div>
+
+      {enhError && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 10 }}>{enhError}</div>}
+
+      {enhRanOnce && !enhError && (
+        <div style={{ marginTop: 14, background: "#fff", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>
+            Enhanced Matching (Testing) — industry + tags + semantic, tiered like manual review
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>
+            Threshold level {enhThresholdLevel}/5 still applies to semantic-only rows. Industry or tag matches pass regardless of raw score.
+          </div>
+          {enhMatches.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>No indexed portfolio items with embeddings found.</div>
+          ) : (
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+                  <th style={{ padding: "4px 8px" }}>Title</th>
+                  <th style={{ padding: "4px 8px" }}>Industry</th>
+                  <th style={{ padding: "4px 8px" }}>Matched Tags</th>
+                  <th style={{ padding: "4px 8px" }}>Semantic</th>
+                  <th style={{ padding: "4px 8px" }}>Combined</th>
+                  <th style={{ padding: "4px 8px" }}>Tier</th>
+                  <th style={{ padding: "4px 8px" }}>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {enhMatches.map(m => (
+                  <tr key={m.id} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "4px 8px" }}>{m.title}</td>
+                    <td style={{ padding: "4px 8px" }}>
+                      {m.industry}{m.industryMatch && <span style={{ color: "var(--green)", marginLeft: 4 }}>✓</span>}
+                    </td>
+                    <td style={{ padding: "4px 8px", fontSize: 11, color: "var(--muted)" }}>
+                      {m.matchedTags.length > 0 ? m.matchedTags.join(", ") : "—"}
+                    </td>
+                    <td style={{ padding: "4px 8px", fontFamily: "monospace" }}>{m.semanticScore.toFixed(4)}</td>
+                    <td style={{ padding: "4px 8px", fontFamily: "monospace", fontWeight: 700 }}>{m.combinedScore.toFixed(4)}</td>
+                    <td style={{ padding: "4px 8px" }}>{m.tier}</td>
+                    <td style={{ padding: "4px 8px", color: m.passesThreshold ? "var(--green)" : "#dc2626" }}>
+                      {m.passesThreshold ? "PASS (match)" : "FAIL (no match)"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {error && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 10 }}>{error}</div>}
       {previewError && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 10 }}>{previewError}</div>}

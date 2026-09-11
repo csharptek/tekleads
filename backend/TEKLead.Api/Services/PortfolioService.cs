@@ -639,6 +639,126 @@ Return only the email body text.";
         }
     }
 
+    // ── TESTING: Enhanced tiered matching (industry + tags + semantic) ─────────
+    // New, fully additive. Does NOT touch TestMatchWithScores / TestGenerateEmailPreview
+    // above — those, and their prompts/UI, stay exactly as they are. This is a second,
+    // independent scoring path shown as a separate block in the same test panel:
+    // mirrors the manual reasoning "same industry done before" > "same task type,
+    // different industry" > "semantic-only guess" instead of one blended cosine score.
+    public class EnhancedMatchResult
+    {
+        public Guid Id { get; set; }
+        public string Title { get; set; } = "";
+        public string Industry { get; set; } = "";
+        public string[] Tags { get; set; } = Array.Empty<string>();
+        public double SemanticScore { get; set; }
+        public double CombinedScore { get; set; }
+        public bool IndustryMatch { get; set; }
+        public List<string> MatchedTags { get; set; } = new();
+        public string Tier { get; set; } = ""; // "Industry Match" | "Task Match" | "Semantic Only"
+        public bool PassesThreshold { get; set; }
+    }
+
+    private const double EnhancedIndustryBonus   = 0.15;
+    private const double EnhancedTagBonusPerTag  = 0.05;
+    private const double EnhancedTagBonusCap     = 0.15;
+
+    private static bool TokenOverlap(HashSet<string> jdTokens, HashSet<string> fieldTokens)
+    {
+        if (jdTokens.Count == 0 || fieldTokens.Count == 0) return false;
+        foreach (var t in fieldTokens) if (jdTokens.Contains(t)) return true;
+        // substring fallback for close variants (healthcare vs health)
+        foreach (var a in fieldTokens)
+            foreach (var b in jdTokens)
+                if (a.Length >= 4 && b.Length >= 4 && (a.Contains(b) || b.Contains(a)))
+                    return true;
+        return false;
+    }
+
+    public async Task<(bool ok, string message, int thresholdLevel, double thresholdScore, List<EnhancedMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestMatchEnhanced(string jobText, int topK = 5)
+    {
+        var settings = await _settings.GetAll();
+        var thresholdLevel = GetPortfolioMatchLevel(settings);
+        var thresholdScore = MatchLevelToScore[thresholdLevel - 1];
+        var (total, indexed) = await GetPortfolioIndexCounts();
+
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
+            return (false, "Gemini API key not configured in Settings (required for embeddings).", thresholdLevel, thresholdScore, new(), total, indexed);
+
+        if (string.IsNullOrWhiteSpace(jobText))
+            return (false, "Job text is required.", thresholdLevel, thresholdScore, new(), total, indexed);
+
+        float[] embedding;
+        try
+        {
+            embedding = await GenerateEmbedding(settings, jobText);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Embedding failed: {ex.Message}", thresholdLevel, thresholdScore, new(), total, indexed);
+        }
+
+        var jdTokens = Tokenize(jobText);
+        var poolSize = Math.Max(topK * 4, 20);
+
+        try
+        {
+            var cs = _settings.ConnectionString;
+            await using var c = new NpgsqlConnection(cs);
+            await c.OpenAsync();
+
+            var rows = await c.QueryAsync<dynamic>(
+                @"SELECT id, title, industry, tags, (embedding_vec <=> @vec::vector) AS distance
+                  FROM portfolio_projects
+                  WHERE embedding_vec IS NOT NULL
+                  ORDER BY embedding_vec <=> @vec::vector
+                  LIMIT @poolSize",
+                new { vec = EmbeddingToVectorLiteral(embedding), poolSize });
+
+            var scored = rows.Select(r =>
+            {
+                double distance = (double)r.distance;
+                double semanticScore = 1.0 - distance;
+                string industry = (string)(r.industry ?? "");
+                string[] tags = r.tags ?? Array.Empty<string>();
+
+                bool industryMatch = TokenOverlap(jdTokens, Tokenize(industry));
+                var matchedTags = tags.Where(t => TokenOverlap(jdTokens, Tokenize(t))).ToList();
+
+                double bonus = (industryMatch ? EnhancedIndustryBonus : 0)
+                             + Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
+                double combined = Math.Min(1.0, semanticScore + bonus);
+
+                string tier = industryMatch ? "Industry Match" : (matchedTags.Count > 0 ? "Task Match" : "Semantic Only");
+                bool passes = industryMatch || matchedTags.Count > 0 || semanticScore >= thresholdScore;
+
+                return new EnhancedMatchResult
+                {
+                    Id = (Guid)r.id,
+                    Title = (string)r.title,
+                    Industry = industry,
+                    Tags = tags,
+                    SemanticScore = Math.Round(semanticScore, 4),
+                    CombinedScore = Math.Round(combined, 4),
+                    IndustryMatch = industryMatch,
+                    MatchedTags = matchedTags,
+                    Tier = tier,
+                    PassesThreshold = passes,
+                };
+            })
+            .OrderByDescending(m => m.CombinedScore)
+            .Take(topK)
+            .ToList();
+
+            return (true, "ok", thresholdLevel, thresholdScore, scored, total, indexed);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning("Enhanced match test failed: {0}", ex.Message);
+            return (false, $"Search failed: {ex.Message}", thresholdLevel, thresholdScore, new(), total, indexed);
+        }
+    }
+
     /// <summary>
     /// Industry-aware portfolio retrieval.
     /// Pulls a wide hybrid-search pool, then re-ranks so projects whose industry
