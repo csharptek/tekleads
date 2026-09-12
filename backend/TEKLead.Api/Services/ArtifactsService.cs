@@ -178,11 +178,12 @@ public class ArtifactsService
         string coverLetter, whatsapp, emailSubject, emailBody;
         try
         {
-            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(clPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, provider, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq), context);
+            var linkBlock = BuildLinkBlocks(portfolioItems);
+            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(clPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, provider, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq), context, forceLinkInBody: false);
+            if (linkBlock != null) coverLetter = coverLetter.TrimEnd() + "\n\n" + linkBlock;
             whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(waPrompt, WhatsappPrompt, GroqWhatsappPrompt, provider, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq), context);
             var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt, GroqEmailPrompt, provider, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq), context, forceLinkInBody: false);
             (emailSubject, emailBody) = ParseEmail(emailRaw);
-            var linkBlock = BuildLinkBlocks(portfolioItems);
             if (linkBlock != null) emailBody = emailBody.TrimEnd() + "\n\n" + linkBlock;
         }
         catch (Exception ex)
@@ -226,7 +227,9 @@ public class ArtifactsService
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
         var provider = !string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
         var prompt = customPrompt ?? GetPrompt(savedPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, provider, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq);
-        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
+        var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context, forceLinkInBody: false);
+        var linkBlock = BuildLinkBlocks(portfolioItems);
+        if (linkBlock != null) result = result.TrimEnd() + "\n\n" + linkBlock;
         await SaveField(proposalId, "artifact_cover_letter", result);
         return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
     }
@@ -471,6 +474,7 @@ If COMPANY DETAILS exist, weave in one specific detail (industry, size, product)
 One metric-backed outcome from the MOST INDUSTRY-RELEVANT past project.
 Format: [What you built] — [measurable result].
 Use only real data from RELEVANT PORTFOLIO PROJECTS in context. Never invent.
+Do NOT include any link, URL, or ""Demo:"" line here or anywhere else in the body — a separate system step appends the project name and any available links (YouTube demo, etc.) after your text. Writing a link yourself creates a duplicate.
 
 3. DONE = (1 sentence)
 One acceptance criteria line in the client's language.
@@ -480,17 +484,11 @@ Format: ""Done = [specific deliverable they can test/verify]""
 Each bullet = one concrete technical decision with named technologies.
 No generic bullets like ""write clean code"".
 
-5. PORTFOLIO (1 item only)
-The single most industry-relevant project. One sentence + YouTube demo link.
-Format: [Project Name] — [one sentence why relevant]. Demo: [YouTube link]
-MANDATORY: If context contains an AVAILABLE YOUTUBE DEMOS section, the Demo link MUST appear here. Only use YouTube Demo links from context, never any other link type. Only if context says NO YOUTUBE DEMOS AVAILABLE, skip the link.
-
-6. QUESTIONS (2 max)
+5. QUESTIONS (2 max)
 Smart, specific questions showing deep reading. Numbered.
 
-7. SIGN-OFF (1 line + name)
-""I'm Bhanu Gupta — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
-Then: ""Bhanu Gupta""
+6. SIGN-OFF (1 line, no name — this goes out under different Upwork accounts, never sign a specific person's name)
+""I'm available — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
 
 RULES:
 - First person as Bhanu
@@ -498,6 +496,7 @@ RULES:
 - Banned filler: ""I am excited"", ""great fit"", ""passionate"", ""I'd love to""
 - Metrics over adjectives
 - Never invent portfolio items, metrics, or links
+- No link, URL, or ""Demo:"" line anywhere in your output — the system appends it separately
 
 Return only the cover letter text. No preamble. No markdown.";
 
@@ -644,13 +643,13 @@ HARD RULES:
 - Every project reference MUST include a metric (%, $, user count, time saved). No adjectives without numbers.
 - LENGTH: 180-230 words exactly. Count before returning.
 - Do NOT invent portfolio items, metrics, or YouTube links.
-- YouTube demo link: MANDATORY if AVAILABLE YOUTUBE DEMOS section exists in context. Use exactly the URL from context.
+- Do NOT include any link, URL, or ""Demo:"" line anywhere in your output — a separate system step appends the project name and any available links (YouTube demo, etc.) after your text. Writing a link yourself creates a duplicate.
 
 STRUCTURE — follow exactly, no section headers, no labels:
 
 1. HOOK (1 sentence): Open with the client's core problem restated as a plain statement, using a concrete detail lifted from the job post — not ""I"", not a metaphor. Prove you read it. If company details exist, include one specific detail (industry, product, size).
 
-2. PROOF (1-2 sentences): Most industry-relevant past project + specific measurable outcome. Format: [What was built] — [measurable result].
+2. PROOF (1-2 sentences): Most industry-relevant past project + specific measurable outcome. Format: [What was built] — [measurable result]. No link here — links are appended separately.
 
 3. DONE = (1 sentence): ""Done = [specific deliverable the client can test/verify]"" — mirror their language from the job post.
 
@@ -658,13 +657,11 @@ STRUCTURE — follow exactly, no section headers, no labels:
 BAD bullet: ""Ensure real-money correctness""
 GOOD bullet: ""Idempotent command handlers with Postgres advisory locks for all ledger mutations""
 
-5. PORTFOLIO (1 item only): [Project Name] — [one sentence why relevant to THIS job]. Demo: [YouTube URL from context — mandatory if available]
-
-6. QUESTIONS (2 max): Specific questions tied to details in the job post. Not generic.
+5. QUESTIONS (2 max): Specific questions tied to details in the job post. Not generic.
 BAD: ""What is your timeline?""
 GOOD: ""Is the games aggregator integration using a webhook model or polling?""
 
-7. SIGN-OFF (exact format): ""I'm Bhanu Gupta — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone] overlap with [client timezone if known]."" then new line: ""Bhanu Gupta""
+6. SIGN-OFF (exact format, no name — this goes out under different Upwork accounts, never sign a specific person's name): ""I'm available — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone] overlap with [client timezone if known].""
 
 Return ONLY the cover letter text. No preamble. No markdown. No labels. No explanation.";
 
