@@ -441,6 +441,18 @@ public class ArtifactsService
 
 PURPOSE OF THIS ARTIFACT: The cover letter is the FIRST IMPRESSION inside an Upwork job application. Its only job: make the client stop scrolling and shortlist Bhanu. It is read on mobile in under 30 seconds. It is NOT an email — no subject, no greeting line like a letter, no pricing.
 
+ACCURACY RULE (CRITICAL):
+- Every sentence must be grounded in THIS job post — a named feature, integration, tech, deadline, or pain point actually stated in it. Never generalize into abstract industry buzzwords.
+- If the job post is thin on detail, use its single most specific noun phrase instead of inventing atmosphere.
+- Never invent portfolio items, metrics, features, or links not present in context.
+- Test: if a sentence could be pasted unchanged into a cover letter for a DIFFERENT job post, it is too generic — rewrite it using a literal detail from THIS job post.
+
+BANNED HOOK PATTERNS (never use these or close variants — they read as generic AI filler):
+- ""Turning [X] into [Y]"" / ""...— is exactly the kind of [thing] that's easy to [A] and hard to [B]""
+- ""[X] is not just [Y], it's [Z]""
+- Any abstract noun phrase or gerund fragment followed by an em dash and ""is exactly"" / ""is the real challenge"" / ""is where it gets hard""
+- Vague metaphors: ""living knowledge base"", ""workspaces into ecosystems"", ""from prototype to production-ready"", ""scattered X into unified Y""
+
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Look at CLIENT INDUSTRY in context. Reference ONLY portfolio projects from the SAME or closest industry.
 - If the client is healthcare, reference healthcare projects. If fintech, fintech. Never reference an unrelated-industry project when an industry match exists in context.
@@ -450,8 +462,8 @@ TARGET LENGTH: 180-230 words total. Every word must earn its place.
 
 STRUCTURE — follow this exact order, no section titles:
 
-1. HOOK (1 sentence)
-Restate the client's core problem back in your own words — prove you read it.
+1. HOOK (1 plain declarative sentence)
+State the client's actual problem using a concrete phrase LIFTED FROM THE JOB POST — a named feature, integration, deadline, or pain point. Not a metaphor. Not one of the BANNED HOOK PATTERNS above.
 Do NOT start with ""I"". Banned: ""I have reviewed"", ""I am writing to"", ""I'm excited"", ""I believe"".
 If COMPANY DETAILS exist, weave in one specific detail (industry, size, product) naturally.
 
@@ -605,18 +617,25 @@ Return only the JSON. No preamble.";
 
 CRITICAL OPENING RULE — READ FIRST:
 The FIRST WORD must NOT be ""I"". The first sentence must NOT start with ""I"".
-BAD: ""I understand your need..."" / ""I have reviewed..."" / ""I architected..."" / ""I will design...""
-GOOD: ""Ledger integrity at scale..."" / ""Real-money correctness..."" / ""Scaling a modular monolith...""
-If your first word is ""I"" — rewrite the entire opening.
+The opening sentence must be a plain declarative statement using a concrete noun/feature/deadline LIFTED FROM THE JOB POST — never an abstract metaphor or gerund fragment.
+BAD (starts with I): ""I understand your need..."" / ""I have reviewed..."" / ""I architected..."" / ""I will design...""
+BAD (generic template, banned regardless of provider): ""Turning [X] into [Y] — is exactly the kind of...""  /  ""[X] is not just [Y], it's [Z]""  /  ""Ledger integrity at scale...""  /  ""Real-money correctness...""  /  ""Scaling a modular monolith...""
+GOOD (specific to the actual job post): restate the literal problem stated in the job, e.g. ""The games aggregator needs webhook-based settlement instead of nightly polling.""
+If your first word is ""I"", OR your sentence would still make sense pasted into a different job's cover letter — rewrite the entire opening using a detail unique to THIS job post.
+
+ACCURACY RULE (CRITICAL):
+- Every claim must come from THIS job post's actual text — a named feature, integration, tech, deadline, or pain point. Never invent portfolio items, metrics, or links not present in context.
 
 BANNED WORDS AND PHRASES (never use any of these):
 ""I will"", ""I am"", ""I have"", ""I'd love"", ""I believe"", ""I'd be"", ""I can help"",
 ""great fit"", ""passionate"", ""excited"", ""challenging"", ""ensure quality"", ""write clean code"",
 ""happy to help"", ""looking forward"", ""I hope"", ""pleased to"", ""thrilled"", ""love to"",
+""living knowledge base"", ""workspaces into ecosystems"", ""from prototype to production-ready"",
 ""Csharptek"", any company name of Bhanu.
 
 BANNED SENTENCE PATTERNS:
 - Starting a sentence with ""I will [verb]"" — e.g. ""I will design"", ""I will implement"", ""I will set up""
+- ""Turning [X] into [Y]"" or any abstract noun/gerund phrase + em dash + ""is exactly"" / ""is the real challenge""
 - Generic sign-off like ""Can we schedule a call to discuss..."" or ""What are your thoughts""
 - Ending questions that are vague or not tied to the specific job post
 - Repeating the same subject (""I"") in 3+ consecutive sentences
@@ -629,7 +648,7 @@ HARD RULES:
 
 STRUCTURE — follow exactly, no section headers, no labels:
 
-1. HOOK (1 sentence): Open with the client's core problem restated as a statement — not ""I"". Prove you read it. If company details exist, include one specific detail (industry, product, size).
+1. HOOK (1 sentence): Open with the client's core problem restated as a plain statement, using a concrete detail lifted from the job post — not ""I"", not a metaphor. Prove you read it. If company details exist, include one specific detail (industry, product, size).
 
 2. PROOF (1-2 sentences): Most industry-relevant past project + specific measurable outcome. Format: [What was built] — [measurable result].
 
@@ -755,7 +774,7 @@ Return only the JSON.";
         string azureKey,
         string groqKey)
     {
-        var isGroqOrClaude = provider == "groq";
+        var isGroqOrClaude = provider == "groq" || provider == "claude";
         var providerKey = isGroqOrClaude ? groqKey : azureKey;
         var providerSaved = settings.GetValueOrDefault(providerKey, "");
         if (!string.IsNullOrWhiteSpace(providerSaved)) return providerSaved;

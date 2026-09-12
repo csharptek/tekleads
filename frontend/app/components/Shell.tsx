@@ -24,7 +24,7 @@ import JobContactsView from "./JobContactsView";
 type Page = "quick-outreach" | "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "jd-only-list" | "jd-only-new" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads" | "job-contacts";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
-type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; };
+type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; returnTo?: Page; };
 
 type NavItem = { id: Page; label: string; icon: React.ReactNode; };
 type NavCategory = { label: string; items: NavItem[]; };
@@ -120,7 +120,7 @@ export default function Shell() {
   };
 
   const openArtifacts = (ctx: ArtifactsContext) => {
-    setArtifactsCtx(ctx);
+    setArtifactsCtx({ ...ctx, returnTo: ctx.returnTo ?? page });
     navigate("artifacts");
   };
 
@@ -195,7 +195,7 @@ export default function Shell() {
         {page === "jd-only-list"      && <ProposalList onNew={() => navigate("jd-only-new")} onEdit={openEdit} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} isJdOnly={true} />}
         {page === "jd-only-new"       && <NewProposalView onViewList={() => navigate("jd-only-list")} onGenerateArtifacts={openArtifacts} jdOnlyMode />}
         {page === "proposal-settings" && <ProposalSettings />}
-        {page === "artifacts"         && artifactsCtx && <ArtifactsView {...artifactsCtx} onBack={() => navigate("proposal-list")} />}
+        {page === "artifacts"         && artifactsCtx && <ArtifactsView {...artifactsCtx} onBack={() => navigate(artifactsCtx.returnTo ?? "proposal-list")} />}
         {page === "settings"          && <SettingsView />}
         {page === "logs"              && <LogsView />}
         {page === "phone-logs"         && <PhoneWebhookLogsView />}
