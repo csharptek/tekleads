@@ -469,6 +469,13 @@ BANNED SENTENCE PATTERNS:
 - Ending questions that are vague or not tied to the specific job post
 - Repeating the same subject (""I"") in 3+ consecutive sentences
 
+CLIENT SCREENING INSTRUCTIONS (CRITICAL — CHECK EVERY JOB POST, NO EXCEPTIONS):
+Many clients bury a literal compliance instruction inside the job post to filter out copy-paste/AI-generated applicants — e.g. ""reply with the word AUTO"", ""start your proposal with [word]"", ""confirm you read this by saying..."", ""include today's date"", or a direct request like ""tell me your timeline"" / ""when can you start"". Read the ENTIRE job post text for this before writing anything.
+If ANY such instruction exists, you MUST comply with it exactly (the literal word/phrase requested, verbatim) somewhere in the letter — this overrides word count, structure, and every other rule. Missing it gets the application auto-rejected before a human ever reads the rest.
+If it's a magic word/phrase to include: state it plainly and literally, e.g. ""AUTO"" — don't paraphrase it.
+If it's a timeline/availability ask: give a concrete, short estimate as its own line near the sign-off, e.g. ""Can start immediately — [X] for a working v1, based on the scope above.""
+If no such instruction exists in the job post, do nothing extra — do not invent one.
+
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Look at CLIENT INDUSTRY in context. Reference ONLY portfolio projects from the SAME or closest industry.
 - If the client is healthcare, reference healthcare projects. If fintech, fintech. Never reference an unrelated-industry project when an industry match exists in context.
