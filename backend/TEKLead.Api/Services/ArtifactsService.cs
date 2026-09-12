@@ -129,10 +129,10 @@ public class ArtifactsService
         var aoEndpoint   = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
         var aoKey        = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
         var aoDeployment = settings.GetValueOrDefault(SettingKeys.AzureOpenAiDeployment, "");
-        var activeProvider = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
 
-        if (activeProvider == "azure" && (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment)))
-            return Fail("Azure OpenAI not configured in Settings.");
+        // Artifacts always generate on Claude now, regardless of the global AI Provider setting.
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.ClaudeApiKey, "")))
+            return Fail("Claude API key not configured in Settings.");
 
         var companyCtx = await _companyCtx.GetByProposalId(proposal.Id);
 
@@ -172,17 +172,16 @@ public class ArtifactsService
         var clPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
         var waPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
         var emPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
-        var provider = !string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
 
         // Generate sequentially to avoid timeout overload
         string coverLetter, whatsapp, emailSubject, emailBody;
         try
         {
             var linkBlock = BuildLinkBlocks(portfolioItems);
-            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(clPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, provider, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq), context, forceLinkInBody: false);
+            coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(clPrompt, CoverLetterPrompt), context, forceLinkInBody: false);
             if (linkBlock != null) coverLetter = coverLetter.TrimEnd() + "\n\n" + linkBlock;
-            whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(waPrompt, WhatsappPrompt, GroqWhatsappPrompt, provider, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq), context);
-            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt, GroqEmailPrompt, provider, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq), context, forceLinkInBody: false);
+            whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(waPrompt, WhatsappPrompt), context);
+            var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt), context, forceLinkInBody: false);
             (emailSubject, emailBody) = ParseEmail(emailRaw);
             if (linkBlock != null) emailBody = emailBody.TrimEnd() + "\n\n" + linkBlock;
         }
@@ -225,8 +224,7 @@ public class ArtifactsService
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
-        var provider = !string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, CoverLetterPrompt, GroqCoverLetterPrompt, provider, settings, SettingKeys.ArtifactCoverLetterPromptAzure, SettingKeys.ArtifactCoverLetterPromptGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, CoverLetterPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context, forceLinkInBody: false);
         var linkBlock = BuildLinkBlocks(portfolioItems);
         if (linkBlock != null) result = result.TrimEnd() + "\n\n" + linkBlock;
@@ -240,8 +238,7 @@ public class ArtifactsService
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactWhatsappPrompt, "");
-        var provider = !string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, WhatsappPrompt, GroqWhatsappPrompt, provider, settings, SettingKeys.ArtifactWhatsappPromptAzure, SettingKeys.ArtifactWhatsappPromptGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, WhatsappPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         await SaveField(proposalId, "artifact_whatsapp", result);
         return new ArtifactsResult { Ok = true, WhatsappMessage = result, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
@@ -253,8 +250,7 @@ public class ArtifactsService
         if (err != null) return Fail(err);
         var context = BuildContext(proposal!, portfolioItems, company);
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
-        var provider = !string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, EmailPrompt, GroqEmailPrompt, provider, settings, SettingKeys.ArtifactEmailPromptAzure, SettingKeys.ArtifactEmailPromptGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, EmailPrompt);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context, forceLinkInBody: false);
         var (subject, body) = ParseEmail(raw);
         var linkBlock = BuildLinkBlocks(portfolioItems);
@@ -278,8 +274,7 @@ public class ArtifactsService
         }
 
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactFollowUp1Prompt, "");
-        var provider = !string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp1Prompt, GroqFollowUp1Prompt, provider, settings, SettingKeys.ArtifactFollowUp1PromptAzure, SettingKeys.ArtifactFollowUp1PromptGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp1Prompt);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
         // Force subject to match initial email for inbox threading
@@ -309,8 +304,7 @@ public class ArtifactsService
         }
 
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactFollowUp2Prompt, "");
-        var provider = !string.IsNullOrWhiteSpace(providerOverride) ? providerOverride : settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
-        var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp2Prompt, GroqFollowUp2Prompt, provider, settings, SettingKeys.ArtifactFollowUp2PromptAzure, SettingKeys.ArtifactFollowUp2PromptGroq);
+        var prompt = customPrompt ?? GetPrompt(savedPrompt, FollowUp2Prompt);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context);
         var (subject, body) = ParseEmail(raw);
         // Force subject to match initial email for inbox threading
@@ -347,10 +341,10 @@ public class ArtifactsService
         var aoEndpoint   = settings.GetValueOrDefault(SettingKeys.AzureOpenAiEndpoint, "");
         var aoKey        = settings.GetValueOrDefault(SettingKeys.AzureOpenAiKey, "");
         var aoDeployment = settings.GetValueOrDefault(SettingKeys.AzureOpenAiDeployment, "");
-        var activeProvider = settings.GetValueOrDefault(SettingKeys.AiProvider, "azure");
 
-        if (activeProvider == "azure" && (string.IsNullOrWhiteSpace(aoEndpoint) || string.IsNullOrWhiteSpace(aoKey) || string.IsNullOrWhiteSpace(aoDeployment)))
-            return (null, null, null, null, new(), new(), "Azure OpenAI not configured in Settings.", null, new());
+        // Artifacts always generate on Claude now, regardless of the global AI Provider setting.
+        if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.ClaudeApiKey, "")))
+            return (null, null, null, null, new(), new(), "Claude API key not configured in Settings.", null, new());
 
         var company = await _companyCtx.GetByProposalId(proposal.Id);
 
@@ -444,6 +438,13 @@ public class ArtifactsService
 
 PURPOSE OF THIS ARTIFACT: The cover letter is the FIRST IMPRESSION inside an Upwork job application. Its only job: make the client stop scrolling and shortlist Bhanu. It is read on mobile in under 30 seconds. It is NOT an email — no subject, no greeting line like a letter, no pricing.
 
+CRITICAL OPENING RULE — READ FIRST:
+The first word must NOT be ""I"". The opening sentence must be a plain declarative statement using a concrete noun/feature/deadline LIFTED FROM THE JOB POST — never an abstract metaphor or gerund fragment.
+BAD (starts with I): ""I understand your need..."" / ""I have reviewed..."" / ""I architected...""
+BAD (generic template — banned outright): ""Turning [X] into [Y] — is exactly the kind of...""  /  ""[X] is not just [Y], it's [Z]""  /  ""Ledger integrity at scale...""  /  ""Real-money correctness...""  /  ""Scaling a modular monolith...""
+GOOD (specific to the actual job post): restate the literal problem stated in the job, e.g. ""The games aggregator needs webhook-based settlement instead of nightly polling.""
+If your first word is ""I"", OR your sentence would still make sense pasted into a different job's cover letter, rewrite the entire opening using a detail unique to THIS job post.
+
 ACCURACY RULE (CRITICAL):
 - Every sentence must be grounded in THIS job post — a named feature, integration, tech, deadline, or pain point actually stated in it. Never generalize into abstract industry buzzwords.
 - If the job post is thin on detail, use its single most specific noun phrase instead of inventing atmosphere.
@@ -456,18 +457,29 @@ BANNED HOOK PATTERNS (never use these or close variants — they read as generic
 - Any abstract noun phrase or gerund fragment followed by an em dash and ""is exactly"" / ""is the real challenge"" / ""is where it gets hard""
 - Vague metaphors: ""living knowledge base"", ""workspaces into ecosystems"", ""from prototype to production-ready"", ""scattered X into unified Y""
 
+BANNED WORDS AND PHRASES (never use any of these):
+""I will"", ""I am"", ""I have"", ""I'd love"", ""I believe"", ""I'd be"", ""I can help"", ""I am excited"",
+""great fit"", ""passionate"", ""excited"", ""challenging"", ""ensure quality"", ""write clean code"",
+""happy to help"", ""looking forward"", ""I hope"", ""pleased to"", ""thrilled"", ""love to"",
+""Csharptek"", any company name of Bhanu.
+
+BANNED SENTENCE PATTERNS:
+- Starting a sentence with ""I will [verb]"" — e.g. ""I will design"", ""I will implement"", ""I will set up""
+- Generic sign-off like ""Can we schedule a call to discuss..."" or ""What are your thoughts""
+- Ending questions that are vague or not tied to the specific job post
+- Repeating the same subject (""I"") in 3+ consecutive sentences
+
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Look at CLIENT INDUSTRY in context. Reference ONLY portfolio projects from the SAME or closest industry.
 - If the client is healthcare, reference healthcare projects. If fintech, fintech. Never reference an unrelated-industry project when an industry match exists in context.
 - Use maximum 1-2 projects, never all three.
 
-TARGET LENGTH: 180-230 words total. Every word must earn its place.
+TARGET LENGTH: 180-230 words total. Count before returning. Every word must earn its place.
 
 STRUCTURE — follow this exact order, no section titles:
 
 1. HOOK (1 plain declarative sentence)
-State the client's actual problem using a concrete phrase LIFTED FROM THE JOB POST — a named feature, integration, deadline, or pain point. Not a metaphor. Not one of the BANNED HOOK PATTERNS above.
-Do NOT start with ""I"". Banned: ""I have reviewed"", ""I am writing to"", ""I'm excited"", ""I believe"".
+State the client's actual problem using a concrete phrase LIFTED FROM THE JOB POST — a named feature, integration, deadline, or pain point. Not a metaphor. Not one of the BANNED HOOK PATTERNS above. Do NOT start with ""I"".
 If COMPANY DETAILS exist, weave in one specific detail (industry, size, product) naturally.
 
 2. PROOF (1-2 sentences)
@@ -482,27 +494,30 @@ Format: ""Done = [specific deliverable they can test/verify]""
 
 4. APPROACH (3 bullets)
 Each bullet = one concrete technical decision with named technologies.
-No generic bullets like ""write clean code"".
+No generic bullets like ""write clean code"" or ""ensure real-money correctness"". Instead, e.g.: ""Idempotent command handlers with Postgres advisory locks for all ledger mutations"" — named tech + specific decision.
 
 5. QUESTIONS (2 max)
-Smart, specific questions showing deep reading. Numbered.
+Smart, specific questions tied to details in the job post. Not generic (""What is your timeline?"" is banned).
 
 6. SIGN-OFF (1 line, no name — this goes out under different Upwork accounts, never sign a specific person's name)
 ""I'm available — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
 
 RULES:
-- First person as Bhanu
+- First person as Bhanu, but never named
 - Never mention ""Csharptek"" or any company name of Bhanu
-- Banned filler: ""I am excited"", ""great fit"", ""passionate"", ""I'd love to""
-- Metrics over adjectives
+- Metrics over adjectives — every project reference must include a metric (%, $, user count, time saved)
 - Never invent portfolio items, metrics, or links
 - No link, URL, or ""Demo:"" line anywhere in your output — the system appends it separately
 
-Return only the cover letter text. No preamble. No markdown.";
+Return only the cover letter text. No preamble. No markdown. No labels.";
 
     public static string WhatsappPrompt() => @"Write a WhatsApp FIRST-TOUCH outreach message for a freelance software proposal.
 
 PURPOSE OF THIS ARTIFACT: WhatsApp is personal space — this message must feel like a human reaching out, not a pitch. Its only job: earn a reply. NOT to sell, NOT to explain the full offer, NOT to share pricing. Shorter and more casual than the cover letter and proposal — those do the heavy lifting later.
+
+CRITICAL OPENING RULE:
+Do NOT start with ""I"". Open with the person's first name.
+BANNED WORDS: ""excited"", ""passionate"", ""great fit"", ""challenging"", ""happy to help"", ""I will"", ""I'd love"", ""I believe"", ""Csharptek""
 
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Reference exactly ONE portfolio project, and it MUST match the CLIENT INDUSTRY from context if a match exists.
@@ -532,6 +547,8 @@ PURPOSE OF THIS ARTIFACT: This is the commercial document — the only artifact 
 Return ONLY valid JSON in this exact format (no markdown, no backticks):
 {""subject"": ""your subject line here"", ""body"": ""full proposal body here with \n for line breaks""}
 
+CRITICAL OPENING RULE: The HOOK paragraph must NOT start with ""I"". Mirror the client's pain point as a plain statement instead.
+
 PORTFOLIO SELECTION RULE (CRITICAL):
 - Reference 1 (max 2) portfolio projects, and they MUST match the CLIENT INDUSTRY from context if a match exists.
 - Do NOT include any link, URL, or ""Demo:"" line yourself anywhere in the body — a separate system step appends the project name and any available links (iOS/Android/Web/YouTube demo) after your text. Writing a link yourself creates a duplicate.
@@ -541,11 +558,11 @@ Proposal rules:
 - If CLIENT INFO says no name found, start with: Hi there,
 - If Title / Seniority / Headline are present in CLIENT INFO, let it shape tone and the APPROACH paragraph (e.g. a hands-on technical title → more specific tech detail; a founder/exec title → outcome-and-speed framing). Never state their title back to them verbatim, never say ""As a CTO...""
 - Subject: specific, 8-12 words, references their project — not generic
-- Body: 150-200 words MAX
+- Body: 150-200 words MAX. Count before returning.
 - Never mention ""Csharptek"" or any company name of Bhanu
 - No self-introduction paragraph — do not describe who Bhanu is or what the company does. Every sentence addresses their problem or proves relevant experience, never sender bio.
-- Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited""
-- No pricing, rates, or numbers about cost anywhere in this email
+- Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"", ""I believe"", ""challenging""
+- No pricing, rates, or numbers about cost anywhere in this email — even if PROPOSAL PRICING & TIMELINE is present in context, ignore it for this artifact
 - No name or company signature at the end (system appends it)
 
 STRUCTURE — exact order, no section titles:
@@ -561,7 +578,7 @@ Para 3 — APPROACH (2-3 sentences prose, no bullets):
 Brief how. Name specific technologies. Show the work is already scoped in Bhanu's head.
 
 Para 4 — CTA (1-2 sentences):
-One clear, specific next step that invites a reply (e.g. ""Worth 15 min this week?""). No pricing, no rates, no numbers about cost anywhere in this email — even if PROPOSAL PRICING & TIMELINE is present in context, ignore it for this artifact.
+One clear, specific next step that invites a reply (e.g. ""Worth 15 min this week?""). No pricing, no rates, no numbers about cost anywhere in this email.
 
 SCREENING ANSWERS (only if job post contains screening questions):
 Answer each directly, one line each: ""[topic]: [answer]""";
@@ -576,10 +593,11 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 Rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
 - Subject: any placeholder — system sets ""Re: <initial subject>"" for threading
-- Body: MAX 2 short paragraphs, 60-100 words total
+- Body: MAX 2 short paragraphs, 60-100 words total. Count before returning.
 - Paragraph 1: Reference the INITIAL EMAIL ALREADY SENT briefly, then add ONE new thing — a fresh insight about their problem, an industry-matched YouTube demo link (only from context), or one sharp clarifying question.
 - Paragraph 2: Low-friction CTA — propose a 20-min call or ask one question answerable in one line.
 - Tone: friendly, confident, not pushy. No apologies.
+- Do NOT use: ""just following up"", ""checking in"", ""I wanted to"", ""excited"", ""passionate""
 - Do not repeat pricing or timeline
 - No name signature (system appends it)
 - Link rule: YouTube Demo links from context only, or no link
@@ -598,185 +616,26 @@ Return ONLY valid JSON in this exact format (no markdown, no backticks):
 Rules:
 - Start with: Hi [first name only from CLIENT INFO Name field],
 - Subject: any placeholder — system sets ""Re: <initial subject>"" for threading
-- Body: MAX 2 short paragraphs, 50-80 words total
+- Body: MAX 2 short paragraphs, 50-80 words total. Count before returning.
 - Paragraph 1: Acknowledge this is the last follow-up. Restate ONE concrete outcome Bhanu would deliver — ideally tied to their industry. Do not rehash the pitch. No new links unless an industry-matched YouTube demo exists in context and wasn't used before.
 - Paragraph 2: Definitive but polite CTA — ""Let me know if timing isn't right and I'll close this out"" or a soft yes/no question. Make walking away easy.
 - Tone: warm, respectful. No guilt, no urgency tactics.
+- Do NOT use: ""just checking"", ""I wanted to"", ""excited"", ""passionate"", ""I hope this finds you""
 - No name signature (system appends it)
 
 Variables allowed in body: {{name}}, {{first_name}}, {{email}} — only if natural.
 
 Return only the JSON. No preamble.";
 
-    // ── Groq-tuned prompts ────────────────────────────────────────────────────
-    // Same structure as Azure prompts but more explicit instructions to prevent
-    // generic filler that open-source models default to.
-
-    public static string GroqCoverLetterPrompt() => @"You are ghostwriting an Upwork COVER LETTER for Bhanu Gupta — 15+ years full-stack dev, 40+ delivered projects.
-
-CRITICAL OPENING RULE — READ FIRST:
-The FIRST WORD must NOT be ""I"". The first sentence must NOT start with ""I"".
-The opening sentence must be a plain declarative statement using a concrete noun/feature/deadline LIFTED FROM THE JOB POST — never an abstract metaphor or gerund fragment.
-BAD (starts with I): ""I understand your need..."" / ""I have reviewed..."" / ""I architected..."" / ""I will design...""
-BAD (generic template, banned regardless of provider): ""Turning [X] into [Y] — is exactly the kind of...""  /  ""[X] is not just [Y], it's [Z]""  /  ""Ledger integrity at scale...""  /  ""Real-money correctness...""  /  ""Scaling a modular monolith...""
-GOOD (specific to the actual job post): restate the literal problem stated in the job, e.g. ""The games aggregator needs webhook-based settlement instead of nightly polling.""
-If your first word is ""I"", OR your sentence would still make sense pasted into a different job's cover letter — rewrite the entire opening using a detail unique to THIS job post.
-
-ACCURACY RULE (CRITICAL):
-- Every claim must come from THIS job post's actual text — a named feature, integration, tech, deadline, or pain point. Never invent portfolio items, metrics, or links not present in context.
-
-BANNED WORDS AND PHRASES (never use any of these):
-""I will"", ""I am"", ""I have"", ""I'd love"", ""I believe"", ""I'd be"", ""I can help"",
-""great fit"", ""passionate"", ""excited"", ""challenging"", ""ensure quality"", ""write clean code"",
-""happy to help"", ""looking forward"", ""I hope"", ""pleased to"", ""thrilled"", ""love to"",
-""living knowledge base"", ""workspaces into ecosystems"", ""from prototype to production-ready"",
-""Csharptek"", any company name of Bhanu.
-
-BANNED SENTENCE PATTERNS:
-- Starting a sentence with ""I will [verb]"" — e.g. ""I will design"", ""I will implement"", ""I will set up""
-- ""Turning [X] into [Y]"" or any abstract noun/gerund phrase + em dash + ""is exactly"" / ""is the real challenge""
-- Generic sign-off like ""Can we schedule a call to discuss..."" or ""What are your thoughts""
-- Ending questions that are vague or not tied to the specific job post
-- Repeating the same subject (""I"") in 3+ consecutive sentences
-
-HARD RULES:
-- Every project reference MUST include a metric (%, $, user count, time saved). No adjectives without numbers.
-- LENGTH: 180-230 words exactly. Count before returning.
-- Do NOT invent portfolio items, metrics, or YouTube links.
-- Do NOT include any link, URL, or ""Demo:"" line anywhere in your output — a separate system step appends the project name and any available links (YouTube demo, etc.) after your text. Writing a link yourself creates a duplicate.
-
-STRUCTURE — follow exactly, no section headers, no labels:
-
-1. HOOK (1 sentence): Open with the client's core problem restated as a plain statement, using a concrete detail lifted from the job post — not ""I"", not a metaphor. Prove you read it. If company details exist, include one specific detail (industry, product, size).
-
-2. PROOF (1-2 sentences): Most industry-relevant past project + specific measurable outcome. Format: [What was built] — [measurable result]. No link here — links are appended separately.
-
-3. DONE = (1 sentence): ""Done = [specific deliverable the client can test/verify]"" — mirror their language from the job post.
-
-4. APPROACH (3 bullets): Each bullet = one named technology + one concrete decision. No generic bullets.
-BAD bullet: ""Ensure real-money correctness""
-GOOD bullet: ""Idempotent command handlers with Postgres advisory locks for all ledger mutations""
-
-5. QUESTIONS (2 max): Specific questions tied to details in the job post. Not generic.
-BAD: ""What is your timeline?""
-GOOD: ""Is the games aggregator integration using a webhook model or polling?""
-
-6. SIGN-OFF (exact format, no name — this goes out under different Upwork accounts, never sign a specific person's name): ""I'm available — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone] overlap with [client timezone if known].""
-
-Return ONLY the cover letter text. No preamble. No markdown. No labels. No explanation.";
-
-    public static string GroqWhatsappPrompt() => @"Write a SHORT VERSION of a cover letter for WhatsApp — same quality as the cover letter but compressed to fit mobile reading.
-
-This is NOT a generic outreach message. It is a mini cover letter: specific, proof-backed, confident.
-
-CRITICAL OPENING RULE:
-The FIRST WORD must NOT be ""I"". Must not start with ""I have"", ""I am"", ""I will"", ""I'd love"".
-BAD: ""I noticed your project..."" / ""I built..."" / ""I'd love to help...""
-GOOD: ""Real-money correctness at scale..."" / ""Ledger integrity..."" (restate their problem first)
-
-BANNED WORDS: ""excited"", ""passionate"", ""great fit"", ""challenging"", ""happy to help"", ""I will"", ""I'd love"", ""I believe"", ""Csharptek""
-
-HARD RULES:
-- MAX 80 words total. Count them.
-- No bullet points. Prose only.
-- No pricing, no timeline.
-- Do NOT sign with a name at the end.
-- Do NOT invent projects, outcomes, or links.
-- Max 1 emoji or none.
-- Start with: ""Hi [first name],"" on its own line.
-
-STRUCTURE (4 short blocks):
-Block 1 (Hi line): ""Hi [first name],""
-Block 2 (Hook): Restate their core problem in one sentence — prove you read it.
-Block 3 (Proof): One sentence — what Bhanu built for a similar client + concrete metric outcome.
-Block 4 (Demo + CTA): Demo: [YouTube URL from context — MANDATORY if AVAILABLE YOUTUBE DEMOS exists]. Then: one soft CTA line.
-
-Return only the WhatsApp message text. Nothing else.";
-
-    public static string GroqEmailPrompt() => @"You are writing a PROPOSAL EMAIL for Bhanu Gupta — senior full-stack developer, 15+ years, 40+ projects.
-
-Return ONLY valid JSON. No markdown, no backticks, no explanation:
-{""subject"": ""subject line here"", ""body"": ""email body here with \n for line breaks""}
-
-HARD RULES:
-- Start body with: Hi [first name only],
-- Do NOT start with ""I"". Hook must open with client's pain point.
-- Do NOT use: ""great fit"", ""passionate"", ""excited"", ""I'd love to"", ""I believe"", ""challenging"".
-- Do NOT mention ""Csharptek"" or any Bhanu company name.
-- Do NOT invent prices, projects, or links.
-- Do NOT add signature — system appends it.
-- Body: 150-200 words MAX. Count them.
-- Subject: 8-12 words, specific to their project.
-- YouTube demo link MANDATORY in Para 2 if AVAILABLE YOUTUBE DEMOS section exists in context.
-
-STRUCTURE:
-Para 1 — HOOK (1-2 sentences): Mirror their exact pain point. If deadline mentioned, reference it directly.
-Para 2 — CREDIBILITY (1-2 sentences): Most relevant past project + specific outcome. Format: [What was built] — [measurable result]. Demo: [YouTube url — only from context]
-Para 3 — APPROACH (2-3 sentences): How Bhanu would solve it. Name specific technologies. Show work is already scoped.
-Para 4 — PRICING & CTA: Use figures from PROPOSAL PRICING & TIMELINE. Format: ""[Phase]: ~[hours] hrs at $[rate]/hr — $[total]. Starting today."" If no pricing: ""Happy to share a detailed estimate on a call."" Then one clear next step.
-SCREENING ANSWERS (if job post has questions): Answer each directly, one line: ""[topic]: [answer]""
-
-Return only the JSON object.";
-
-    public static string GroqFollowUp1Prompt() => @"Write Follow-up #1 — short nudge email, 24 hours after initial proposal.
-
-GOAL: Resurface the thread with ONE new piece of value. NOT a re-pitch.
-
-Return ONLY valid JSON, no markdown, no backticks:
-{""subject"": ""placeholder"", ""body"": ""email body with \n for line breaks""}
-
-HARD RULES:
-- Start with: Hi [first name only from CLIENT INFO],
-- Body: MAX 2 paragraphs, 60-100 words total. Count them.
-- Do NOT repeat the initial pitch or pricing.
-- Do NOT use: ""just following up"", ""checking in"", ""I wanted to"", ""excited"", ""passionate"".
-- Do NOT add name signature — system appends it.
-- YouTube link: only from context, only if not used in initial email.
-
-Para 1: Reference initial proposal briefly. Add ONE new thing — a fresh insight about their problem, a sharp industry observation, or one clarifying question.
-Para 2: Low-friction CTA — propose a 20-min call or ask one question answerable in one line.
-Tone: direct, confident, not pushy.
-
-Return only the JSON.";
-
-    public static string GroqFollowUp2Prompt() => @"Write Follow-up #2 — final nudge email, 48 hours after initial proposal. FU1 already sent.
-
-GOAL: Get a yes/no decision. Leave door open. Zero desperation.
-
-Return ONLY valid JSON, no markdown, no backticks:
-{""subject"": ""placeholder"", ""body"": ""email body with \n for line breaks""}
-
-HARD RULES:
-- Start with: Hi [first name only from CLIENT INFO],
-- Body: MAX 2 paragraphs, 50-80 words total. Count them.
-- Do NOT guilt-trip, add urgency tactics, or repeat pricing.
-- Do NOT use: ""just checking"", ""I wanted to"", ""excited"", ""passionate"", ""I hope this finds you"".
-- Do NOT add name signature — system appends it.
-
-Para 1: Acknowledge this is the last follow-up. State ONE concrete outcome Bhanu delivers — tied to their industry.
-Para 2: Polite close — ""Let me know if timing isn't right and I'll close this out."" Make walking away easy.
-Tone: warm, respectful, final.
-
-Return only the JSON.";
-
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /// Returns saved prompt for active provider; falls back to shared key; then hardcoded default.
-    private static string GetPrompt(
-        string sharedSavedPrompt,
-        Func<string> azureDefault,
-        Func<string> groqDefault,
-        string provider,
-        Dictionary<string, string> settings,
-        string azureKey,
-        string groqKey)
+    /// Returns the saved custom prompt if one is set, else the hardcoded default.
+    /// Provider is always Claude now — no more per-provider prompt variants or
+    /// per-provider saved-prompt keys (a stale one used to silently win over
+    /// whatever was pasted into the Prompt modal).
+    private static string GetPrompt(string savedPrompt, Func<string> defaultPrompt)
     {
-        var isGroqOrClaude = provider == "groq" || provider == "claude";
-        var providerKey = isGroqOrClaude ? groqKey : azureKey;
-        var providerSaved = settings.GetValueOrDefault(providerKey, "");
-        if (!string.IsNullOrWhiteSpace(providerSaved)) return providerSaved;
-        if (!string.IsNullOrWhiteSpace(sharedSavedPrompt)) return sharedSavedPrompt;
-        return isGroqOrClaude ? groqDefault() : azureDefault();
+        return !string.IsNullOrWhiteSpace(savedPrompt) ? savedPrompt : defaultPrompt();
     }
 
     /// Fallback ranking when AI Search is unavailable: industry-matched projects first.
@@ -1017,7 +876,8 @@ Return only the JSON.";
             new { role = "user",   content = ytSection + context },
         };
 
-        var settings = await _settings.GetAll();
+        // Always Claude for artifacts, regardless of the global AI Provider setting.
+        var settings = new Dictionary<string, string>(await _settings.GetAll()) { [SettingKeys.AiProvider] = "claude" };
         var text = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 2500);
         text = text.Replace("**", "");
 

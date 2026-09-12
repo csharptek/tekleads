@@ -155,11 +155,8 @@ public class JobLeadArtifactsService
 
     private async Task<string> CallAI(string systemPrompt, string context, string? providerOverride)
     {
-        var settings = await _settings.GetAll();
-        if (!string.IsNullOrWhiteSpace(providerOverride))
-        {
-            settings = new Dictionary<string, string>(settings) { [SettingKeys.AiProvider] = providerOverride };
-        }
+        // Always Claude, regardless of the global AI Provider setting or any override passed in.
+        var settings = new Dictionary<string, string>(await _settings.GetAll()) { [SettingKeys.AiProvider] = "claude" };
         var messages = new List<object>
         {
             new { role = "system", content = systemPrompt },
