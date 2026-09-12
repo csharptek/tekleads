@@ -345,6 +345,7 @@ export default function ProposalList({
 
   const tabCounts = { all: proposals.length, draft: proposals.filter(p => p.status === "draft").length, sent: proposals.filter(p => p.status === "sent").length, follow_up: proposals.filter(p => p.status === "follow_up").length, won: won.length, lost: lost.length };
   const fmt = (d?: string) => d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
+  const fmtDateTime = (d?: string) => d ? new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
   const fmtBudget = (min?: number, max?: number) => { if (!min && !max) return "—"; if (min && max) return `$${min.toLocaleString()}–$${max.toLocaleString()}`; return `$${(min || max)!.toLocaleString()}`; };
 
   return (
@@ -394,21 +395,21 @@ export default function ProposalList({
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
-                <th style={th} onClick={() => toggleSort("clientCompany")} className="sortable-col">Company <SortIcon field="clientCompany" /></th>
-                <th style={th}>Client</th>
+                {!isJdOnly && <th style={th} onClick={() => toggleSort("clientCompany")} className="sortable-col">Company <SortIcon field="clientCompany" /></th>}
+                {!isJdOnly && <th style={th}>Client</th>}
                 <th style={th}>Headline</th>
-                <th style={th} onClick={() => toggleSort("createdAt")} className="sortable-col">Date / Status <SortIcon field="createdAt" /></th>
+                <th style={th} onClick={() => toggleSort("createdAt")} className="sortable-col">{isJdOnly ? "Date & Time" : "Date / Status"} <SortIcon field="createdAt" /></th>
                 <th style={th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {paged.map((p, i) => (
                 <tr key={p.id} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "white" : "#fafafa", cursor: "pointer" }} onClick={() => openDrawer(p)}>
-                  <td style={{...td, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}><div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientCompany || "—"}</div></td>
-                  <td style={{...td, maxWidth: 160}}><div style={{ display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.clientName || "—"}</span>{p.clientLinkedin && <a href={p.clientLinkedin} target="_blank" rel="noreferrer" title="LinkedIn" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none", marginLeft: 4, flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}</div><div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientEmail}</div></td>
+                  {!isJdOnly && <td style={{...td, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}><div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientCompany || "—"}</div></td>}
+                  {!isJdOnly && <td style={{...td, maxWidth: 160}}><div style={{ display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.clientName || "—"}</span>{p.clientLinkedin && <a href={p.clientLinkedin} target="_blank" rel="noreferrer" title="LinkedIn" style={{ display: "inline-flex", alignItems: "center", color: "#0a66c2", textDecoration: "none", marginLeft: 4, flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>}</div><div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientEmail}</div></td>}
                   <td style={td}><div style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.jobPostHeadline || p.jobPostBody?.slice(0, 60) || "—"}</div></td>
                   <td style={{...td, whiteSpace: "nowrap"}}>
-                    <div style={{ fontSize: 12 }}>{fmt(p.createdAt)}</div>
+                    <div style={{ fontSize: 12 }}>{isJdOnly ? fmtDateTime(p.createdAt) : fmt(p.createdAt)}</div>
                     <div style={{ marginTop: 3 }}><StatusBadge status={p.status} /></div>
                   </td>
                   <td style={{ ...td, minWidth: 130 }} onClick={e => e.stopPropagation()}>
