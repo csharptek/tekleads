@@ -687,6 +687,8 @@ Return only the email body text.";
     private const double EnhancedIndustryWeakBonus = 0.05; // industry-only, no specific tag overlap — small nudge, doesn't auto-pass
     private const double EnhancedTagBonusPerTag    = 0.05;
     private const double EnhancedTagBonusCap       = 0.15;
+    private const double EnhancedTaskMatchFloorRelief = 0.10; // Task Match (tag overlap, wrong industry) no longer auto-passes —
+                                                                // still needs semanticScore within this much of the configured threshold
 
     // Stricter than a single-word overlap: for a multi-word field (tag/industry),
     // ALL of its significant words must appear in the JD, not just one. A single
@@ -937,7 +939,13 @@ Return only the email body text.";
             {
                 tier = "Task Match";
                 bonus = Math.Min(matchedTags.Count * EnhancedTagBonusPerTag, EnhancedTagBonusCap);
-                passes = true;
+                // Wrong industry, only a tag overlap — no longer an automatic pass. A single
+                // matched tag (even non-generic) doesn't prove relevance on its own when the
+                // JD and project are semantically far apart. Still gets a relief window below
+                // the full threshold (tag overlap is a real signal), but a weak semantic score
+                // (e.g. 65-67%) no longer clears a strict (80-90%) threshold just because one
+                // tag happened to overlap.
+                passes = semanticScore >= Math.Max(0, thresholdScore - EnhancedTaskMatchFloorRelief);
             }
             else if (industryMatch)
             {
