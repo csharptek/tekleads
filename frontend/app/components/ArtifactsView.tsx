@@ -127,6 +127,7 @@ export default function ArtifactsView({
   const [errors, setErrors] = useState<ErrorState>({ coverLetter: "", whatsapp: "", email: "", followUp1: "", followUp2: "" });
 
   const [usedProjects, setUsedProjects] = useState<UsedPortfolioItem[]>([]);
+  const [matchChecked, setMatchChecked] = useState(false); // true once a match query has actually run (even if it found nothing)
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [showPortfolioPicker, setShowPortfolioPicker] = useState(false);
   const [allPortfolio, setAllPortfolio] = useState<AllPortfolioItem[]>([]);
@@ -269,8 +270,9 @@ export default function ArtifactsView({
     // Always load the portfolio context panel (shows which projects are available + checkboxes)
     try {
       const ctx: any = await api.get(`/api/artifacts/${proposalId}/debug-context`);
-      if (ctx?.portfolioItems?.length) {
-        setUsedProjects(ctx.portfolioItems.map((p: any) => ({
+      if (!ctx?.error) {
+        const items = ctx?.portfolioItems ?? [];
+        setUsedProjects(items.map((p: any) => ({
           id: p.Id ?? p.id,
           title: p.Title ?? p.title,
           industry: p.Industry ?? p.industry,
@@ -282,7 +284,8 @@ export default function ArtifactsView({
           industryMatch: p.IndustryMatch ?? p.industryMatch,
           matchedTags: p.MatchedTags ?? p.matchedTags ?? [],
         })));
-        setCheckedIds(new Set(ctx.portfolioItems.map((p: any) => p.Id ?? p.id).filter(Boolean)));
+        setCheckedIds(new Set(items.map((p: any) => p.Id ?? p.id).filter(Boolean)));
+        setMatchChecked(true);
       }
     } catch { /* non-critical */ }
 
@@ -314,9 +317,10 @@ export default function ArtifactsView({
         if (stateKey2 && resKey2) u[stateKey2] = res[resKey2];
         return u;
       });
-      if (res.usedProjects?.length) {
+      if (res.usedProjects !== undefined) {
         setUsedProjects(res.usedProjects);
         setCheckedIds(new Set(res.usedProjects.map((p: any) => p.id).filter(Boolean)));
+        setMatchChecked(true);
       }
     } catch (e: any) {
       setErrors(er => ({ ...er, [type]: (e as any).message }));
@@ -617,6 +621,12 @@ export default function ArtifactsView({
       )}
 
       {/* Portfolio used in artifacts */}
+      {matchChecked && usedProjects.length === 0 && (
+        <div style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius: 10, padding: "10px 16px", background: "var(--card)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 13, color: "var(--muted)" }}>📁 No portfolio project cleared the match threshold — generic language used, no project cited.</span>
+          <button className="btn btn-secondary btn-sm" onClick={openPortfolioPicker} style={{ fontWeight: 600 }}>+ Add / Change Projects</button>
+        </div>
+      )}
       {usedProjects.length > 0 && (
         <div style={{ marginBottom: 16, border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--card)" }}>
           <div style={{ padding: "10px 16px", background: "var(--accent-light)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
