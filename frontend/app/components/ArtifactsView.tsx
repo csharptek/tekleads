@@ -342,12 +342,14 @@ export default function ArtifactsView({
 
   const generateAll = async () => {
     await generateOne("coverLetter", "cover-letter", "coverLetter", "coverLetter");
-    await generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage");
-    await generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody");
+    if (hasContact) {
+      await generateOne("whatsapp", "whatsapp", "whatsappMessage", "whatsappMessage");
+      await generateOne("email", "email", "emailSubject", "emailSubject", "emailBody", "emailBody");
+    }
   };
 
   const openPromptModal = (type: "coverLetter" | "whatsapp" | "email" | "followUp1" | "followUp2") => {
-    const titles = { coverLetter: "Cover Letter Prompt", whatsapp: "WhatsApp Prompt", email: "Upwork Proposal Prompt", followUp1: "Follow-up Email 1 Prompt", followUp2: "Follow-up Email 2 Prompt" };
+    const titles = { coverLetter: "Upwork Cover Letter Prompt", whatsapp: "WhatsApp Prompt", email: "First Email Prompt", followUp1: "Follow-up Email 1 Prompt", followUp2: "Follow-up Email 2 Prompt" };
     const current = customPrompts[type] || defaultPrompts[type];
     setPromptDraft(current);
     setPromptModal({ type, title: titles[type], prompt: current });
@@ -571,6 +573,8 @@ export default function ArtifactsView({
     borderRadius: 8, border: "1px solid var(--border)", maxHeight: 380, overflowY: "auto",
   };
 
+  const hasContact = !!(clientEmail || clientPhone || allEmails?.length || allPhones?.length);
+
   const anyGenerating = generating.coverLetter || generating.whatsapp || generating.email;
   const nothingGenerated = loaded && !anyGenerating && !artifacts.coverLetter && !artifacts.whatsappMessage && !artifacts.emailSubject;
 
@@ -750,7 +754,7 @@ export default function ArtifactsView({
       {/* Cover Letter */}
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
-        title="Cover Letter"
+        title="Upwork Cover Letter"
         subtitle={<>Professional cover letter for the proposal{isCustomized("coverLetter") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.coverLetter}
         actions={<>
@@ -782,7 +786,8 @@ export default function ArtifactsView({
           : !generating.coverLetter && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
 
-      {/* WhatsApp */}
+      {/* WhatsApp — hidden until a contact (email/phone) is attached */}
+      {hasContact && (
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#25D366" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>}
         title="WhatsApp Message"
@@ -827,11 +832,13 @@ export default function ArtifactsView({
             : <pre style={preStyle}>{artifacts.whatsappMessage}</pre>
           : !generating.whatsapp && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
+      )}
 
-      {/* Email */}
+      {/* First Email — hidden until a contact (email/phone) is attached */}
+      {hasContact && (
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
-        title="Upwork Proposal"
+        title="First Email"
         subtitle={<>{clientEmail ? `Opens Outlook with ${clientEmail} in To field` : "Opens mail client — no email on file"}{isCustomized("email") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
         loading={generating.email}
         actions={<>
@@ -881,6 +888,7 @@ export default function ArtifactsView({
         </>
           : !generating.email && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
+      )}
 
       {/* Follow-up Email 1 */}
       {artifacts.emailSubject && allEmails && allEmails.length > 0 && (

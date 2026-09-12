@@ -174,6 +174,7 @@ export default function ProposalView({
         followUpDate: form.followUpDate || null,
         linkedLeadId: linkedContact?.id || null,
         apolloContactJson: linkedContact ? JSON.stringify(linkedContact) : null,
+        isJdOnly: false,
       };
       let res: any;
       if (savedId) {

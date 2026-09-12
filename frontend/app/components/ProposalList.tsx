@@ -189,17 +189,6 @@ export default function ProposalList({
   };
   const closeDrawer = () => { setDrawer(null); setDrawerError(""); setDrawerSuccess(""); };
 
-  const convertToProspect = async () => {
-    if (!drawer || contacts.length === 0) { setDrawerError("Add at least one contact first."); return; }
-    setDrawerSaving(true); setDrawerError(""); setDrawerSuccess("");
-    try {
-      const payload = { ...drawer, isJdOnly: false, contactsJson: JSON.stringify(contacts) };
-      const res: any = await api.put(`/api/proposals/${drawer.id}`, payload);
-      setDrawer(res); setProposals(ps => ps.map(p => p.id === res.id ? res : p)); setDrawerSuccess("Converted to full Prospect.");
-    } catch (e: any) { setDrawerError(e.message); }
-    finally { setDrawerSaving(false); }
-  };
-
   const saveDrawer = async () => {
     if (!drawer) return;
     setDrawerSaving(true); setDrawerError(""); setDrawerSuccess("");
@@ -590,7 +579,7 @@ export default function ProposalList({
                   {drawer.isJdOnly && (
                     <div className="banner" style={{ background: "#fffbeb", color: "#92400e", marginBottom: 12, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span>JD only — no contact attached yet.</span>
-                      <button className="btn btn-primary btn-sm" onClick={convertToProspect} disabled={drawerSaving}>Convert to Prospect</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => { onEdit?.(drawer.id!); closeDrawer(); }}>Convert to Prospect</button>
                     </div>
                   )}
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, alignItems: "center" }}>
