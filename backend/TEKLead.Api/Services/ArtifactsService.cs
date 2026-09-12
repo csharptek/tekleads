@@ -495,8 +495,8 @@ public class ArtifactsService
 
         var wordCount = text.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
         checks++;
-        if (wordCount >= 150 && wordCount <= 260) passed++;
-        else reasons.Add($"Length is {wordCount} words — target is 180-230.");
+        if (wordCount >= 170 && wordCount <= 330) passed++;
+        else reasons.Add($"Length is {wordCount} words — target is 200-300.");
 
         var jdText = $"{proposal.JobPostHeadline} {proposal.JobPostBody}";
         var trapMatch = System.Text.RegularExpressions.Regex.Match(
@@ -617,11 +617,12 @@ PORTFOLIO SELECTION RULE (CRITICAL):
 - If the client is healthcare, reference healthcare projects. If fintech, fintech. Never reference an unrelated-industry project when an industry match exists in context.
 - Use maximum 1-2 projects, never all three.
 
-TARGET LENGTH: 180-230 words total. Count before returning. Every word must earn its place.
+TARGET LENGTH: 200-300 words total (Upwork's own recommended range). Count before returning. Every word must earn its place.
 
 STRUCTURE — follow this exact order, no section titles:
 
 1. HOOK (1 plain declarative sentence)
+Upwork shows ONLY the first 1-2 sentences of a proposal in the client's search-results preview — before they ever open it. This sentence must work completely standalone, with zero other context, and still clearly show you understand THEIR specific problem. Never write a hook that only makes sense once the reader continues into PROOF or APPROACH.
 State the client's actual problem using a concrete phrase LIFTED FROM THE JOB POST — a named feature, integration, deadline, or pain point. Not a metaphor. Not one of the BANNED HOOK PATTERNS above. Do NOT start with ""I"".
 If COMPANY DETAILS exist, weave in one specific detail (industry, size, product) naturally.
 
@@ -642,7 +643,10 @@ No generic bullets like ""write clean code"" or ""ensure real-money correctness"
 5. QUESTIONS (3 max)
 Each question must trace to a SPECIFIC phrase or requirement in THIS job post — quote or closely paraphrase the exact thing they mentioned (a named tool, a stated pain point like ""troubleshoot issues"" or ""optimize for accuracy"", a specific deliverable). If a question could be copy-pasted into a different job post unchanged, it's too generic — rewrite it or drop it. Generic filler (""What is your timeline?"", ""Which LLM provider?"" asked with no JD basis) is banned.
 
-6. SIGN-OFF (1 line, no name — this goes out under different Upwork accounts, never sign a specific person's name)
+6. CALL TO ACTION (1 short line, before the sign-off)
+Invite a concrete next step tied to what was just discussed — not a generic ""Can we schedule a call?"" (banned above). Tie it to a specific artifact of this conversation, e.g. ""Can share a short breakdown of the [specific approach/module] if that's useful before you decide"" or ""Can start with [specific first step] this week if the scope above lines up."" Must reference something specific from THIS letter, not be copy-pasteable elsewhere.
+
+7. SIGN-OFF (1 line, no name — this goes out under different Upwork accounts, never sign a specific person's name)
 ""I'm available — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
 
 RULES:
