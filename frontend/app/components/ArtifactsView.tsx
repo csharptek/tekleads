@@ -18,6 +18,8 @@ type Artifacts = {
   followUp2Subject?: string;
   followUp2Body?: string;
   generatedAt?: string;
+  coverLetterScore?: number;
+  coverLetterScoreReasons?: string[];
 };
 
 type GeneratingState = { coverLetter: boolean; whatsapp: boolean; email: boolean; followUp1: boolean; followUp2: boolean };
@@ -262,6 +264,8 @@ export default function ArtifactsView({
           followUp2Subject: res.followUp2Subject,
           followUp2Body: res.followUp2Body,
           generatedAt: res.generatedAt,
+          coverLetterScore: res.coverLetterScore,
+          coverLetterScoreReasons: res.coverLetterScoreReasons,
         });
         hasExisting = true;
       }
@@ -315,6 +319,10 @@ export default function ArtifactsView({
       setArtifacts(a => {
         const u: Artifacts = { ...a, [stateKey]: res[resKey] };
         if (stateKey2 && resKey2) u[stateKey2] = res[resKey2];
+        if (type === "coverLetter") {
+          u.coverLetterScore = res.coverLetterScore;
+          u.coverLetterScoreReasons = res.coverLetterScoreReasons;
+        }
         return u;
       });
       if (res.usedProjects !== undefined) {
@@ -779,7 +787,17 @@ export default function ArtifactsView({
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
         title="Upwork Cover Letter"
-        subtitle={<>Professional cover letter for the proposal{isCustomized("coverLetter") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
+        subtitle={<>Professional cover letter for the proposal{isCustomized("coverLetter") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}
+          {typeof artifacts.coverLetterScore === "number" && (
+            <span style={{
+              marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999,
+              color: artifacts.coverLetterScore >= 80 ? "#15803d" : artifacts.coverLetterScore >= 60 ? "#b45309" : "#b91c1c",
+              background: artifacts.coverLetterScore >= 80 ? "#dcfce7" : artifacts.coverLetterScore >= 60 ? "#fef3c7" : "#fee2e2",
+            }}>
+              Score: {artifacts.coverLetterScore}%
+            </span>
+          )}
+        </>}
         loading={generating.coverLetter}
         actions={<>
           <PromptBtn onClick={() => openPromptModal("coverLetter")} />
@@ -795,6 +813,14 @@ export default function ArtifactsView({
         </>}
       >
         {errors.coverLetter && <div className="banner banner-error">{errors.coverLetter}</div>}
+        {!!artifacts.coverLetterScoreReasons?.length && (
+          <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--muted)" }}>Why not 100%:</div>
+            <ul style={{ margin: 0, paddingLeft: 18, color: "var(--muted)" }}>
+              {artifacts.coverLetterScoreReasons.map((r, i) => <li key={i}>{r}</li>)}
+            </ul>
+          </div>
+        )}
         {artifacts.coverLetter
           ? editing["coverLetter"]
             ? <div>

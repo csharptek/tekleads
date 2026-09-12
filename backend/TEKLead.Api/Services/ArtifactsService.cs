@@ -38,6 +38,11 @@ public class ArtifactsResult
     public string FollowUp2Body { get; set; } = "";
     public DateTime GeneratedAt { get; set; }
     public List<UsedPortfolioItem> UsedProjects { get; set; } = new();
+
+    // Cover-letter quality score — rule checks + one AI grading pass, computed right
+    // after generation/regeneration. Null when never scored (e.g. older saved letters).
+    public int? CoverLetterScore { get; set; }
+    public List<string> CoverLetterScoreReasons { get; set; } = new();
 }
 
 public class ArtifactsService
@@ -83,6 +88,8 @@ public class ArtifactsService
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_followup1_body TEXT",
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_followup2_subject TEXT",
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_followup2_body TEXT",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_cover_letter_score INT",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS artifact_cover_letter_score_reasons TEXT",
         };
         foreach (var m in migrations)
         {
@@ -97,7 +104,8 @@ public class ArtifactsService
         await c.OpenAsync();
         var row = await c.QuerySingleOrDefaultAsync<dynamic>(
             @"SELECT artifact_cover_letter, artifact_whatsapp, artifact_email_subject, artifact_email_body, artifact_generated_at,
-                     artifact_followup1_subject, artifact_followup1_body, artifact_followup2_subject, artifact_followup2_body
+                     artifact_followup1_subject, artifact_followup1_body, artifact_followup2_subject, artifact_followup2_body,
+                     artifact_cover_letter_score, artifact_cover_letter_score_reasons
               FROM proposals WHERE id=@id",
             new { id = proposalId });
 
@@ -116,6 +124,10 @@ public class ArtifactsService
             FollowUp2Subject = row.artifact_followup2_subject ?? "",
             FollowUp2Body = row.artifact_followup2_body ?? "",
             GeneratedAt = row.artifact_generated_at ?? DateTime.UtcNow,
+            CoverLetterScore = row.artifact_cover_letter_score,
+            CoverLetterScoreReasons = string.IsNullOrWhiteSpace((string?)row.artifact_cover_letter_score_reasons)
+                ? new List<string>()
+                : (JsonSerializer.Deserialize<List<string>>((string)row.artifact_cover_letter_score_reasons) ?? new List<string>()),
         };
     }
 
@@ -175,10 +187,12 @@ public class ArtifactsService
 
         // Generate sequentially to avoid timeout overload
         string coverLetter, whatsapp, emailSubject, emailBody;
+        int clScore; List<string> clScoreReasons;
         try
         {
             var linkBlock = BuildLinkBlocks(portfolioItems);
             coverLetter  = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(clPrompt, CoverLetterPrompt), context, forceLinkInBody: false);
+            (clScore, clScoreReasons) = await ScoreCoverLetter(proposal, coverLetter);
             if (linkBlock != null) coverLetter = coverLetter.TrimEnd() + "\n\n" + linkBlock;
             whatsapp     = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(waPrompt, WhatsappPrompt), context);
             var emailRaw = await CallAI(aoEndpoint, aoKey, aoDeployment, GetPrompt(emPrompt, EmailPrompt), context, forceLinkInBody: false);
@@ -201,10 +215,12 @@ public class ArtifactsService
                 artifact_whatsapp=@wa,
                 artifact_email_subject=@es,
                 artifact_email_body=@eb,
+                artifact_cover_letter_score=@cls,
+                artifact_cover_letter_score_reasons=@clsr,
                 artifact_generated_at=NOW(),
                 updated_at=NOW()
             WHERE id=@id",
-            new { cl = coverLetter, wa = whatsapp, es = emailSubject, eb = emailBody, id = proposalId });
+            new { cl = coverLetter, wa = whatsapp, es = emailSubject, eb = emailBody, cls = clScore, clsr = JsonSerializer.Serialize(clScoreReasons), id = proposalId });
 
         return new ArtifactsResult
         {
@@ -214,7 +230,9 @@ public class ArtifactsService
             EmailSubject = emailSubject,
             EmailBody = emailBody,
             GeneratedAt = DateTime.UtcNow,
-            UsedProjects = matchInfos.Select(ToUsedItem).ToList()
+            UsedProjects = matchInfos.Select(ToUsedItem).ToList(),
+            CoverLetterScore = clScore,
+            CoverLetterScoreReasons = clScoreReasons
         };
     }
 
@@ -226,10 +244,12 @@ public class ArtifactsService
         var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
         var prompt = customPrompt ?? GetPrompt(savedPrompt, CoverLetterPrompt);
         var result = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context, forceLinkInBody: false);
+        var (score, reasons) = await ScoreCoverLetter(proposal!, result);
         var linkBlock = BuildLinkBlocks(portfolioItems);
         if (linkBlock != null) result = result.TrimEnd() + "\n\n" + linkBlock;
         await SaveField(proposalId, "artifact_cover_letter", result);
-        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
+        await SaveCoverLetterScore(proposalId, score, reasons);
+        return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList(), CoverLetterScore = score, CoverLetterScoreReasons = reasons };
     }
 
     public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
@@ -410,6 +430,122 @@ public class ArtifactsService
         await conn.ExecuteAsync(
             $"UPDATE proposals SET {column}=@v, artifact_generated_at=NOW(), updated_at=NOW() WHERE id=@id",
             new { v = value, id = proposalId });
+    }
+
+    private async Task SaveCoverLetterScore(Guid proposalId, int score, List<string> reasons)
+    {
+        var cs = _settings.ConnectionString;
+        await using var conn = new NpgsqlConnection(cs);
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(
+            "UPDATE proposals SET artifact_cover_letter_score=@s, artifact_cover_letter_score_reasons=@r, updated_at=NOW() WHERE id=@id",
+            new { s = score, r = JsonSerializer.Serialize(reasons), id = proposalId });
+    }
+
+    // ── Cover letter quality scoring ────────────────────────────────────────
+    // Rule checks mirror the CoverLetterPrompt's own rules (kept here as plain
+    // string/regex checks so they run instantly with no extra API call), combined
+    // 50/50 with one extra Claude grading call that judges JD-groundedness —
+    // something a keyword check can't catch (a sentence can dodge every banned
+    // phrase and still be generic filler that ignores the actual job post).
+    private static readonly string[] ScoreBannedPhrases =
+    {
+        "i will", "i am", "i have", "i'd love", "i believe", "i'd be", "i can help", "i am excited",
+        "great fit", "passionate", "excited", "challenging", "ensure quality", "write clean code",
+        "happy to help", "looking forward", "i hope", "pleased to", "thrilled", "love to", "csharptek",
+    };
+
+    private static readonly string[] ScoreBannedHookSnippets =
+    {
+        "turning ", "is not just", "is exactly the kind of", "living knowledge base",
+        "workspaces into ecosystems", "from prototype to production-ready",
+        "ledger integrity at scale", "real-money correctness", "scaling a modular monolith",
+    };
+
+    private async Task<(int score, List<string> reasons)> ScoreCoverLetter(Proposal proposal, string coverLetterText)
+    {
+        var reasons = new List<string>();
+        var text = coverLetterText ?? "";
+        var lower = text.ToLowerInvariant();
+        int checks = 0, passed = 0;
+
+        var firstWordMatch = System.Text.RegularExpressions.Regex.Match(text.TrimStart(), @"^[A-Za-z']+");
+        var firstWord = firstWordMatch.Success ? firstWordMatch.Value : "";
+        checks++;
+        if (!string.Equals(firstWord, "I", StringComparison.OrdinalIgnoreCase)) passed++;
+        else reasons.Add("Opens with \"I\" — banned opening word.");
+
+        checks++;
+        var hitBanned = ScoreBannedPhrases.FirstOrDefault(p => lower.Contains(p));
+        if (hitBanned == null) passed++;
+        else reasons.Add($"Contains banned filler phrase: \"{hitBanned}\".");
+
+        checks++;
+        var hitHook = ScoreBannedHookSnippets.FirstOrDefault(p => lower.Contains(p));
+        if (hitHook == null) passed++;
+        else reasons.Add($"Uses a banned generic hook pattern: \"{hitHook.Trim()}\".");
+
+        checks++;
+        if (!lower.Contains("done =")) passed++;
+        else reasons.Add("Uses the literal \"Done =\" template — reads as mechanical.");
+
+        checks++;
+        if (!lower.Contains("bhanu")) passed++;
+        else reasons.Add("Names \"Bhanu\" in the sign-off — should stay unnamed (sent from multiple accounts).");
+
+        var wordCount = text.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
+        checks++;
+        if (wordCount >= 150 && wordCount <= 260) passed++;
+        else reasons.Add($"Length is {wordCount} words — target is 180-230.");
+
+        var jdText = $"{proposal.JobPostHeadline} {proposal.JobPostBody}";
+        var trapMatch = System.Text.RegularExpressions.Regex.Match(
+            jdText, @"reply\s+(?:with|using)\s+(?:the\s+word\s+)?[""']?([A-Za-z0-9]{2,20})[""']?",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (trapMatch.Success)
+        {
+            checks++;
+            var word = trapMatch.Groups[1].Value;
+            if (lower.Contains(word.ToLowerInvariant())) passed++;
+            else reasons.Add($"JD asks you to reply with \"{word}\" — missing from the letter.");
+        }
+
+        var ruleScore = checks > 0 ? (int)Math.Round(100.0 * passed / checks) : 100;
+
+        var aiScore = ruleScore; // fallback if the grading call fails
+        try
+        {
+            const string gradingPrompt = @"You are a strict reviewer grading an Upwork cover letter against the job post it was written for.
+Score 0-100 on how well the letter is grounded in THIS SPECIFIC job post (not a generic template) — every claim/sentence should trace to something actually stated in the job post, the proof/credibility paragraph should read specific and credible (not vague filler like ""we've delivered comparable solutions""), and any questions should reference real details from this job post.
+Return ONLY JSON: {""score"": <0-100>, ""issues"": [""short reason"", ...]} — issues is up to 4 short, specific problems (empty array if none). No markdown, no commentary.";
+            var userMsg = $"JOB POST:\n{jdText}\n\nCOVER LETTER:\n{text}";
+            var gradingSettings = new Dictionary<string, string>(await _settings.GetAll()) { [SettingKeys.AiProvider] = "claude" };
+            var messages = new List<object>
+            {
+                new { role = "system", content = gradingPrompt },
+                new { role = "user", content = userMsg },
+            };
+            var raw = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, gradingSettings, messages, 500);
+            var clean = raw.Trim();
+            if (clean.StartsWith("```")) { var i = clean.IndexOf('\n'); clean = clean[(i + 1)..]; }
+            if (clean.EndsWith("```")) clean = clean[..clean.LastIndexOf("```")];
+            var doc = JsonDocument.Parse(clean.Trim());
+            aiScore = doc.RootElement.GetProperty("score").GetInt32();
+            if (doc.RootElement.TryGetProperty("issues", out var issuesEl))
+                foreach (var issue in issuesEl.EnumerateArray())
+                {
+                    var s = issue.GetString();
+                    if (!string.IsNullOrWhiteSpace(s)) reasons.Add(s);
+                }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Cover letter AI grading failed for {0}, using rule score only", proposal.Id);
+        }
+
+        var overall = (int)Math.Round(0.5 * ruleScore + 0.5 * aiScore);
+        var finalReasons = reasons.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct().Take(6).ToList();
+        return (overall, finalReasons);
     }
 
     private static readonly Dictionary<string, string> ArtifactFieldMap = new()
