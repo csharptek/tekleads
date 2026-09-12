@@ -18,6 +18,7 @@ builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<LogService>();
 builder.Services.AddScoped<ProposalExportService>();
 builder.Services.AddScoped<ArtifactsService>();
+builder.Services.AddScoped<ArtifactChatService>();
 builder.Services.AddScoped<GraphEmailService>();
 builder.Services.AddScoped<GmailSmtpService>();
 builder.Services.AddScoped<EmailSendQueueService>();
@@ -89,6 +90,7 @@ using (var scope = app.Services.CreateScope())
     try { var logSvc = scope.ServiceProvider.GetRequiredService<LogService>(); await logSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Log schema failed"); }
     try { var genSvc = scope.ServiceProvider.GetRequiredService<ProposalGenerationService>(); await genSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "ProposalGeneration schema failed"); }
     try { var artSvc = scope.ServiceProvider.GetRequiredService<ArtifactsService>(); await artSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "Artifacts schema failed"); }
+    try { var artChatSvc = scope.ServiceProvider.GetRequiredService<ArtifactChatService>(); await artChatSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "ArtifactChat schema failed"); }
     try { var queueSvc = scope.ServiceProvider.GetRequiredService<EmailSendQueueService>(); await queueSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "EmailSendQueue schema failed"); }
     try { var qoeSvc = scope.ServiceProvider.GetRequiredService<QuickOutreachEnrichedService>(); await qoeSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "QuickOutreachEnriched schema failed"); }
     try { var clSvc = scope.ServiceProvider.GetRequiredService<ContactListService>(); await clSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "ContactList schema failed"); }

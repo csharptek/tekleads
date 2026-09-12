@@ -33,6 +33,14 @@ type PromptModal = {
   prompt: string;
 };
 
+type ChatAction = {
+  type: "regenerate" | "suggest_portfolio_project" | "retag_project";
+  label: string;
+  title?: string; industry?: string; tags?: string[]; problem?: string; solution?: string; techStack?: string;
+  projectId?: string; newTags?: string[]; newIndustry?: string;
+};
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; actions: ChatAction[]; createdAt: string };
+
 function CopyBtn({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -353,6 +361,62 @@ export default function ArtifactsView({
       setErrors(er => ({ ...er, coverLetter: e.message }));
     } finally {
       setFixingCoverLetter(false);
+    }
+  };
+
+  // ── Coaching chat ──────────────────────────────────────────────────────
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatLoaded, setChatLoaded] = useState(false);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+
+  const loadChat = async () => {
+    if (chatLoaded) return;
+    try {
+      const res: any = await api.get(`/api/artifacts/${proposalId}/chat`);
+      setChatMessages(res || []);
+    } catch { } finally { setChatLoaded(true); }
+  };
+
+  const toggleChat = () => {
+    setChatOpen(o => !o);
+    if (!chatLoaded) loadChat();
+  };
+
+  const sendChatMessage = async () => {
+    const text = chatInput.trim();
+    if (!text || chatSending) return;
+    setChatInput("");
+    setChatMessages(m => [...m, { id: `local-${Date.now()}`, role: "user", content: text, actions: [], createdAt: new Date().toISOString() }]);
+    setChatSending(true);
+    try {
+      const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/chat`, { message: text });
+      setChatMessages(m => [...m, res]);
+    } catch (e: any) {
+      setChatMessages(m => [...m, { id: `err-${Date.now()}`, role: "assistant", content: `Error: ${e.message}`, actions: [], createdAt: new Date().toISOString() }]);
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  const applyChatAction = async (action: ChatAction, msgId: string) => {
+    setActionBusy(msgId + action.type);
+    try {
+      const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/chat/apply-action`, action);
+      if (res.artifactsResult) {
+        setArtifacts(a => ({ ...a, coverLetter: res.artifactsResult.coverLetter, coverLetterScore: res.artifactsResult.coverLetterScore, coverLetterScoreReasons: res.artifactsResult.coverLetterScoreReasons }));
+        if (res.artifactsResult.usedProjects) {
+          setUsedProjects(res.artifactsResult.usedProjects);
+          setCheckedIds(new Set(res.artifactsResult.usedProjects.map((p: any) => p.id).filter(Boolean)));
+        }
+      }
+      setChatMessages(m => [...m, { id: `sys-${Date.now()}`, role: "assistant", content: res.summary || "Done.", actions: [], createdAt: new Date().toISOString() }]);
+    } catch (e: any) {
+      setChatMessages(m => [...m, { id: `err-${Date.now()}`, role: "assistant", content: `Failed: ${e.message}`, actions: [], createdAt: new Date().toISOString() }]);
+    } finally {
+      setActionBusy(null);
     }
   };
 
@@ -858,6 +922,57 @@ export default function ArtifactsView({
             : <pre style={preStyle}>{artifacts.coverLetter}</pre>
           : !generating.coverLetter && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
+
+      {/* Cover Letter Coaching Chat */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={toggleChat}>
+          <div className="card-title" style={{ marginBottom: 0 }}>💬 Coaching Chat</div>
+          <button className="btn btn-ghost btn-sm">{chatOpen ? "Hide" : "Open"}</button>
+        </div>
+        {chatOpen && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ maxHeight: 360, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 10 }}>
+              {chatMessages.length === 0 && !chatSending && (
+                <div style={{ color: "var(--muted)", fontSize: 13 }}>Ask about the score, the portfolio match, or what to change — I can propose fixes you apply with one click.</div>
+              )}
+              {chatMessages.map((m) => (
+                <div key={m.id} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
+                  <div style={{
+                    padding: "8px 12px", borderRadius: 10, fontSize: 13, whiteSpace: "pre-wrap",
+                    background: m.role === "user" ? "var(--accent)" : "var(--surface)",
+                    color: m.role === "user" ? "white" : "var(--text)",
+                    border: m.role === "user" ? "none" : "1px solid var(--border)",
+                  }}>
+                    {m.content}
+                  </div>
+                  {!!m.actions?.length && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                      {m.actions.map((a, ai) => (
+                        <button key={ai} className="btn btn-secondary btn-sm"
+                          onClick={() => applyChatAction(a, m.id)}
+                          disabled={actionBusy === m.id + a.type}>
+                          {actionBusy === m.id + a.type ? "Applying…" : `✦ ${a.label}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {chatSending && <div style={{ color: "var(--muted)", fontSize: 12 }}><span className="spinner" /> Thinking…</div>}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                placeholder="Ask about the score, portfolio match, or a specific fix..."
+                style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
+              />
+              <button className="btn btn-primary btn-sm" onClick={sendChatMessage} disabled={chatSending || !chatInput.trim()}>Send</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* WhatsApp — hidden until a contact (email/phone) is attached */}
       {hasContact && (
