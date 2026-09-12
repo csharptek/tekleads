@@ -49,6 +49,12 @@ public static class SettingKeys
     // decimal — PortfolioService maps the level to an internal cosine cutoff.
     public const string PortfolioMatchThreshold     = "portfolio_match_threshold";
 
+    // Comma-separated tag words that are too generic to count as a real tag-match
+    // signal on their own (e.g. "SaaS", "AI", "App") — see PortfolioService.TokenOverlap
+    // callers. Case-insensitive, whole-word. Falls back to a built-in default list
+    // when unset/empty.
+    public const string PortfolioGenericTags        = "portfolio_generic_tags";
+
     // LLM provider toggle
     public const string AiProvider                 = "ai_provider";          // "azure" | "groq" | "claude"
     public const string GroqApiKey                 = "groq_api_key";
@@ -126,7 +132,7 @@ public static class SettingKeys
         WhatsappCloudPhoneNumberId, WhatsappCloudWabaId, WhatsappCloudAccessToken, WhatsappCloudVerifyToken,
         WhatsappCloudTemplateName, WhatsappCloudTemplateLang, WhatsappCloudApiVersion, WhatsappBlobContainer,
         AzureSearchEndpoint, AzureSearchKey, AzureSearchIndex, AzureOpenAiEmbeddingDeployment,
-        GeminiApiKey, GeminiEmbeddingModel, PortfolioMatchThreshold,
+        GeminiApiKey, GeminiEmbeddingModel, PortfolioMatchThreshold, PortfolioGenericTags,
         AiProvider, GroqApiKey, GroqModel, ClaudeApiKey, ClaudeModel, VectorProvider,
         ArtifactCoverLetterPromptAzure, ArtifactWhatsappPromptAzure, ArtifactEmailPromptAzure, ArtifactFollowUp1PromptAzure, ArtifactFollowUp2PromptAzure,
         ArtifactCoverLetterPromptGroq,  ArtifactWhatsappPromptGroq,  ArtifactEmailPromptGroq,  ArtifactFollowUp1PromptGroq,  ArtifactFollowUp2PromptGroq,

@@ -199,16 +199,22 @@ const USER_GROUPS: Group[] = [
 // or touch the form/onSave state used by the groups above/below.
 function PortfolioMatchThresholdCard() {
   const KEY = "portfolio_match_threshold";
+  const TAGS_KEY = "portfolio_generic_tags";
+  const DEFAULT_GENERIC_TAGS = "saas, ai, app, application, platform, web, website, mobile, cloud, automation, dashboard, chatbot, api, software, system, portal, tool, solution, service, development, integration";
   const [level, setLevel] = useState(3);
+  const [genericTags, setGenericTags] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [tagsSaving, setTagsSaving] = useState(false);
+  const [tagsSaved, setTagsSaved] = useState(false);
 
   useEffect(() => {
     api.get<{ values: Record<string, string> }>("/api/settings")
       .then(d => {
         const raw = parseInt(d.values?.[KEY] || "3", 10);
         setLevel(Number.isFinite(raw) && raw >= 1 && raw <= 5 ? raw : 3);
+        setGenericTags(d.values?.[TAGS_KEY] || "");
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -224,6 +230,17 @@ function PortfolioMatchThresholdCard() {
       setTimeout(() => setSaved(false), 2000);
     } catch { /* non-critical */ }
     finally { setSaving(false); }
+  };
+
+  const saveTags = async () => {
+    setTagsSaving(true);
+    setTagsSaved(false);
+    try {
+      await api.post("/api/settings", { values: { [TAGS_KEY]: genericTags } });
+      setTagsSaved(true);
+      setTimeout(() => setTagsSaved(false), 2000);
+    } catch { /* non-critical */ }
+    finally { setTagsSaving(false); }
   };
 
   return (
@@ -250,6 +267,33 @@ function PortfolioMatchThresholdCard() {
           {saved && <span style={{ fontSize: 12, color: "var(--green)" }}>Saved</span>}
         </div>
       )}
+
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Generic Tags to Ignore</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+          Single-word tags here never count as a tag-match on their own (e.g. a project tagged only "SaaS" won't auto-cite for every SaaS JD). Multi-word tags ("Multi-tenant SaaS") are unaffected. Comma-separated. Leave blank to use the default list.
+        </div>
+        {loading ? (
+          <span className="spinner" />
+        ) : (
+          <>
+            <textarea
+              className="input"
+              value={genericTags}
+              onChange={e => setGenericTags(e.target.value)}
+              placeholder={DEFAULT_GENERIC_TAGS}
+              rows={3}
+              style={{ width: "100%", fontFamily: "inherit", resize: "vertical", marginBottom: 8 }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button className="btn btn-secondary btn-sm" onClick={saveTags} disabled={tagsSaving}>
+                {tagsSaving ? "Saving..." : "Save"}
+              </button>
+              {tagsSaved && <span style={{ fontSize: 12, color: "var(--green)" }}>Saved</span>}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

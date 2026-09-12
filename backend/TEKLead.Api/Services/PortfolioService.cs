@@ -713,11 +713,39 @@ Return only the email body text.";
         return true;
     }
 
+    // A single generic word ("SaaS", "AI", "App") overlapping is not a real
+    // tag-match signal — nearly every JD in the space contains it, same failure
+    // mode TokenOverlap's phrase requirement fixed for multi-word fields. Only
+    // single-word tags are checked here; a multi-word tag ("Multi-tenant SaaS")
+    // already has to fully match, which is signal enough on its own.
+    private static readonly string[] DefaultGenericTags =
+    {
+        "saas", "ai", "app", "application", "platform", "web", "website", "mobile",
+        "cloud", "automation", "dashboard", "chatbot", "api", "software", "system",
+        "portal", "tool", "solution", "service", "development", "integration",
+    };
+
+    private static HashSet<string> GetGenericTags(Dictionary<string, string> settings)
+    {
+        var raw = settings.GetValueOrDefault(SettingKeys.PortfolioGenericTags, "");
+        var words = string.IsNullOrWhiteSpace(raw)
+            ? DefaultGenericTags
+            : raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return words.Select(w => w.ToLowerInvariant()).ToHashSet();
+    }
+
+    private static bool IsGenericTagOnly(string tag, HashSet<string> genericTags)
+    {
+        var tokens = Tokenize(tag);
+        return tokens.Count == 1 && genericTags.Contains(tokens.First());
+    }
+
     public async Task<(bool ok, string message, int thresholdLevel, double thresholdScore, List<EnhancedMatchResult> matches, int totalPortfolioItems, int indexedPortfolioItems)> TestMatchEnhanced(string jobText, int topK = 5)
     {
         var settings = await _settings.GetAll();
         var thresholdLevel = GetPortfolioMatchLevel(settings);
         var thresholdScore = MatchLevelToScore[thresholdLevel - 1];
+        var genericTags = GetGenericTags(settings);
         var (total, indexed) = await GetPortfolioIndexCounts();
 
         if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
@@ -761,7 +789,7 @@ Return only the email body text.";
                 string[] tags = r.tags ?? Array.Empty<string>();
 
                 bool industryMatch = TokenOverlap(jdTokens, Tokenize(industry));
-                var matchedTags = tags.Where(t => TokenOverlap(jdTokens, Tokenize(t))).ToList();
+                var matchedTags = tags.Where(t => TokenOverlap(jdTokens, Tokenize(t)) && !IsGenericTagOnly(t, genericTags)).ToList();
                 bool hasTagMatch = matchedTags.Count > 0;
 
                 string tier;
@@ -856,6 +884,7 @@ Return only the email body text.";
     public async Task<List<PortfolioMatchInfo>> SearchSimilarEnhanced(string query, string? industry, int topK = 3)
     {
         var settings = await _settings.GetAll();
+        var genericTags = GetGenericTags(settings);
         if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.GeminiApiKey, "")))
             throw new Exception("Gemini API key not configured in Settings (required for embeddings).");
 
@@ -892,7 +921,7 @@ Return only the email body text.";
             double semanticScore = 1.0 - distance;
 
             bool industryMatch = TokenOverlap(jdTokens, Tokenize(proj.Industry));
-            var matchedTags = proj.Tags.Where(t => TokenOverlap(jdTokens, Tokenize(t))).ToList();
+            var matchedTags = proj.Tags.Where(t => TokenOverlap(jdTokens, Tokenize(t)) && !IsGenericTagOnly(t, genericTags)).ToList();
             bool hasTagMatch = matchedTags.Count > 0;
 
             string tier;
