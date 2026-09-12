@@ -848,7 +848,7 @@ Return only the JSON. No preamble.";
             // covers every artifact prompt (cover letter, WhatsApp, email, follow-ups)
             // without needing to edit each one: don't let the model fabricate or force
             // a citation just because its structure has a "portfolio" section.
-            sb.AppendLine("\n## RELEVANT PORTFOLIO PROJECTS: none found for this job. Do NOT reference any past project by name, do NOT invent one, and do NOT include any project link — keep credibility/proof language general only (e.g., \"we've delivered comparable solutions in this space before\").");
+            sb.AppendLine("\n## RELEVANT PORTFOLIO PROJECTS: none found for this job. Do NOT reference any past project by name, do NOT invent one, do NOT include any project link, and do NOT use vague filler like \"we've delivered comparable solutions in this space before\" — that reads as empty. Instead, ground the credibility statement in the SPECIFIC named technologies, tools, or practices this job post itself calls for (e.g. \"Terraform-managed multi-cloud IaC with policy-as-code gates\" rather than \"comparable platforms\") — concrete and technical, tied to 15+ yrs / 40+ projects background, never a fabricated project, client, or metric.");
         }
 
         return sb.ToString();
