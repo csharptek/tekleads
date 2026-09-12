@@ -35,6 +35,7 @@ public class Proposal
     public string? GeneratedResponse { get; set; }
     // ── Generation fields ──
     public Guid[] SelectedPortfolioIds { get; set; } = Array.Empty<Guid>();
+    public bool IsJdOnly { get; set; } = false;
     public string? CustomPrompt { get; set; }
     public DateTime? GeneratedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

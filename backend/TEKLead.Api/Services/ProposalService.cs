@@ -76,6 +76,7 @@ public class ProposalService
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS selected_portfolio_ids UUID[] NOT NULL DEFAULT '{}'",
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS custom_prompt TEXT",
             "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ",
+            "ALTER TABLE proposals ADD COLUMN IF NOT EXISTS is_jd_only BOOLEAN NOT NULL DEFAULT false",
         };
         foreach (var m in migrations)
         {
@@ -85,11 +86,14 @@ public class ProposalService
         _log.LogInformation("proposals table OK");
     }
 
-    public async Task<List<Proposal>> GetAll()
+    public async Task<List<Proposal>> GetAll(bool? isJdOnly = null)
     {
         await using var c = Conn();
         await c.OpenAsync();
-        var rows = await c.QueryAsync<dynamic>("SELECT * FROM proposals ORDER BY created_at DESC");
+        var sql = "SELECT * FROM proposals";
+        if (isJdOnly.HasValue) sql += " WHERE is_jd_only=@isJdOnly";
+        sql += " ORDER BY created_at DESC";
+        var rows = await c.QueryAsync<dynamic>(sql, new { isJdOnly });
         return rows.Select(Map).ToList();
     }
 
@@ -119,7 +123,7 @@ public class ProposalService
                     follow_up_date, sent_at, won_at, lost_at,
                     linked_lead_id, apollo_contact_json, contacts_json,
                     generated_response, selected_portfolio_ids, custom_prompt, generated_at,
-                    created_at, updated_at)
+                    is_jd_only, created_at, updated_at)
                 VALUES (@Id, @JobPostHeadline, @JobPostBody, @ClientName, @ClientCompany,
                     @ClientCountry, @ClientCity, @ClientEmail, @ClientLinkedin, @ClientQuestions,
                     @Links, @LinkLabels, @DocumentUrls, @DocumentNames, @TimelineValue, @TimelineUnit,
@@ -127,7 +131,7 @@ public class ProposalService
                     @FollowUpDate, @SentAt, @WonAt, @LostAt,
                     @LinkedLeadId, @ApolloContactJson, @ContactsJson,
                     @GeneratedResponse, @SelectedPortfolioIds, @CustomPrompt, @GeneratedAt,
-                    @CreatedAt, @UpdatedAt)", p);
+                    @IsJdOnly, @CreatedAt, @UpdatedAt)", p);
         }
         else
         {
@@ -146,7 +150,7 @@ public class ProposalService
                     linked_lead_id=@LinkedLeadId, apollo_contact_json=@ApolloContactJson,
                     contacts_json=@ContactsJson, generated_response=@GeneratedResponse,
                     selected_portfolio_ids=@SelectedPortfolioIds, custom_prompt=@CustomPrompt,
-                    generated_at=@GeneratedAt, updated_at=@UpdatedAt
+                    generated_at=@GeneratedAt, is_jd_only=@IsJdOnly, updated_at=@UpdatedAt
                 WHERE id=@Id", p);
         }
 
@@ -159,6 +163,21 @@ public class ProposalService
         await using var c = Conn();
         await c.OpenAsync();
         await c.ExecuteAsync("DELETE FROM proposals WHERE id=@id", new { id });
+    }
+
+    public async Task<Proposal> AttachContact(Guid id, Proposal contactData)
+    {
+        var existing = await GetById(id) ?? throw new Exception("Proposal not found");
+        existing.ClientName = contactData.ClientName;
+        existing.ClientCompany = contactData.ClientCompany;
+        existing.ClientCountry = contactData.ClientCountry;
+        existing.ClientCity = contactData.ClientCity;
+        existing.ClientEmail = contactData.ClientEmail;
+        existing.ClientLinkedin = contactData.ClientLinkedin;
+        existing.ApolloContactJson = contactData.ApolloContactJson;
+        existing.ContactsJson = contactData.ContactsJson;
+        existing.IsJdOnly = false;
+        return await Upsert(existing);
     }
 
     private static Proposal Map(dynamic r) => new()
@@ -197,6 +216,7 @@ public class ProposalService
         SelectedPortfolioIds = r.selected_portfolio_ids ?? Array.Empty<Guid>(),
         CustomPrompt = r.custom_prompt,
         GeneratedAt = r.generated_at,
+        IsJdOnly = r.is_jd_only ?? false,
         CreatedAt = r.created_at,
         UpdatedAt = r.updated_at,
     };

@@ -39,6 +39,7 @@ type Proposal = {
   lostAt?: string;
   contactsJson?: string;
   apolloContactJson?: string;
+  isJdOnly?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -73,11 +74,13 @@ export default function ProposalList({
   onEdit,
   onGenerateProposal,
   onGenerateArtifacts,
+  isJdOnly,
 }: {
   onNew: () => void;
   onEdit?: (proposalId: string) => void;
   onGenerateProposal?: (ctx: GenerateProposalCtx) => void;
   onGenerateArtifacts?: (ctx: any) => void;
+  isJdOnly?: boolean;
 }) {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,11 +110,12 @@ export default function ProposalList({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data: any = await api.get("/api/proposals");
+      const qs = isJdOnly !== undefined ? `?isJdOnly=${isJdOnly}` : "";
+      const data: any = await api.get(`/api/proposals${qs}`);
       setProposals(data || []);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
-  }, []);
+  }, [isJdOnly]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -184,6 +188,17 @@ export default function ProposalList({
     return { proposalId: p.id, proposalHeadline: p.jobPostHeadline || p.jobPostBody?.slice(0, 60), clientName: p.clientName, clientEmail: allEmails[0] || p.clientEmail, clientPhone: allPhones[0] || "", allEmails, allPhones, allEmailNames, allPhoneNames, autoGenerate: false };
   };
   const closeDrawer = () => { setDrawer(null); setDrawerError(""); setDrawerSuccess(""); };
+
+  const convertToProspect = async () => {
+    if (!drawer || contacts.length === 0) { setDrawerError("Add at least one contact first."); return; }
+    setDrawerSaving(true); setDrawerError(""); setDrawerSuccess("");
+    try {
+      const payload = { ...drawer, isJdOnly: false, contactsJson: JSON.stringify(contacts) };
+      const res: any = await api.put(`/api/proposals/${drawer.id}`, payload);
+      setDrawer(res); setProposals(ps => ps.map(p => p.id === res.id ? res : p)); setDrawerSuccess("Converted to full Prospect.");
+    } catch (e: any) { setDrawerError(e.message); }
+    finally { setDrawerSaving(false); }
+  };
 
   const saveDrawer = async () => {
     if (!drawer) return;
@@ -572,6 +587,12 @@ export default function ProposalList({
 
               {drawerTab === "contacts" && (
                 <div>
+                  {drawer.isJdOnly && (
+                    <div className="banner" style={{ background: "#fffbeb", color: "#92400e", marginBottom: 12, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>JD only — no contact attached yet.</span>
+                      <button className="btn btn-primary btn-sm" onClick={convertToProspect} disabled={drawerSaving}>Convert to Prospect</button>
+                    </div>
+                  )}
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, alignItems: "center" }}>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>Contacts</div>
                     <div style={{ display: "flex", gap: 6 }}>

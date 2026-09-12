@@ -90,9 +90,11 @@ const EMPTY_PROPOSAL: Proposal = {
 export default function NewProposalView({
   onViewList,
   onGenerateArtifacts,
+  jdOnlyMode = false,
 }: {
   onViewList?: () => void;
   onGenerateArtifacts?: (ctx: any) => void;
+  jdOnlyMode?: boolean;
 }) {
   const [waTemplate, setWaTemplate] = useState("Hi {name}, I came across your profile and would love to connect!");
 
@@ -171,7 +173,7 @@ export default function NewProposalView({
   const [haveDetails, setHaveDetails] = useState(false);
   const [manualContact, setManualContact] = useState({ name: "", title: "", company: "", email: "", phone: "", linkedin: "" });
   const mc = (k: string, v: string) => setManualContact(p => ({ ...p, [k]: v }));
-  const section2Unlocked = contacts.some(c => c.enriched) || haveDetails;
+  const section2Unlocked = jdOnlyMode || contacts.some(c => c.enriched) || haveDetails;
 
   const primaryContact = contacts.find(c => c.isPrimary) ??
     (haveDetails && manualContact.name.trim() ? {
@@ -424,7 +426,7 @@ export default function NewProposalView({
 
   // ── Save ──
   const handleSave = async (andNew = false) => {
-    if (!primaryContact) { setError("Select a primary contact first."); return; }
+    if (!jdOnlyMode && !primaryContact) { setError("Select a primary contact first."); return; }
     setSaving(true); setError(""); setSuccess("");
 
     // auto-fill form fields from manual contact if not already set
@@ -439,7 +441,7 @@ export default function NewProposalView({
     try {
       const secondary = contacts.filter(c => !c.isPrimary && c.enriched);
       // Build contactsJson from ALL enriched contacts (primary first, then secondary)
-      const allEnriched = [primaryContact, ...secondary];
+      const allEnriched = primaryContact ? [primaryContact, ...secondary] : [];
       const contactsForJson = allEnriched.flatMap(c => {
         const emails = c.checkedEmails.length ? c.checkedEmails : (c.lead.emails?.length ? c.lead.emails : [""]);
         const phones = c.lead.phones || [];
@@ -462,9 +464,10 @@ export default function NewProposalView({
         clientQuestions: effectiveForm.clientQuestions.filter(q => q.trim()),
         links: effectiveForm.links.filter(l => l.trim()),
         followUpDate: effectiveForm.followUpDate || null,
-        linkedLeadId: primaryContact.lead.id || null,
-        apolloContactJson: JSON.stringify(primaryContact.lead),
+        linkedLeadId: primaryContact?.lead.id || null,
+        apolloContactJson: primaryContact ? JSON.stringify(primaryContact.lead) : null,
         contactsJson: JSON.stringify(contactsForJson),
+        isJdOnly: jdOnlyMode,
       };
       let res: any;
       if (savedId) {
@@ -481,7 +484,7 @@ export default function NewProposalView({
   };
 
   const handleGenerateArtifacts = async () => {
-    if (!primaryContact) { setError("Select a primary contact first."); return; }
+    if (!jdOnlyMode && !primaryContact) { setError("Select a primary contact first."); return; }
     if (!form.jobPostBody.trim()) { setError("Job post is required."); return; }
     let id = savedId;
     if (!id) id = await handleSave(false);
@@ -505,8 +508,8 @@ export default function NewProposalView({
       proposalId: id,
       proposalHeadline: form.jobPostHeadline || form.jobPostBody.slice(0, 60),
       clientName: form.clientName,
-      clientEmail: primaryContact.checkedEmails[0] || form.clientEmail,
-      clientPhone: primaryContact.checkedPhones[0] || "",
+      clientEmail: primaryContact?.checkedEmails[0] || form.clientEmail,
+      clientPhone: primaryContact?.checkedPhones[0] || "",
       allEmails,
       allPhones,
       allEmailNames,
@@ -590,8 +593,8 @@ export default function NewProposalView({
       )}
       <div className="page-header">
         <div>
-          <div className="page-title">New Proposal (New)</div>
-          <div className="page-sub">Search contacts · Enrich · Select primary · Build proposal</div>
+          <div className="page-title">{jdOnlyMode ? "New JD (No Contact)" : "New Proposal (New)"}</div>
+          <div className="page-sub">{jdOnlyMode ? "Paste JD · Generate cover letter · Attach contact later" : "Search contacts · Enrich · Select primary · Build proposal"}</div>
         </div>
         <SaveButtons sm />
       </div>
@@ -600,7 +603,7 @@ export default function NewProposalView({
       {success && <div className="banner banner-success">{success}</div>}
 
       {/* ── SECTION 1 ── */}
-      <div className="card">
+      {!jdOnlyMode && <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
           <div>
             <div className="card-title">Section 1 — Contact Search</div>
@@ -849,7 +852,7 @@ export default function NewProposalView({
             )}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── SECTION 2 ── */}
       <div className="card" style={{ opacity: section2Unlocked ? 1 : 0.5, pointerEvents: section2Unlocked ? "auto" : "none" }}>
@@ -857,14 +860,14 @@ export default function NewProposalView({
         <div className="card-sub">{!section2Unlocked ? "Enrich at least one contact above to enable" : "Enter proposal details below"}</div>
 
         {/* Manual client fields */}
-        <div className="grid-2" style={{ marginBottom: 14 }}>
+        {!jdOnlyMode && <div className="grid-2" style={{ marginBottom: 14 }}>
           <div><div className="field-label">Client Name</div><input className="input" placeholder="John Smith" value={form.clientName} onChange={e => set("clientName", e.target.value)} /></div>
           <div><div className="field-label">Company</div><input className="input" placeholder="Acme Corp" value={form.clientCompany} onChange={e => set("clientCompany", e.target.value)} /></div>
           <div><div className="field-label">Country</div><input className="input" placeholder="United States" value={form.clientCountry} onChange={e => set("clientCountry", e.target.value)} /></div>
           <div><div className="field-label">City</div><input className="input" placeholder="New York" value={form.clientCity} onChange={e => set("clientCity", e.target.value)} /></div>
           <div><div className="field-label">Email</div><input className="input" placeholder="client@example.com" value={form.clientEmail} onChange={e => set("clientEmail", e.target.value)} /></div>
           <div><div className="field-label">LinkedIn</div><input className="input" placeholder="https://linkedin.com/in/..." value={form.clientLinkedin} onChange={e => set("clientLinkedin", e.target.value)} /></div>
-        </div>
+        </div>}
 
         {/* Job Post */}
         <div style={{ marginBottom: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>

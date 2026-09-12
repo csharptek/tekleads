@@ -24,7 +24,14 @@ public class ProposalController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await _proposals.GetAll());
+    public async Task<IActionResult> GetAll([FromQuery] bool? isJdOnly = null) => Ok(await _proposals.GetAll(isJdOnly));
+
+    [HttpPost("{id}/attach-contact")]
+    public async Task<IActionResult> AttachContact(Guid id, [FromBody] Proposal contactData)
+    {
+        try { return Ok(await _proposals.AttachContact(id, contactData)); }
+        catch (Exception ex) { return StatusCode(500, new { ok = false, error = ex.Message }); }
+    }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)

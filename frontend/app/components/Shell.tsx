@@ -21,7 +21,7 @@ import ContactsWAInboxView from "./ContactsWAInboxView";
 import JobLeadsView from "./JobLeadsView";
 import JobContactsView from "./JobContactsView";
 
-type Page = "quick-outreach" | "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads" | "job-contacts";
+type Page = "quick-outreach" | "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "jd-only-list" | "jd-only-new" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads" | "job-contacts";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
 type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; };
@@ -35,6 +35,7 @@ const CATEGORIES: NavCategory[] = [
     items: [
       { id: "new-proposal", label: "New Prospect", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg> },
       { id: "proposal-list", label: "All Prospects", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> },
+      { id: "jd-only-list", label: "JD Only", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> },
       { id: "wa-inbox", label: "WhatsApp Inbox", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> },
       { id: "proposal-settings", label: "Proposal Settings", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="10" cy="15" r="2"/></svg> },
     ],
@@ -189,7 +190,9 @@ export default function Shell() {
         {page === "products"          && <ProductsView />}
         {page === "proposals"         && <ProposalView onViewList={() => navigate("proposal-list")} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} editProposalId={editProposalId} onEditDone={() => setEditProposalId(null)} />}
         {page === "new-proposal"      && <NewProposalView onViewList={() => navigate("proposal-list")} onGenerateArtifacts={openArtifacts} />}
-        {page === "proposal-list"     && <ProposalList onNew={() => navigate("proposals")} onEdit={openEdit} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} />}
+        {page === "proposal-list"     && <ProposalList onNew={() => navigate("proposals")} onEdit={openEdit} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} isJdOnly={false} />}
+        {page === "jd-only-list"      && <ProposalList onNew={() => navigate("jd-only-new")} onEdit={openEdit} onGenerateProposal={openEditor} onGenerateArtifacts={openArtifacts} isJdOnly={true} />}
+        {page === "jd-only-new"       && <NewProposalView onViewList={() => navigate("jd-only-list")} onGenerateArtifacts={openArtifacts} jdOnlyMode />}
         {page === "proposal-settings" && <ProposalSettings />}
         {page === "artifacts"         && artifactsCtx && <ArtifactsView {...artifactsCtx} onBack={() => navigate("proposal-list")} />}
         {page === "settings"          && <SettingsView />}
