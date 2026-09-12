@@ -495,9 +495,9 @@ Format: [What you built] — [measurable result].
 Use only real data from RELEVANT PORTFOLIO PROJECTS in context. Never invent.
 Do NOT include any link, URL, or ""Demo:"" line here or anywhere else in the body — a separate system step appends the project name and any available links (YouTube demo, etc.) after your text. Writing a link yourself creates a duplicate.
 
-3. DONE = (1 sentence)
-One acceptance criteria line in the client's language.
-Format: ""Done = [specific deliverable they can test/verify]""
+3. ACCEPTANCE CRITERIA (1 sentence)
+One plain-English sentence stating exactly what ""working"" looks like for this job — a specific, testable/verifiable outcome, in the client's language.
+Do NOT use the literal template ""Done = ..."" — that exact formula shows up identically across too many letters and reads as a mechanical tell. Write it as a normal sentence instead, e.g. ""You'll know it's working when [X]"", ""In practice, that means [X]"", ""Success here is [X]"", or just a direct statement of the outcome — vary the phrasing letter to letter, never the same opener twice in a row.
 
 4. APPROACH (3 bullets)
 Each bullet = one concrete technical decision with named technologies.
