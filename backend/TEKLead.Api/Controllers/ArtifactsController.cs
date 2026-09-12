@@ -58,6 +58,13 @@ public class ArtifactsController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpPost("{proposalId}/fix-cover-letter")]
+    public async Task<IActionResult> FixCoverLetter(Guid proposalId)
+    {
+        try { var r = await _svc.FixCoverLetter(proposalId); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     [HttpPost("{proposalId}/generate/whatsapp")]
     public async Task<IActionResult> GenerateWhatsapp(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {

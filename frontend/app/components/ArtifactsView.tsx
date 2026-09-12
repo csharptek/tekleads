@@ -337,6 +337,25 @@ export default function ArtifactsView({
     }
   };
 
+  const [fixingCoverLetter, setFixingCoverLetter] = useState(false);
+  const fixCoverLetterIssues = async () => {
+    setFixingCoverLetter(true);
+    setErrors(e => ({ ...e, coverLetter: '' }));
+    try {
+      const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/fix-cover-letter`, {});
+      setArtifacts(a => ({ ...a, coverLetter: res.coverLetter, coverLetterScore: res.coverLetterScore, coverLetterScoreReasons: res.coverLetterScoreReasons }));
+      if (res.usedProjects !== undefined) {
+        setUsedProjects(res.usedProjects);
+        setCheckedIds(new Set(res.usedProjects.map((p: any) => p.id).filter(Boolean)));
+        setMatchChecked(true);
+      }
+    } catch (e: any) {
+      setErrors(er => ({ ...er, coverLetter: e.message }));
+    } finally {
+      setFixingCoverLetter(false);
+    }
+  };
+
   const openPortfolioPicker = async () => {
     setShowPortfolioPicker(true);
     setLoadingPortfolio(true);
@@ -815,7 +834,12 @@ export default function ArtifactsView({
         {errors.coverLetter && <div className="banner banner-error">{errors.coverLetter}</div>}
         {!!artifacts.coverLetterScoreReasons?.length && (
           <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--muted)" }}>Why not 100%:</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <div style={{ fontWeight: 600, color: "var(--muted)" }}>Why not 100%:</div>
+              <button className="btn btn-secondary btn-sm" onClick={fixCoverLetterIssues} disabled={fixingCoverLetter || generating.coverLetter}>
+                {fixingCoverLetter ? "Fixing..." : "✦ Fix Issues"}
+              </button>
+            </div>
             <ul style={{ margin: 0, paddingLeft: 18, color: "var(--muted)" }}>
               {artifacts.coverLetterScoreReasons.map((r, i) => <li key={i}>{r}</li>)}
             </ul>

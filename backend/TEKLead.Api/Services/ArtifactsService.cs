@@ -252,6 +252,90 @@ public class ArtifactsService
         return new ArtifactsResult { Ok = true, CoverLetter = result, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList(), CoverLetterScore = score, CoverLetterScoreReasons = reasons };
     }
 
+    /// <summary>
+    /// Manual "Fix Issues" action: takes the currently saved cover letter + its
+    /// flagged score reasons, asks the model to revise it addressing those specific
+    /// issues (keeping everything that already works), re-scores, and keeps trying
+    /// up to 2 revision passes total — stopping early once a pass doesn't improve
+    /// on the best score seen so far. Never picks a worse draft than the one it started with.
+    /// </summary>
+    public async Task<ArtifactsResult> FixCoverLetter(Guid proposalId)
+    {
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company, matchInfos) = await GetContext(proposalId, null);
+        if (err != null) return Fail(err);
+
+        var existing = await GetExisting(proposalId);
+        if (!existing.Ok || string.IsNullOrWhiteSpace(existing.CoverLetter))
+            return Fail("No cover letter to fix yet — generate one first.");
+
+        var issues = existing.CoverLetterScoreReasons ?? new List<string>();
+        if (issues.Count == 0)
+            return existing; // nothing flagged — nothing to fix
+
+        var context = BuildContext(proposal!, portfolioItems, company);
+        var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactCoverLetterPrompt, "");
+        var basePrompt = GetPrompt(savedPrompt, CoverLetterPrompt);
+
+        var best = StripLinkBlock(existing.CoverLetter);
+        var bestScore = existing.CoverLetterScore ?? 0;
+        var bestReasons = issues;
+
+        const int maxAttempts = 2;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            string candidate;
+            try
+            {
+                var fixPrompt = BuildFixPrompt(basePrompt, best, bestReasons);
+                candidate = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, fixPrompt, context, forceLinkInBody: false);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Cover letter fix pass failed for {0}", proposalId);
+                break;
+            }
+
+            var (candScore, candReasons) = await ScoreCoverLetter(proposal!, candidate);
+            if (candScore > bestScore)
+            {
+                best = candidate;
+                bestScore = candScore;
+                bestReasons = candReasons;
+            }
+            if (candReasons.Count == 0 || candScore <= bestScore) break; // no more issues, or this pass didn't help — stop
+        }
+
+        var linkBlock = BuildLinkBlocks(portfolioItems);
+        var finalText = linkBlock != null ? best.TrimEnd() + "\n\n" + linkBlock : best;
+        await SaveField(proposalId, "artifact_cover_letter", finalText);
+        await SaveCoverLetterScore(proposalId, bestScore, bestReasons);
+        return new ArtifactsResult { Ok = true, CoverLetter = finalText, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList(), CoverLetterScore = bestScore, CoverLetterScoreReasons = bestReasons };
+    }
+
+    private static string StripLinkBlock(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        var idx = text.IndexOf("\nFor reference, here", StringComparison.Ordinal);
+        return idx < 0 ? text : text[..idx].TrimEnd();
+    }
+
+    private static string BuildFixPrompt(string basePrompt, string currentDraftText, List<string> issues)
+    {
+        var issuesText = string.Join("\n", issues.Select(i => $"- {i}"));
+        return basePrompt + $@"
+
+REVISION MODE — READ CAREFULLY:
+A previous draft of this exact cover letter was reviewed and specific problems were flagged below. Revise the draft to fix EVERY flagged issue while keeping everything that already works — do not throw away good, JD-grounded content just to change something, and do not introduce a new violation of any rule above while fixing these.
+
+PREVIOUS DRAFT:
+{currentDraftText}
+
+FLAGGED ISSUES TO FIX:
+{issuesText}
+
+Return ONLY the revised cover letter text — same format as the structure rules above, no commentary, no explanation of what changed, no markdown fences.";
+    }
+
     public async Task<ArtifactsResult> GenerateWhatsapp(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
     {
         var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company, matchInfos) = await GetContext(proposalId, portfolioIds);
