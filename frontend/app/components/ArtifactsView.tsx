@@ -107,6 +107,35 @@ type ArtifactsViewProps = {
   autoGenerate?: boolean;
 };
 
+// ── Portfolio match display helpers ─────────────────────────────────────
+const TIER_STYLE: Record<string, { color: string; bg: string }> = {
+  "Industry Match":   { color: "#16a34a", bg: "#f0fdf4" },
+  "Task Match":       { color: "#2563eb", bg: "#eff6ff" },
+  "Industry (weak)":  { color: "#d97706", bg: "#fffbeb" },
+  "Semantic Only":    { color: "#6b7280", bg: "#f3f4f6" },
+  "Fallback":         { color: "#dc2626", bg: "#fef2f2" },
+};
+const tierStyle = (tier?: string) => TIER_STYLE[tier || ""] || { color: "#6b7280", bg: "#f3f4f6" };
+
+function matchSummary(p: UsedPortfolioItem): string {
+  const pct = typeof p.combinedScore === "number" ? Math.round(p.combinedScore * 100) : null;
+  const tags = (p.matchedTags || []).join(", ");
+  switch (p.tier) {
+    case "Industry Match":
+      return `Same industry (${p.industry || "match"}) + shared tags (${tags}) — strong match${pct !== null ? `, ${pct}%` : ""}.`;
+    case "Task Match":
+      return `Different industry, but shared tags (${tags}) — task-level match${pct !== null ? `, ${pct}%` : ""}.`;
+    case "Industry (weak)":
+      return `Same industry (${p.industry || "match"}) only, no shared tags — passed on semantic similarity${pct !== null ? ` (${pct}%)` : ""}.`;
+    case "Semantic Only":
+      return `No shared industry or tags — matched purely on semantic similarity${pct !== null ? ` (${pct}%)` : ""}.`;
+    case "Fallback":
+      return "Portfolio search unavailable — ranked by industry as a fallback.";
+    default:
+      return "";
+  }
+}
+
 export default function ArtifactsView({
   proposalId, proposalHeadline, clientName, clientEmail, clientPhone, allEmails, allPhones, allEmailNames, allPhoneNames, onBack, autoGenerate = false,
 }: ArtifactsViewProps) {
@@ -651,18 +680,30 @@ export default function ArtifactsView({
                     </td>
                     <td style={{ padding: "8px 14px", fontWeight: 500 }}>{p.title}</td>
                     <td style={{ padding: "8px 14px", color: "var(--muted)" }}>{p.industry || "—"}</td>
-                    <td style={{ padding: "8px 14px", fontSize: 12 }}>
+                    <td style={{ padding: "8px 14px", fontSize: 12, minWidth: 220, maxWidth: 320 }}>
                       {p.tier ? (
                         <div>
-                          <div style={{ fontWeight: 600, color: "var(--text)" }}>{p.tier}</div>
-                          {typeof p.combinedScore === "number" && p.combinedScore > 0 && (
-                            <div style={{ color: "var(--muted)", fontFamily: "monospace" }}>
-                              {p.combinedScore.toFixed(2)} ({p.semanticScore?.toFixed(2)} semantic)
+                          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, color: tierStyle(p.tier).color, background: tierStyle(p.tier).bg }}>
+                              {p.tier}
+                            </span>
+                            {typeof p.combinedScore === "number" && p.combinedScore > 0 && (
+                              <span style={{ fontWeight: 700, color: "var(--text)" }}>{Math.round(p.combinedScore * 100)}%</span>
+                            )}
+                            {typeof p.semanticScore === "number" && p.semanticScore > 0 && (
+                              <span style={{ color: "var(--muted)" }}>({Math.round(p.semanticScore * 100)}% semantic)</span>
+                            )}
+                          </div>
+                          {!!p.matchedTags?.length && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 4 }}>
+                              {p.matchedTags.map((t, ti) => (
+                                <span key={ti} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}>
+                                  {t}
+                                </span>
+                              ))}
                             </div>
                           )}
-                          {!!p.matchedTags?.length && (
-                            <div style={{ color: "var(--muted)" }}>tags: {p.matchedTags.join(", ")}</div>
-                          )}
+                          <div style={{ color: "var(--muted)", fontSize: 11, lineHeight: 1.4 }}>{matchSummary(p)}</div>
                         </div>
                       ) : "—"}
                     </td>
