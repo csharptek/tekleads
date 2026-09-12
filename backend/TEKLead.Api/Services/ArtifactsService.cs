@@ -517,6 +517,7 @@ public class ArtifactsService
         {
             const string gradingPrompt = @"You are a strict reviewer grading an Upwork cover letter against the job post it was written for.
 Score 0-100 on how well the letter is grounded in THIS SPECIFIC job post (not a generic template) — every claim/sentence should trace to something actually stated in the job post, the proof/credibility paragraph should read specific and credible (not vague filler like ""we've delivered comparable solutions""), and any questions should reference real details from this job post.
+DO NOT flag the sign-off line as an issue (something like ""I'm available — 15+ yrs, 40+ projects, [domain]. Available [overlap] with [timezone]."") — that exact line is a REQUIRED, deliberate template the letter must always end with, not a mistake. Never list it, or its ""15+ yrs"" / ""40+ projects"" figures, as ""generic"", ""unverifiable"", or ""filler"" in issues.
 Return ONLY JSON: {""score"": <0-100>, ""issues"": [""short reason"", ...]} — issues is up to 4 short, specific problems (empty array if none). No markdown, no commentary.";
             var userMsg = $"JOB POST:\n{jdText}\n\nCOVER LETTER:\n{text}";
             var gradingSettings = new Dictionary<string, string>(await _settings.GetAll()) { [SettingKeys.AiProvider] = "claude" };
