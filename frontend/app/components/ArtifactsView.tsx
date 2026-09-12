@@ -20,6 +20,8 @@ type Artifacts = {
   generatedAt?: string;
   coverLetterScore?: number;
   coverLetterScoreReasons?: string[];
+  emailScore?: number;
+  emailScoreReasons?: string[];
 };
 
 type GeneratingState = { coverLetter: boolean; whatsapp: boolean; email: boolean; followUp1: boolean; followUp2: boolean };
@@ -172,7 +174,8 @@ export default function ArtifactsView({
       const res: any = await (api as any).patch(`/api/artifacts/${proposalId}/artifact`, { field, value });
       setArtifacts(a => ({
         ...a, [stateKey]: value,
-        ...(field === "coverLetter" ? { coverLetterScore: res?.coverLetterScore, coverLetterScoreReasons: res?.coverLetterScoreReasons } : {}),
+        ...(field === "coverLetter" ? { coverLetterScore: res?.score, coverLetterScoreReasons: res?.scoreReasons } : {}),
+        ...(field === "emailBody" ? { emailScore: res?.score, emailScoreReasons: res?.scoreReasons } : {}),
       }));
       setEditing(e => ({ ...e, [field]: false }));
     } catch (e: any) {
@@ -277,6 +280,8 @@ export default function ArtifactsView({
           generatedAt: res.generatedAt,
           coverLetterScore: res.coverLetterScore,
           coverLetterScoreReasons: res.coverLetterScoreReasons,
+          emailScore: res.emailScore,
+          emailScoreReasons: res.emailScoreReasons,
         });
         hasExisting = true;
       }
@@ -333,6 +338,10 @@ export default function ArtifactsView({
         if (type === "coverLetter") {
           u.coverLetterScore = res.coverLetterScore;
           u.coverLetterScoreReasons = res.coverLetterScoreReasons;
+        }
+        if (type === "email") {
+          u.emailScore = res.emailScore;
+          u.emailScoreReasons = res.emailScoreReasons;
         }
         return u;
       });
@@ -420,6 +429,81 @@ export default function ArtifactsView({
       setChatMessages(m => [...m, { id: `err-${Date.now()}`, role: "assistant", content: `Failed: ${e.message}`, actions: [], createdAt: new Date().toISOString() }]);
     } finally {
       setActionBusy(null);
+    }
+  };
+
+  const [fixingEmail, setFixingEmail] = useState(false);
+  const fixEmailIssues = async () => {
+    setFixingEmail(true);
+    setErrors(e => ({ ...e, email: '' }));
+    try {
+      const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/fix-email`, {});
+      setArtifacts(a => ({ ...a, emailSubject: res.emailSubject, emailBody: res.emailBody, emailScore: res.emailScore, emailScoreReasons: res.emailScoreReasons }));
+      if (res.usedProjects !== undefined) {
+        setUsedProjects(res.usedProjects);
+        setCheckedIds(new Set(res.usedProjects.map((p: any) => p.id).filter(Boolean)));
+        setMatchChecked(true);
+      }
+    } catch (e: any) {
+      setErrors(er => ({ ...er, email: e.message }));
+    } finally {
+      setFixingEmail(false);
+    }
+  };
+
+  // ── Email coaching chat — separate thread/state from the cover letter's above ──
+  const [emailChatOpen, setEmailChatOpen] = useState(false);
+  const [emailChatMessages, setEmailChatMessages] = useState<ChatMessage[]>([]);
+  const [emailChatInput, setEmailChatInput] = useState("");
+  const [emailChatSending, setEmailChatSending] = useState(false);
+  const [emailChatLoaded, setEmailChatLoaded] = useState(false);
+  const [emailActionBusy, setEmailActionBusy] = useState<string | null>(null);
+
+  const loadEmailChat = async () => {
+    if (emailChatLoaded) return;
+    try {
+      const res: any = await api.get(`/api/artifacts/${proposalId}/chat/email`);
+      setEmailChatMessages(res || []);
+    } catch { } finally { setEmailChatLoaded(true); }
+  };
+
+  const toggleEmailChat = () => {
+    setEmailChatOpen(o => !o);
+    if (!emailChatLoaded) loadEmailChat();
+  };
+
+  const sendEmailChatMessage = async () => {
+    const text = emailChatInput.trim();
+    if (!text || emailChatSending) return;
+    setEmailChatInput("");
+    setEmailChatMessages(m => [...m, { id: `local-${Date.now()}`, role: "user", content: text, actions: [], createdAt: new Date().toISOString() }]);
+    setEmailChatSending(true);
+    try {
+      const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/chat/email`, { message: text });
+      setEmailChatMessages(m => [...m, res]);
+    } catch (e: any) {
+      setEmailChatMessages(m => [...m, { id: `err-${Date.now()}`, role: "assistant", content: `Error: ${e.message}`, actions: [], createdAt: new Date().toISOString() }]);
+    } finally {
+      setEmailChatSending(false);
+    }
+  };
+
+  const applyEmailChatAction = async (action: ChatAction, msgId: string) => {
+    setEmailActionBusy(msgId + action.type);
+    try {
+      const res: any = await (api as any).postLong(`/api/artifacts/${proposalId}/chat/email/apply-action`, action);
+      if (res.artifactsResult) {
+        setArtifacts(a => ({ ...a, emailSubject: res.artifactsResult.emailSubject, emailBody: res.artifactsResult.emailBody, emailScore: res.artifactsResult.emailScore, emailScoreReasons: res.artifactsResult.emailScoreReasons }));
+        if (res.artifactsResult.usedProjects) {
+          setUsedProjects(res.artifactsResult.usedProjects);
+          setCheckedIds(new Set(res.artifactsResult.usedProjects.map((p: any) => p.id).filter(Boolean)));
+        }
+      }
+      setEmailChatMessages(m => [...m, { id: `sys-${Date.now()}`, role: "assistant", content: res.summary || "Done.", actions: [], createdAt: new Date().toISOString() }]);
+    } catch (e: any) {
+      setEmailChatMessages(m => [...m, { id: `err-${Date.now()}`, role: "assistant", content: `Failed: ${e.message}`, actions: [], createdAt: new Date().toISOString() }]);
+    } finally {
+      setEmailActionBusy(null);
     }
   };
 
@@ -1029,7 +1113,17 @@ export default function ArtifactsView({
       <CardShell
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ verticalAlign: "middle", marginRight: 4 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
         title="First Email"
-        subtitle={<>{clientEmail ? `Opens Outlook with ${clientEmail} in To field` : "Opens mail client — no email on file"}{isCustomized("email") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}</>}
+        subtitle={<>{clientEmail ? `Opens Outlook with ${clientEmail} in To field` : "Opens mail client — no email on file"}{isCustomized("email") && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>● custom prompt</span>}
+          {typeof artifacts.emailScore === "number" && (
+            <span style={{
+              marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999,
+              color: artifacts.emailScore >= 80 ? "#15803d" : artifacts.emailScore >= 60 ? "#b45309" : "#b91c1c",
+              background: artifacts.emailScore >= 80 ? "#dcfce7" : artifacts.emailScore >= 60 ? "#fef3c7" : "#fee2e2",
+            }}>
+              Score: {artifacts.emailScore}%
+            </span>
+          )}
+        </>}
         loading={generating.email}
         actions={<>
           <PromptBtn onClick={() => openPromptModal("email")} />
@@ -1045,6 +1139,19 @@ export default function ArtifactsView({
         </>}
       >
         {errors.email && <div className="banner banner-error">{errors.email}</div>}
+        {!!artifacts.emailScoreReasons?.length && (
+          <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <div style={{ fontWeight: 600, color: "var(--muted)" }}>Why not 100%:</div>
+              <button className="btn btn-secondary btn-sm" onClick={fixEmailIssues} disabled={fixingEmail || generating.email}>
+                {fixingEmail ? "Fixing..." : "✦ Fix Issues"}
+              </button>
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, color: "var(--muted)" }}>
+              {artifacts.emailScoreReasons.map((r, i) => <li key={i}>{r}</li>)}
+            </ul>
+          </div>
+        )}
         {artifacts.emailSubject
           ? (editing["emailSubject"] || editing["emailBody"])
             ? <div>
@@ -1077,6 +1184,59 @@ export default function ArtifactsView({
         </>
           : !generating.email && <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>Not generated yet</div>}
       </CardShell>
+      )}
+
+      {/* Email Coaching Chat — own thread, separate from the Cover Letter chat above */}
+      {hasContact && (
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={toggleEmailChat}>
+          <div className="card-title" style={{ marginBottom: 0 }}>💬 Email Coaching Chat</div>
+          <button className="btn btn-ghost btn-sm">{emailChatOpen ? "Hide" : "Open"}</button>
+        </div>
+        {emailChatOpen && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ maxHeight: 360, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 10 }}>
+              {emailChatMessages.length === 0 && !emailChatSending && (
+                <div style={{ color: "var(--muted)", fontSize: 13 }}>Ask about the email's score, the portfolio match, or what to change — I can propose fixes you apply with one click.</div>
+              )}
+              {emailChatMessages.map((m) => (
+                <div key={m.id} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
+                  <div style={{
+                    padding: "8px 12px", borderRadius: 10, fontSize: 13, whiteSpace: "pre-wrap",
+                    background: m.role === "user" ? "var(--accent)" : "var(--surface)",
+                    color: m.role === "user" ? "white" : "var(--text)",
+                    border: m.role === "user" ? "none" : "1px solid var(--border)",
+                  }}>
+                    {m.content}
+                  </div>
+                  {!!m.actions?.length && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                      {m.actions.map((a, ai) => (
+                        <button key={ai} className="btn btn-secondary btn-sm"
+                          onClick={() => applyEmailChatAction(a, m.id)}
+                          disabled={emailActionBusy === m.id + a.type}>
+                          {emailActionBusy === m.id + a.type ? "Applying…" : `✦ ${a.label}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {emailChatSending && <div style={{ color: "var(--muted)", fontSize: 12 }}><span className="spinner" /> Thinking…</div>}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={emailChatInput}
+                onChange={e => setEmailChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendEmailChatMessage(); } }}
+                placeholder="Ask about the email's score, portfolio match, or a specific fix..."
+                style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
+              />
+              <button className="btn btn-primary btn-sm" onClick={sendEmailChatMessage} disabled={emailChatSending || !emailChatInput.trim()}>Send</button>
+            </div>
+          </div>
+        )}
+      </div>
       )}
 
       {/* Follow-up Email 1 */}

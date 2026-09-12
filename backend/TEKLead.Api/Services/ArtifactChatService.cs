@@ -66,20 +66,27 @@ public class ArtifactChatService
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )");
         try { await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_artifact_chat_proposal ON artifact_chat_messages(proposal_id, created_at)"); } catch { }
+
+        // Discriminates which artifact type a chat thread belongs to. Existing rows
+        // predate this column and are all cover-letter chat, so they default to
+        // 'coverLetter' — GetHistory/SendMessage below already default to that field,
+        // so old behavior for the cover letter chat is unchanged.
+        try { await c.ExecuteAsync("ALTER TABLE artifact_chat_messages ADD COLUMN IF NOT EXISTS field TEXT NOT NULL DEFAULT 'coverLetter'"); } catch { }
+        try { await c.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_artifact_chat_proposal_field ON artifact_chat_messages(proposal_id, field, created_at)"); } catch { }
     }
 
-    public async Task<List<ArtifactChatMessage>> GetHistory(Guid proposalId)
+    public async Task<List<ArtifactChatMessage>> GetHistory(Guid proposalId, string field = "coverLetter")
     {
         var cs = _settings.ConnectionString;
         await using var c = new NpgsqlConnection(cs);
         await c.OpenAsync();
         var rows = await c.QueryAsync<dynamic>(
-            "SELECT id, proposal_id, role, content, actions_json, created_at FROM artifact_chat_messages WHERE proposal_id=@id ORDER BY created_at ASC",
-            new { id = proposalId });
+            "SELECT id, proposal_id, role, content, actions_json, created_at FROM artifact_chat_messages WHERE proposal_id=@id AND field=@field ORDER BY created_at ASC",
+            new { id = proposalId, field });
         return rows.Select(Map).ToList();
     }
 
-    public async Task<ChatSendResult> SendMessage(Guid proposalId, string userMessage)
+    public async Task<ChatSendResult> SendMessage(Guid proposalId, string userMessage, string field = "coverLetter")
     {
         if (string.IsNullOrWhiteSpace(userMessage))
             return new ChatSendResult { Ok = false, Error = "Message is empty." };
@@ -92,7 +99,7 @@ public class ArtifactChatService
         if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(SettingKeys.ClaudeApiKey, "")))
             return new ChatSendResult { Ok = false, Error = "Claude API key not configured in Settings." };
 
-        await SaveMessage(proposalId, "user", userMessage, null);
+        await SaveMessage(proposalId, "user", userMessage, null, field);
 
         var existing = await _artifacts.GetExisting(proposalId);
         var company = await _companyCtx.GetByProposalId(proposalId);
@@ -111,11 +118,15 @@ public class ArtifactChatService
 
         // GetHistory already includes the user message just saved above — drop it here
         // since it's rendered separately as "BHANU'S MESSAGE" in the prompt.
-        var history = await GetHistory(proposalId);
+        var history = await GetHistory(proposalId, field);
         var priorHistory = history.Count > 0 ? history.Take(history.Count - 1).TakeLast(20).ToList() : history;
 
-        var systemPrompt = BuildSystemPrompt();
-        var userTurn = BuildUserTurn(proposal, company, existing, matchInfos, priorHistory, userMessage);
+        // field == "email" gets its own prompt builders (BuildEmailSystemPrompt/
+        // BuildEmailUserTurn) — the "coverLetter" path below is untouched from before.
+        var systemPrompt = field == "email" ? BuildEmailSystemPrompt() : BuildSystemPrompt();
+        var userTurn = field == "email"
+            ? BuildEmailUserTurn(proposal, company, existing, matchInfos, priorHistory, userMessage)
+            : BuildUserTurn(proposal, company, existing, matchInfos, priorHistory, userMessage);
 
         string raw;
         try
@@ -136,24 +147,28 @@ public class ArtifactChatService
 
         var (reply, actions) = ParseAssistantResponse(raw);
         var actionsJson = actions.Count > 0 ? JsonSerializer.Serialize(actions) : null;
-        var saved = await SaveMessage(proposalId, "assistant", reply, actionsJson);
+        var saved = await SaveMessage(proposalId, "assistant", reply, actionsJson, field);
 
         return new ChatSendResult { Ok = true, Message = saved };
     }
 
     /// <summary>
     /// Executes exactly one action the assistant proposed. Never called automatically —
-    /// only from an explicit button click on the frontend.
+    /// only from an explicit button click on the frontend. field selects which artifact's
+    /// "regenerate" this applies to; portfolio actions are field-agnostic.
     /// </summary>
-    public async Task<ChatApplyResult> ApplyAction(Guid proposalId, ChatAction action)
+    public async Task<ChatApplyResult> ApplyAction(Guid proposalId, ChatAction action, string field = "coverLetter")
     {
         switch (action.Type)
         {
             case "regenerate":
             {
-                var result = await _artifacts.FixCoverLetter(proposalId);
+                var result = field == "email" ? await _artifacts.FixEmail(proposalId) : await _artifacts.FixCoverLetter(proposalId);
                 if (!result.Ok) return new ChatApplyResult { Ok = false, Error = result.Error };
-                return new ChatApplyResult { Ok = true, Summary = $"Cover letter regenerated — score {result.CoverLetterScore}%.", ArtifactsResult = result };
+                var summary = field == "email"
+                    ? $"Email regenerated — score {result.EmailScore}%."
+                    : $"Cover letter regenerated — score {result.CoverLetterScore}%.";
+                return new ChatApplyResult { Ok = true, Summary = summary, ArtifactsResult = result };
             }
 
             case "suggest_portfolio_project":
@@ -192,15 +207,15 @@ public class ArtifactChatService
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private async Task<ArtifactChatMessage> SaveMessage(Guid proposalId, string role, string content, string? actionsJson)
+    private async Task<ArtifactChatMessage> SaveMessage(Guid proposalId, string role, string content, string? actionsJson, string field = "coverLetter")
     {
         var msg = new ArtifactChatMessage { ProposalId = proposalId, Role = role, Content = content, ActionsJson = actionsJson };
         var cs = _settings.ConnectionString;
         await using var c = new NpgsqlConnection(cs);
         await c.OpenAsync();
         await c.ExecuteAsync(
-            "INSERT INTO artifact_chat_messages (id, proposal_id, role, content, actions_json, created_at) VALUES (@Id, @ProposalId, @Role, @Content, @ActionsJson, @CreatedAt)",
-            msg);
+            "INSERT INTO artifact_chat_messages (id, proposal_id, role, content, actions_json, created_at, field) VALUES (@Id, @ProposalId, @Role, @Content, @ActionsJson, @CreatedAt, @Field)",
+            new { msg.Id, msg.ProposalId, msg.Role, msg.Content, msg.ActionsJson, msg.CreatedAt, Field = field });
         return msg;
     }
 
@@ -257,6 +272,88 @@ Return ONLY valid JSON, no markdown fences, no commentary outside the JSON:
             {
                 sb.AppendLine("FLAGGED ISSUES:");
                 foreach (var r in existing.CoverLetterScoreReasons) sb.AppendLine($"- {r}");
+            }
+        }
+
+        sb.AppendLine("\n## PORTFOLIO MATCH STATE");
+        if (matchInfos.Count == 0)
+        {
+            sb.AppendLine("No portfolio project cleared the match threshold for this job.");
+        }
+        else
+        {
+            foreach (var m in matchInfos)
+            {
+                sb.AppendLine($"- \"{m.Project.Title}\" (id={m.Project.Id}) — industry: {m.Project.Industry}, tags: {string.Join(", ", m.Project.Tags)}, tier: {m.Tier}, score: {Math.Round(m.CombinedScore * 100)}%");
+            }
+        }
+
+        if (history.Count > 0)
+        {
+            sb.AppendLine("\n## RECENT CHAT HISTORY");
+            foreach (var h in history)
+                sb.AppendLine($"{h.Role}: {h.Content}");
+        }
+
+        sb.AppendLine("\n## BHANU'S MESSAGE");
+        sb.AppendLine(userMessage);
+
+        return sb.ToString();
+    }
+
+    // ── Email chat prompts — independent of the cover letter's, own framing ────
+
+    private static string BuildEmailSystemPrompt() => @"You are coaching Bhanu, a freelance developer, on how to improve one specific Upwork proposal's EMAIL (the commercial follow-up that closes toward a call — not the cover letter) and its portfolio matching. You are having a conversation, not writing the email yourself.
+
+You will be given: the job post, the current email (subject + body), its quality score and flagged issues, the portfolio projects that were matched (with match tier/score), and recent chat history.
+
+Your reply must be grounded in the specific job post and email given — never generic advice. When you recommend a concrete fix, always offer it as a structured action so Bhanu can apply it with one click; never say ""I've updated X"" or ""I've added Y"" — you never write to anything directly.
+
+Return ONLY valid JSON, no markdown fences, no commentary outside the JSON:
+{
+  ""reply"": ""your conversational response as plain text"",
+  ""actions"": [
+    { ""type"": ""regenerate"", ""label"": ""Regenerate email"" },
+    { ""type"": ""suggest_portfolio_project"", ""label"": ""Draft new portfolio project: <title>"", ""title"": ""..."", ""industry"": ""..."", ""tags"": [""...""], ""problem"": ""..."", ""solution"": ""..."", ""techStack"": ""...""},
+    { ""type"": ""retag_project"", ""label"": ""Retag <project title> as <industry>"", ""projectId"": ""<guid from context>"", ""newTags"": [""...""], ""newIndustry"": ""...""}
+  ]
+}
+""actions"" is optional — omit it (empty array) when you're just answering a question with no concrete change to propose. Only emit ""retag_project"" with a projectId that was actually given to you in context. Never invent a project id. The email must never mention pricing or rates — if Bhanu asks for that, explain it's intentionally left out of this artifact rather than proposing it.";
+
+    private static string BuildEmailUserTurn(
+        Proposal proposal,
+        ProposalCompanyContext? company,
+        ArtifactsResult existing,
+        List<PortfolioService.PortfolioMatchInfo> matchInfos,
+        List<ArtifactChatMessage> history,
+        string userMessage)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## JOB POST");
+        if (!string.IsNullOrWhiteSpace(proposal.JobPostHeadline)) sb.AppendLine($"Headline: {proposal.JobPostHeadline}");
+        sb.AppendLine(proposal.JobPostBody);
+
+        if (company != null && !string.IsNullOrWhiteSpace(company.Industry))
+            sb.AppendLine($"\nCLIENT INDUSTRY: {company.Industry}");
+
+        sb.AppendLine("\n## CURRENT EMAIL");
+        if (existing.Ok && !string.IsNullOrWhiteSpace(existing.EmailBody))
+        {
+            sb.AppendLine($"Subject: {existing.EmailSubject}");
+            sb.AppendLine($"Body:\n{existing.EmailBody}");
+        }
+        else
+        {
+            sb.AppendLine("(none generated yet)");
+        }
+
+        if (existing.EmailScore.HasValue)
+        {
+            sb.AppendLine($"\n## QUALITY SCORE: {existing.EmailScore}%");
+            if (existing.EmailScoreReasons?.Count > 0)
+            {
+                sb.AppendLine("FLAGGED ISSUES:");
+                foreach (var r in existing.EmailScoreReasons) sb.AppendLine($"- {r}");
             }
         }
 

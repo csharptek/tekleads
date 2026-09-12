@@ -79,6 +79,13 @@ public class ArtifactsController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpPost("{proposalId}/fix-email")]
+    public async Task<IActionResult> FixEmail(Guid proposalId)
+    {
+        try { var r = await _svc.FixEmail(proposalId); return r.Ok ? Ok(r) : BadRequest(new { error = r.Error }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     [HttpPost("{proposalId}/generate/followup1")]
     public async Task<IActionResult> GenerateFollowUp1(Guid proposalId, [FromBody] CustomPromptRequest? req = null)
     {
@@ -99,7 +106,9 @@ public class ArtifactsController : ControllerBase
         try
         {
             var (ok, error, score, reasons) = await _svc.SaveArtifact(proposalId, req.Field, req.Value ?? "");
-            return ok ? Ok(new { ok, coverLetterScore = score, coverLetterScoreReasons = reasons }) : BadRequest(new { error });
+            // Generic score/scoreReasons — the frontend already knows which field it saved
+            // and maps this into that field's own score state (coverLetterScore, emailScore, ...).
+            return ok ? Ok(new { ok, score, scoreReasons = reasons }) : BadRequest(new { error });
         }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }

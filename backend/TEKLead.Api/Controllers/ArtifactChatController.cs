@@ -46,6 +46,39 @@ public class ArtifactChatController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    // ── Email coaching chat — separate thread/endpoints, cover-letter ones above untouched ──
+
+    [HttpGet("{proposalId}/chat/email")]
+    public async Task<IActionResult> GetEmailHistory(Guid proposalId)
+    {
+        var history = await _chat.GetHistory(proposalId, "email");
+        return Ok(history.Select(ToDto));
+    }
+
+    [HttpPost("{proposalId}/chat/email")]
+    public async Task<IActionResult> SendEmailMessage(Guid proposalId, [FromBody] ChatSendRequest req)
+    {
+        try
+        {
+            var res = await _chat.SendMessage(proposalId, req.Message ?? "", "email");
+            if (!res.Ok) return BadRequest(new { error = res.Error });
+            return Ok(ToDto(res.Message!));
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    [HttpPost("{proposalId}/chat/email/apply-action")]
+    public async Task<IActionResult> ApplyEmailAction(Guid proposalId, [FromBody] ChatAction action)
+    {
+        try
+        {
+            var res = await _chat.ApplyAction(proposalId, action, "email");
+            if (!res.Ok) return BadRequest(new { error = res.Error });
+            return Ok(new { ok = true, summary = res.Summary, artifactsResult = res.ArtifactsResult, project = res.Project });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     private static object ToDto(ArtifactChatMessage m) => new
     {
         id = m.Id,

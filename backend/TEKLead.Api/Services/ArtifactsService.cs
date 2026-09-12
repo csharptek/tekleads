@@ -43,6 +43,11 @@ public class ArtifactsResult
     // after generation/regeneration. Null when never scored (e.g. older saved letters).
     public int? CoverLetterScore { get; set; }
     public List<string> CoverLetterScoreReasons { get; set; } = new();
+
+    // Email quality score — same idea as CoverLetterScore, stored separately in
+    // artifact_scores (field="email") rather than on the proposals table.
+    public int? EmailScore { get; set; }
+    public List<string> EmailScoreReasons { get; set; } = new();
 }
 
 public class ArtifactsService
@@ -95,6 +100,19 @@ public class ArtifactsService
         {
             try { await c.ExecuteAsync(m); } catch { }
         }
+
+        // Generic per-artifact-type score store — used for artifact types beyond the
+        // cover letter (which keeps its own dedicated columns above, untouched).
+        // One row per (proposal, field); upserted on every score/re-score.
+        await c.ExecuteAsync(@"
+            CREATE TABLE IF NOT EXISTS artifact_scores (
+                proposal_id UUID NOT NULL,
+                field TEXT NOT NULL,
+                score INT NOT NULL,
+                reasons_json TEXT NOT NULL DEFAULT '[]',
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (proposal_id, field)
+            )");
     }
 
     public async Task<ArtifactsResult> GetExisting(Guid proposalId)
@@ -112,6 +130,8 @@ public class ArtifactsService
         if (row == null || string.IsNullOrEmpty((string?)row.artifact_cover_letter))
             return new ArtifactsResult { Ok = false, Error = "No artifacts generated yet." };
 
+        var (emailScore, emailScoreReasons) = await GetArtifactScore(c, proposalId, "email");
+
         return new ArtifactsResult
         {
             Ok = true,
@@ -128,7 +148,36 @@ public class ArtifactsService
             CoverLetterScoreReasons = string.IsNullOrWhiteSpace((string?)row.artifact_cover_letter_score_reasons)
                 ? new List<string>()
                 : (JsonSerializer.Deserialize<List<string>>((string)row.artifact_cover_letter_score_reasons) ?? new List<string>()),
+            EmailScore = emailScore,
+            EmailScoreReasons = emailScoreReasons,
         };
+    }
+
+    /// <summary>Reads one (proposal, field) row from the generic artifact_scores table. Additive — used for artifact types other than the cover letter.</summary>
+    private static async Task<(int? score, List<string> reasons)> GetArtifactScore(NpgsqlConnection c, Guid proposalId, string field)
+    {
+        var row = await c.QuerySingleOrDefaultAsync<dynamic>(
+            "SELECT score, reasons_json FROM artifact_scores WHERE proposal_id=@id AND field=@field",
+            new { id = proposalId, field });
+        if (row == null) return (null, new List<string>());
+        List<string> reasons;
+        try { reasons = JsonSerializer.Deserialize<List<string>>((string)row.reasons_json) ?? new(); }
+        catch { reasons = new(); }
+        return ((int)row.score, reasons);
+    }
+
+    /// <summary>Upserts one (proposal, field) row in the generic artifact_scores table.</summary>
+    private async Task SaveArtifactScore(Guid proposalId, string field, int score, List<string> reasons)
+    {
+        var cs = _settings.ConnectionString;
+        await using var conn = new NpgsqlConnection(cs);
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(@"
+            INSERT INTO artifact_scores (proposal_id, field, score, reasons_json, updated_at)
+            VALUES (@id, @field, @score, @reasons, NOW())
+            ON CONFLICT (proposal_id, field) DO UPDATE SET
+                score = EXCLUDED.score, reasons_json = EXCLUDED.reasons_json, updated_at = NOW()",
+            new { id = proposalId, field, score, reasons = JsonSerializer.Serialize(reasons) });
     }
 
     public async Task<ArtifactsResult> Generate(Guid proposalId, string? providerOverride = null)
@@ -357,11 +406,103 @@ Return ONLY the revised cover letter text — same format as the structure rules
         var prompt = customPrompt ?? GetPrompt(savedPrompt, EmailPrompt);
         var raw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, prompt, context, forceLinkInBody: false);
         var (subject, body) = ParseEmail(raw);
+        var (emailScore, emailScoreReasons) = await ScoreEmail(proposal!, body);
         var linkBlock = BuildLinkBlocks(portfolioItems);
         if (linkBlock != null) body = body.TrimEnd() + "\n\n" + linkBlock;
         await SaveField(proposalId, "artifact_email_subject", subject);
         await SaveField(proposalId, "artifact_email_body", body);
-        return new ArtifactsResult { Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow, UsedProjects = matchInfos.Select(ToUsedItem).ToList() };
+        await SaveArtifactScore(proposalId, "email", emailScore, emailScoreReasons);
+        return new ArtifactsResult {
+            Ok = true, EmailSubject = subject, EmailBody = body, GeneratedAt = DateTime.UtcNow,
+            UsedProjects = matchInfos.Select(ToUsedItem).ToList(),
+            EmailScore = emailScore, EmailScoreReasons = emailScoreReasons,
+        };
+    }
+
+    /// <summary>
+    /// Manual "Fix Issues" for the proposal email — mirrors FixCoverLetter's 2-pass
+    /// regenerate-and-keep-best loop, but for the Email artifact's own rules/prompt.
+    /// Independent method: does not touch FixCoverLetter or its behavior.
+    /// </summary>
+    public async Task<ArtifactsResult> FixEmail(Guid proposalId)
+    {
+        var (proposal, aoEndpoint, aoKey, aoDeployment, portfolioItems, settings, err, company, matchInfos) = await GetContext(proposalId, null);
+        if (err != null) return Fail(err);
+
+        var existing = await GetExisting(proposalId);
+        if (!existing.Ok || string.IsNullOrWhiteSpace(existing.EmailBody))
+            return Fail("No email to fix yet — generate one first.");
+
+        var issues = existing.EmailScoreReasons ?? new List<string>();
+        if (issues.Count == 0)
+            return existing; // nothing flagged — nothing to fix
+
+        var context = BuildContext(proposal!, portfolioItems, company);
+        var savedPrompt = settings.GetValueOrDefault(SettingKeys.ArtifactEmailPrompt, "");
+        var basePrompt = GetPrompt(savedPrompt, EmailPrompt);
+
+        var bestSubject = existing.EmailSubject;
+        var bestBody = StripLinkBlock(existing.EmailBody);
+        var bestScore = existing.EmailScore ?? 0;
+        var bestReasons = issues;
+
+        const int maxAttempts = 2;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            string candidateRaw;
+            try
+            {
+                var fixPrompt = BuildEmailFixPrompt(basePrompt, bestSubject, bestBody, bestReasons);
+                candidateRaw = await CallAI(aoEndpoint!, aoKey!, aoDeployment!, fixPrompt, context, forceLinkInBody: false);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Email fix pass failed for {0}", proposalId);
+                break;
+            }
+
+            var (candSubject, candBody) = ParseEmail(candidateRaw);
+            var (candScore, candReasons) = await ScoreEmail(proposal!, candBody);
+            if (candScore > bestScore)
+            {
+                bestSubject = candSubject;
+                bestBody = candBody;
+                bestScore = candScore;
+                bestReasons = candReasons;
+            }
+            if (candReasons.Count == 0 || candScore <= bestScore) break;
+        }
+
+        var linkBlock = BuildLinkBlocks(portfolioItems);
+        var finalBody = linkBlock != null ? bestBody.TrimEnd() + "\n\n" + linkBlock : bestBody;
+        await SaveField(proposalId, "artifact_email_subject", bestSubject);
+        await SaveField(proposalId, "artifact_email_body", finalBody);
+        await SaveArtifactScore(proposalId, "email", bestScore, bestReasons);
+        return new ArtifactsResult {
+            Ok = true, EmailSubject = bestSubject, EmailBody = finalBody, GeneratedAt = DateTime.UtcNow,
+            UsedProjects = matchInfos.Select(ToUsedItem).ToList(),
+            EmailScore = bestScore, EmailScoreReasons = bestReasons,
+        };
+    }
+
+    private static string BuildEmailFixPrompt(string basePrompt, string currentSubject, string currentBody, List<string> issues)
+    {
+        var issuesText = string.Join("\n", issues.Select(i => $"- {i}"));
+        return basePrompt + $@"
+
+REVISION MODE — READ CAREFULLY:
+A previous draft of this exact proposal email was reviewed and specific problems were flagged below. Revise it to fix EVERY flagged issue while keeping everything that already works — do not throw away good, JD-grounded content just to change something, and do not introduce a new violation of any rule above while fixing these.
+
+PREVIOUS SUBJECT:
+{currentSubject}
+
+PREVIOUS BODY:
+{currentBody}
+
+FLAGGED ISSUES TO FIX:
+{issuesText}
+
+Return ONLY valid JSON in the exact same {{""subject"": ""..."", ""body"": ""...""}} format as the structure rules above — no commentary, no markdown fences.";
     }
 
     public async Task<ArtifactsResult> GenerateFollowUp1(Guid proposalId, string? customPrompt = null, List<Guid>? portfolioIds = null, string? providerOverride = null)
@@ -633,6 +774,92 @@ Return ONLY JSON: {""score"": <0-100>, ""issues"": [""short reason"", ...]} — 
         return (overall, finalReasons);
     }
 
+    // ── Email quality scoring — independent of ScoreCoverLetter, own rules ─────
+    // Mirrors the pattern (deterministic rule checks + one AI grading call, 50/50)
+    // but against EmailPrompt()'s own rules, not the cover letter's.
+    private static readonly string[] ScoreEmailBannedPhrases =
+    {
+        "great fit", "passionate", "i'd love to", "excited", "i believe", "challenging",
+        "i will", "i am", "i have", "i'd be", "i can help", "csharptek",
+    };
+
+    private async Task<(int score, List<string> reasons)> ScoreEmail(Proposal proposal, string emailBodyText)
+    {
+        var reasons = new List<string>();
+        var text = emailBodyText ?? "";
+        var lower = text.ToLowerInvariant();
+        int checks = 0, passed = 0;
+
+        var firstWordMatch = System.Text.RegularExpressions.Regex.Match(text.TrimStart(), @"^[A-Za-z']+");
+        var firstWord = firstWordMatch.Success ? firstWordMatch.Value : "";
+        checks++;
+        // First real word after the "Hi [name]," opener shouldn't be "I" either —
+        // check the first word of the second line/sentence, not the greeting itself.
+        var afterGreeting = System.Text.RegularExpressions.Regex.Replace(text.TrimStart(), @"^Hi[^,\n]*,?\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var hookFirstWordMatch = System.Text.RegularExpressions.Regex.Match(afterGreeting.TrimStart(), @"^[A-Za-z']+");
+        var hookFirstWord = hookFirstWordMatch.Success ? hookFirstWordMatch.Value : firstWord;
+        if (!string.Equals(hookFirstWord, "I", StringComparison.OrdinalIgnoreCase)) passed++;
+        else reasons.Add("Hook opens with \"I\" — banned opening word.");
+
+        checks++;
+        var hitBanned = ScoreEmailBannedPhrases.FirstOrDefault(p => lower.Contains(p));
+        if (hitBanned == null) passed++;
+        else reasons.Add($"Contains banned filler phrase: \"{hitBanned}\".");
+
+        checks++;
+        var hasPricing = System.Text.RegularExpressions.Regex.IsMatch(lower, @"\$\s?\d|\d+\s?(usd|per hour|/hr|/hour)");
+        if (!hasPricing) passed++;
+        else reasons.Add("Mentions pricing/rate numbers — email must not discuss cost.");
+
+        checks++;
+        if (!lower.Contains("bhanu")) passed++;
+        else reasons.Add("Names \"Bhanu\" — should stay unnamed (system appends the signature).");
+
+        var wordCount = text.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
+        checks++;
+        if (wordCount >= 120 && wordCount <= 220) passed++;
+        else reasons.Add($"Length is {wordCount} words — target is 150-200.");
+
+        var ruleScore = checks > 0 ? (int)Math.Round(100.0 * passed / checks) : 100;
+
+        var jdText = $"{proposal.JobPostHeadline} {proposal.JobPostBody}";
+        var aiScore = ruleScore;
+        try
+        {
+            const string gradingPrompt = @"You are a strict reviewer grading a freelance proposal EMAIL against the job post it was written for.
+Score 0-100 on how well the email is grounded in THIS SPECIFIC job post — the hook should mirror a real, specific pain point stated in the job post (not a generic template), the credibility paragraph's past-project reference should read specific and relevant (not vague filler), and the call-to-action should tie to something concrete from this email/job post rather than a generic ""let's hop on a call"".
+This email must NOT discuss pricing, rates, or cost — flag it if it does.
+Return ONLY JSON: {""score"": <0-100>, ""issues"": [""short reason"", ...]} — issues is up to 4 short, specific problems (empty array if none). No markdown, no commentary.";
+            var userMsg = $"JOB POST:\n{jdText}\n\nEMAIL BODY:\n{text}";
+            var gradingSettings = new Dictionary<string, string>(await _settings.GetAll()) { [SettingKeys.AiProvider] = "claude" };
+            var messages = new List<object>
+            {
+                new { role = "system", content = gradingPrompt },
+                new { role = "user", content = userMsg },
+            };
+            var raw = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, gradingSettings, messages, 500);
+            var clean = raw.Trim();
+            if (clean.StartsWith("```")) { var i = clean.IndexOf('\n'); clean = clean[(i + 1)..]; }
+            if (clean.EndsWith("```")) clean = clean[..clean.LastIndexOf("```")];
+            var doc = JsonDocument.Parse(clean.Trim());
+            aiScore = doc.RootElement.GetProperty("score").GetInt32();
+            if (doc.RootElement.TryGetProperty("issues", out var issuesEl))
+                foreach (var issue in issuesEl.EnumerateArray())
+                {
+                    var s = issue.GetString();
+                    if (!string.IsNullOrWhiteSpace(s)) reasons.Add(s);
+                }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Email AI grading failed for {0}, using rule score only", proposal.Id);
+        }
+
+        var overallEmail = (int)Math.Round(0.5 * ruleScore + 0.5 * aiScore);
+        var finalEmailReasons = reasons.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct().Take(6).ToList();
+        return (overallEmail, finalEmailReasons);
+    }
+
     private static readonly Dictionary<string, string> ArtifactFieldMap = new()
     {
         { "coverLetter",      "artifact_cover_letter"       },
@@ -661,6 +888,19 @@ Return ONLY JSON: {""score"": <0-100>, ""issues"": [""short reason"", ...]} — 
             {
                 var (score, reasons) = await ScoreCoverLetter(proposal, value);
                 await SaveCoverLetterScore(proposalId, score, reasons);
+                return (true, "", score, reasons);
+            }
+        }
+
+        // Same idea for a manual edit to the email body — re-score so Fix Issues and
+        // the email coaching chat read the edited text's actual score, not a stale one.
+        if (field == "emailBody")
+        {
+            var proposal = await _proposals.GetById(proposalId);
+            if (proposal != null)
+            {
+                var (score, reasons) = await ScoreEmail(proposal, value);
+                await SaveArtifactScore(proposalId, "email", score, reasons);
                 return (true, "", score, reasons);
             }
         }
