@@ -98,8 +98,8 @@ public class ArtifactsController : ControllerBase
     {
         try
         {
-            var (ok, error) = await _svc.SaveArtifact(proposalId, req.Field, req.Value ?? "");
-            return ok ? Ok(new { ok }) : BadRequest(new { error });
+            var (ok, error, score, reasons) = await _svc.SaveArtifact(proposalId, req.Field, req.Value ?? "");
+            return ok ? Ok(new { ok, coverLetterScore = score, coverLetterScoreReasons = reasons }) : BadRequest(new { error });
         }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }

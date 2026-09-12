@@ -645,12 +645,27 @@ Return ONLY JSON: {""score"": <0-100>, ""issues"": [""short reason"", ...]} — 
         { "followUp2Body",    "artifact_followup2_body"     },
     };
 
-    public async Task<(bool ok, string error)> SaveArtifact(Guid proposalId, string field, string value)
+    public async Task<(bool ok, string error, int? coverLetterScore, List<string>? coverLetterScoreReasons)> SaveArtifact(Guid proposalId, string field, string value)
     {
         if (!ArtifactFieldMap.TryGetValue(field, out var column))
-            return (false, $"Unknown artifact field: {field}");
+            return (false, $"Unknown artifact field: {field}", null, null);
         await SaveField(proposalId, column, value);
-        return (true, "");
+
+        // A manual edit to the cover letter becomes the version everything downstream
+        // (Fix Issues, the coaching chat, the next "Redo") reads as current — re-score
+        // it right away so the score badge/flagged issues never go stale after a save.
+        if (field == "coverLetter")
+        {
+            var proposal = await _proposals.GetById(proposalId);
+            if (proposal != null)
+            {
+                var (score, reasons) = await ScoreCoverLetter(proposal, value);
+                await SaveCoverLetterScore(proposalId, score, reasons);
+                return (true, "", score, reasons);
+            }
+        }
+
+        return (true, "", null, null);
     }
 
     // ── Prompts ───────────────────────────────────────────────────────────────

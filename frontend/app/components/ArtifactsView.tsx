@@ -169,8 +169,11 @@ export default function ArtifactsView({
     const value = editDraft[field] ?? "";
     setSaving(s => ({ ...s, [field]: true }));
     try {
-      await (api as any).patch(`/api/artifacts/${proposalId}/artifact`, { field, value });
-      setArtifacts(a => ({ ...a, [stateKey]: value }));
+      const res: any = await (api as any).patch(`/api/artifacts/${proposalId}/artifact`, { field, value });
+      setArtifacts(a => ({
+        ...a, [stateKey]: value,
+        ...(field === "coverLetter" ? { coverLetterScore: res?.coverLetterScore, coverLetterScoreReasons: res?.coverLetterScoreReasons } : {}),
+      }));
       setEditing(e => ({ ...e, [field]: false }));
     } catch (e: any) {
       alert(`Save failed: ${e.message}`);
