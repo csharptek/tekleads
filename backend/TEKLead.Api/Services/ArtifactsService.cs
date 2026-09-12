@@ -496,8 +496,8 @@ Format: ""Done = [specific deliverable they can test/verify]""
 Each bullet = one concrete technical decision with named technologies.
 No generic bullets like ""write clean code"" or ""ensure real-money correctness"". Instead, e.g.: ""Idempotent command handlers with Postgres advisory locks for all ledger mutations"" — named tech + specific decision.
 
-5. QUESTIONS (2 max)
-Smart, specific questions tied to details in the job post. Not generic (""What is your timeline?"" is banned).
+5. QUESTIONS (3 max)
+Each question must trace to a SPECIFIC phrase or requirement in THIS job post — quote or closely paraphrase the exact thing they mentioned (a named tool, a stated pain point like ""troubleshoot issues"" or ""optimize for accuracy"", a specific deliverable). If a question could be copy-pasted into a different job post unchanged, it's too generic — rewrite it or drop it. Generic filler (""What is your timeline?"", ""Which LLM provider?"" asked with no JD basis) is banned.
 
 6. SIGN-OFF (1 line, no name — this goes out under different Upwork accounts, never sign a specific person's name)
 ""I'm available — 15+ yrs, 40+ projects, [relevant domain]. Available [timezone overlap] overlap with [client timezone].""
