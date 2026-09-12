@@ -271,6 +271,11 @@ export default function ArtifactsView({
           industry: p.Industry ?? p.industry,
           youtubeLinks: p.YoutubeLinks ?? p.youtubeLinks ?? "",
           hasYoutubeLink: !!(p.YoutubeLinks ?? p.youtubeLinks),
+          semanticScore: p.SemanticScore ?? p.semanticScore,
+          combinedScore: p.CombinedScore ?? p.combinedScore,
+          tier: p.Tier ?? p.tier,
+          industryMatch: p.IndustryMatch ?? p.industryMatch,
+          matchedTags: p.MatchedTags ?? p.matchedTags ?? [],
         })));
         setCheckedIds(new Set(ctx.portfolioItems.map((p: any) => p.Id ?? p.id).filter(Boolean)));
       }

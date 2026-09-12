@@ -329,7 +329,7 @@ public class ArtifactsService
         {
             industry        = company?.Industry ?? "(none)",
             portfolioCount  = portfolioItems.Count,
-            portfolioItems  = matchInfos.Select(m => new { m.Project.Id, m.Project.Title, m.Project.Industry, m.Project.YoutubeLinks, m.SemanticScore, m.CombinedScore, m.Tier }),
+            portfolioItems  = matchInfos.Select(m => new { m.Project.Id, m.Project.Title, m.Project.Industry, m.Project.YoutubeLinks, m.SemanticScore, m.CombinedScore, m.Tier, m.IndustryMatch, m.MatchedTags }),
             hasYoutubeLinks = portfolioItems.Any(p => !string.IsNullOrWhiteSpace(p.YoutubeLinks)),
             fullContext     = context
         };
