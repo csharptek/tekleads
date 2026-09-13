@@ -20,6 +20,7 @@ public class JdQualityService
     // Built-in defaults — work out of the box, no manual settings entry required.
     public const int DefaultMinDurationWeeks = 4;
     public const decimal DefaultMinBudget = 1000m;
+    public const decimal DefaultHourlyRateUsd = 25m;
 
     public JdQualityService(SettingsService settings, IHttpClientFactory http, ILogger<JdQualityService> log)
     {
@@ -52,6 +53,9 @@ public class JdQualityService
                 analyzed_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 UNIQUE (entity_type, entity_id)
             )");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS estimated_hours_min NUMERIC");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS estimated_hours_max NUMERIC");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS estimate_notes TEXT NOT NULL DEFAULT ''");
         _log.LogInformation("JdQuality schema OK.");
     }
 
@@ -93,6 +97,8 @@ public class JdQualityService
                    budget_amount AS ""BudgetAmount"", timeline_pressure AS ""TimelinePressure"",
                    has_screening_questions AS ""HasScreeningQuestions"", project_type AS ""ProjectType"",
                    existing_subtype AS ""ExistingSubtype"", recommendation AS ""Recommendation"",
+                   estimated_hours_min AS ""EstimatedHoursMin"", estimated_hours_max AS ""EstimatedHoursMax"",
+                   estimate_notes AS ""EstimateNotes"",
                    analyzed_at AS ""AnalyzedAt""
             FROM jd_scores WHERE entity_type=@t AND entity_id=@i",
             new { t = entityType, i = entityId });
@@ -110,10 +116,10 @@ public class JdQualityService
         await c.ExecuteAsync(@"
             INSERT INTO jd_scores (id, entity_type, entity_id, score, duration_signal, budget_mentioned,
                 budget_amount, timeline_pressure, has_screening_questions, project_type, existing_subtype,
-                recommendation, analyzed_at)
+                recommendation, estimated_hours_min, estimated_hours_max, estimate_notes, analyzed_at)
             VALUES (@Id, @EntityType, @EntityId, @Score, @DurationSignal, @BudgetMentioned,
                 @BudgetAmount, @TimelinePressure, @HasScreeningQuestions, @ProjectType, @ExistingSubtype,
-                @Recommendation, @AnalyzedAt)
+                @Recommendation, @EstimatedHoursMin, @EstimatedHoursMax, @EstimateNotes, @AnalyzedAt)
             ON CONFLICT (entity_type, entity_id) DO UPDATE SET
                 score = EXCLUDED.score,
                 duration_signal = EXCLUDED.duration_signal,
@@ -124,6 +130,9 @@ public class JdQualityService
                 project_type = EXCLUDED.project_type,
                 existing_subtype = EXCLUDED.existing_subtype,
                 recommendation = EXCLUDED.recommendation,
+                estimated_hours_min = EXCLUDED.estimated_hours_min,
+                estimated_hours_max = EXCLUDED.estimated_hours_max,
+                estimate_notes = EXCLUDED.estimate_notes,
                 analyzed_at = EXCLUDED.analyzed_at",
             r);
     }
@@ -144,7 +153,10 @@ Return JSON with exactly these fields:
   ""timeline_pressure"": ""urgent"" | ""flexible"" | ""unclear"",
   ""has_screening_questions"": true | false,
   ""project_type"": ""new_build"" | ""existing"" | ""unclear"",
-  ""existing_subtype"": ""feature_add"" | ""troubleshooting"" | null
+  ""existing_subtype"": ""feature_add"" | ""troubleshooting"" | null,
+  ""estimated_hours_min"": <number>,
+  ""estimated_hours_max"": <number>,
+  ""estimate_notes"": <short string>
 }}
 
 Rules:
@@ -153,7 +165,9 @@ Rules:
 - timeline_pressure: urgent if the client stresses a tight deadline or ASAP language; flexible if timeline is open/relaxed; unclear otherwise.
 - has_screening_questions: true if the post asks the applicant to answer specific questions in their proposal.
 - project_type: new_build if this is a from-scratch project; existing if it's about an existing/live product or codebase.
-- existing_subtype: only set when project_type is ""existing"" — feature_add if adding new functionality, troubleshooting if fixing bugs/issues/errors. Null otherwise.";
+- existing_subtype: only set when project_type is ""existing"" — feature_add if adding new functionality, troubleshooting if fixing bugs/issues/errors. Null otherwise.
+- estimated_hours_min / estimated_hours_max: your best-effort effort estimate to actually deliver everything scoped in this JD, under these assumptions: (1) exactly ONE person does all of it — no team; (2) that person is an experienced full-stack developer who uses AI coding assistants (Claude Code / Cursor-style tools) for coding, debugging, and UI/UX design, so implementation, boilerplate, and design mockups go noticeably faster than pure manual work — but requirements gathering, client communication, testing, deployment, and fixing AI-introduced bugs still take real time. Base the range on the actual scope described (number of screens/pages, integrations, auth, admin panels, data models, third-party APIs, etc.) — do not default to a generic number. Give a realistic min-max spread, minimum 2 hours even for trivial asks.
+- estimate_notes: ONE short sentence (max ~20 words) naming the main scope drivers behind the estimate (e.g. ""auth + admin panel + 2 API integrations"").";
 
         var messages = new List<object>
         {
@@ -161,7 +175,7 @@ Rules:
             new { role = "user", content = prompt }
         };
 
-        var raw = await LlmClient.ChatAsync(_http, settings, messages, maxTokens: 500);
+        var raw = await LlmClient.ChatAsync(_http, settings, messages, maxTokens: 700);
         var cleaned = raw.Trim();
         if (cleaned.StartsWith("```"))
         {
@@ -224,6 +238,9 @@ Rules:
             ProjectType = e.ProjectType,
             ExistingSubtype = e.ExistingSubtype,
             Recommendation = recommendation,
+            EstimatedHoursMin = e.EstimatedHoursMin,
+            EstimatedHoursMax = e.EstimatedHoursMax,
+            EstimateNotes = e.EstimateNotes,
             AnalyzedAt = DateTime.UtcNow,
         };
     }
@@ -242,6 +259,9 @@ Rules:
         public string ProjectType { get; set; } = "";
         public string? ExistingSubtype { get; set; }
         public string Recommendation { get; set; } = "";
+        public double? EstimatedHoursMin { get; set; }
+        public double? EstimatedHoursMax { get; set; }
+        public string EstimateNotes { get; set; } = "";
         public DateTime AnalyzedAt { get; set; }
 
         public JdScoreResult ToResult() => new()
@@ -250,6 +270,7 @@ Rules:
             DurationSignal = DurationSignal, BudgetMentioned = BudgetMentioned, BudgetAmount = BudgetAmount,
             TimelinePressure = TimelinePressure, HasScreeningQuestions = HasScreeningQuestions,
             ProjectType = ProjectType, ExistingSubtype = ExistingSubtype, Recommendation = Recommendation,
+            EstimatedHoursMin = EstimatedHoursMin, EstimatedHoursMax = EstimatedHoursMax, EstimateNotes = EstimateNotes,
             AnalyzedAt = AnalyzedAt,
         };
     }

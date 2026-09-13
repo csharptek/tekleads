@@ -130,6 +130,11 @@ public static class SettingKeys
     public const string JdMinDurationWeeks         = "jd_min_duration_weeks";
     public const string JdMinBudget                = "jd_min_budget";
 
+    // Hourly rate used to turn the AI-estimated hours into a cost estimate on
+    // the JD Quality modal. Default 25 pre-filled by SettingsController — no
+    // manual seeding required.
+    public const string JdHourlyRateUsd            = "jd_hourly_rate_usd";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -154,7 +159,7 @@ public static class SettingKeys
         ApifyApiKey, JobScraperKeywords, EmailSendersJson,
         JobLeadEmailPrompt, JobLeadFollowUp1Prompt, JobLeadFollowUp2Prompt,
         GmailSmtpUser, GmailSmtpAppPassword,
-        JdMinDurationWeeks, JdMinBudget,
+        JdMinDurationWeeks, JdMinBudget, JdHourlyRateUsd,
     };
 
     public static readonly HashSet<string> Secrets = new()

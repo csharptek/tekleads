@@ -298,6 +298,56 @@ function PortfolioMatchThresholdCard() {
   );
 }
 
+// ── JD Quality Score: hourly rate used for the time/cost estimate shown on
+// the JD modal. Self-contained, own load/save — mirrors PortfolioMatchThresholdCard.
+function JdEstimateSettingsCard() {
+  const KEY = "jd_hourly_rate_usd";
+  const [rate, setRate] = useState("25");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get<{ values: Record<string, string> }>("/api/settings")
+      .then(d => setRate(d.values?.[KEY] || "25"))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await api.post("/api/settings", { values: { [KEY]: rate } });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch { /* non-critical */ }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>JD Time/Cost Estimate</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
+        Hourly rate (USD) used to turn the AI-estimated effort hours into a cost range on the JD Quality Score modal. Estimate assumes 1 freelancer using AI dev/design tools.
+      </div>
+      {loading ? (
+        <span className="spinner" />
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <input className="input" type="number" min={1} value={rate}
+            onChange={e => setRate(e.target.value)}
+            style={{ width: 100 }} />
+          <button className="btn btn-secondary btn-sm" onClick={save} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </button>
+          {saved && <span style={{ fontSize: 12, color: "var(--green)" }}>Saved</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Diag {
   connStringSet: boolean; connStringNormalized: boolean;
   dbReachable: boolean; tableExists: boolean;
@@ -706,6 +756,7 @@ export default function SettingsView() {
       )}
 
       <PortfolioMatchThresholdCard />
+      <JdEstimateSettingsCard />
 
       {/* User config — always visible */}
       <div className="card">

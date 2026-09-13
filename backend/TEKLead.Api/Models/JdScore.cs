@@ -16,6 +16,9 @@ public class JdScoreResult
     public string ProjectType { get; set; } = "unclear";          // new_build | existing | unclear
     public string? ExistingSubtype { get; set; }                  // feature_add | troubleshooting | null
     public string Recommendation { get; set; } = "";
+    public double? EstimatedHoursMin { get; set; }
+    public double? EstimatedHoursMax { get; set; }
+    public string EstimateNotes { get; set; } = "";
     public DateTime AnalyzedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -42,4 +45,13 @@ public class JdExtraction
 
     [JsonPropertyName("existing_subtype")]
     public string? ExistingSubtype { get; set; }
+
+    [JsonPropertyName("estimated_hours_min")]
+    public double? EstimatedHoursMin { get; set; }
+
+    [JsonPropertyName("estimated_hours_max")]
+    public double? EstimatedHoursMax { get; set; }
+
+    [JsonPropertyName("estimate_notes")]
+    public string EstimateNotes { get; set; } = "";
 }

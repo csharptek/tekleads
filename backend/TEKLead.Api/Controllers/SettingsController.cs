@@ -42,6 +42,8 @@ public class SettingsController : ControllerBase
                 values[SettingKeys.JdMinDurationWeeks] = JdQualityService.DefaultMinDurationWeeks.ToString();
             if (string.IsNullOrEmpty(values[SettingKeys.JdMinBudget]))
                 values[SettingKeys.JdMinBudget] = JdQualityService.DefaultMinBudget.ToString("0");
+            if (string.IsNullOrEmpty(values[SettingKeys.JdHourlyRateUsd]))
+                values[SettingKeys.JdHourlyRateUsd] = JdQualityService.DefaultHourlyRateUsd.ToString("0");
 
             return Ok(new { values, isSet });
         }

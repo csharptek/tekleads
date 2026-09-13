@@ -13,6 +13,9 @@ export interface JdScoreData {
   projectType: string;
   existingSubtype: string | null;
   recommendation: string;
+  estimatedHoursMin: number | null;
+  estimatedHoursMax: number | null;
+  estimateNotes: string;
 }
 
 interface Props {
@@ -76,12 +79,18 @@ export default function JdScoreModal({ entityType, entityId, title, description,
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState<JdScoreData | null>(null);
+  const [hourlyRate, setHourlyRate] = useState(25);
 
   useEffect(() => {
     (async () => {
       try {
-        const res: any = await api.post(`/api/jd/analyze/${entityType}/${entityId}`, { title, description });
+        const [res, settings]: any[] = await Promise.all([
+          api.post(`/api/jd/analyze/${entityType}/${entityId}`, { title, description }),
+          api.get(`/api/settings`).catch(() => null),
+        ]);
         setData(res);
+        const rate = Number(settings?.values?.jd_hourly_rate_usd);
+        if (rate > 0) setHourlyRate(rate);
       } catch (e: any) {
         setError(e.message || "Failed to analyze job description.");
       } finally {
@@ -139,6 +148,18 @@ export default function JdScoreModal({ entityType, entityId, title, description,
                 </div>
               ))}
             </div>
+
+            {data.estimatedHoursMin != null && data.estimatedHoursMax != null && (
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 4 }}>
+                  Est. effort: {data.estimatedHoursMin}–{data.estimatedHoursMax} hrs · ${Math.round(data.estimatedHoursMin * hourlyRate).toLocaleString()}–${Math.round(data.estimatedHoursMax * hourlyRate).toLocaleString()}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{data.estimateNotes}</div>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
+                  Assumes 1 freelancer using AI dev/design tools · @ ${hourlyRate}/hr (Settings → JD Hourly Rate)
+                </div>
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
