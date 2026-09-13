@@ -45,6 +45,33 @@ const flagLabel = {
   },
 };
 
+const flagReason = {
+  duration: (v: string) => v === "long_term"
+    ? "JD signals an ongoing/long-term engagement — raises score."
+    : v === "short_term"
+    ? "JD reads as a one-off or short-term job — lowers score."
+    : "Couldn't tell if this is short-term or ongoing work.",
+  budget: (mentioned: boolean, amt: number | null) =>
+    mentioned && amt != null
+      ? "Client stated a budget — raises score."
+      : "No budget figure found in the JD — lowers score.",
+  timeline: (v: string) => v === "urgent"
+    ? "Client wants this done fast — can mean less negotiation room."
+    : v === "flexible"
+    ? "No pressure on timeline — usually a good sign."
+    : "JD doesn't say how urgent this is.",
+  questions: (v: boolean) => v
+    ? "Client added screening questions — signals a serious, filtered post."
+    : "No screening questions — often means a lower-effort post.",
+  type: (t: string, sub: string | null) => {
+    if (t === "new_build") return "Greenfield build — bigger scope, usually higher value.";
+    if (t === "existing" && sub === "troubleshooting") return "Bug-fix/support work — typically small, low budget.";
+    if (t === "existing" && sub === "feature_add") return "Adding a feature to an existing app — moderate scope.";
+    if (t === "existing") return "Work on an existing codebase.";
+    return "Couldn't tell if this is new or existing work.";
+  },
+};
+
 export default function JdScoreModal({ entityType, entityId, title, description, onConfirm, onCancel }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -95,18 +122,21 @@ export default function JdScoreModal({ entityType, entityId, title, description,
               <div style={{ fontSize: 13, color: "#334155" }}>{data.recommendation}</div>
             </div>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
               {[
-                flagLabel.duration(data.durationSignal),
-                flagLabel.budget(data.budgetMentioned, data.budgetAmount),
-                flagLabel.timeline(data.timelinePressure),
-                flagLabel.questions(data.hasScreeningQuestions),
-                flagLabel.type(data.projectType, data.existingSubtype),
-              ].map((label, i) => (
-                <span key={i} style={{
-                  fontSize: 12, padding: "4px 10px", borderRadius: 999,
-                  background: "#f1f5f9", color: "#334155",
-                }}>{label}</span>
+                { label: flagLabel.duration(data.durationSignal), reason: flagReason.duration(data.durationSignal) },
+                { label: flagLabel.budget(data.budgetMentioned, data.budgetAmount), reason: flagReason.budget(data.budgetMentioned, data.budgetAmount) },
+                { label: flagLabel.timeline(data.timelinePressure), reason: flagReason.timeline(data.timelinePressure) },
+                { label: flagLabel.questions(data.hasScreeningQuestions), reason: flagReason.questions(data.hasScreeningQuestions) },
+                { label: flagLabel.type(data.projectType, data.existingSubtype), reason: flagReason.type(data.projectType, data.existingSubtype) },
+              ].map(({ label, reason }, i) => (
+                <div key={i} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span title={reason} style={{
+                    fontSize: 12, padding: "4px 10px", borderRadius: 999, alignSelf: "flex-start",
+                    background: "#f1f5f9", color: "#334155", cursor: "default",
+                  }}>{label}</span>
+                  <span style={{ fontSize: 11, color: "#64748b", paddingLeft: 4 }}>{reason}</span>
+                </div>
               ))}
             </div>
 
