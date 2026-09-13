@@ -1254,6 +1254,16 @@ export default function JobLeadsView() {
           </div>
         </>
       )}
+      {jdModal && (
+        <JdScoreModal
+          entityType="job_lead"
+          entityId={jdModal.entityId}
+          title={jdModal.title}
+          description={jdModal.description}
+          onConfirm={jdModal.onConfirm}
+          onCancel={() => setJdModal(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1609,16 +1619,6 @@ function OutreachQueuePanel({ leadId, emailReady, candidates }: { leadId: string
             })}
           </div>
         </div>
-      )}
-      {jdModal && (
-        <JdScoreModal
-          entityType="job_lead"
-          entityId={jdModal.entityId}
-          title={jdModal.title}
-          description={jdModal.description}
-          onConfirm={jdModal.onConfirm}
-          onCancel={() => setJdModal(null)}
-        />
       )}
     </div>
   );
