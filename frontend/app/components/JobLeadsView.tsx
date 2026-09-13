@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { api } from "../../lib/api";
+import JdScoreModal from "./JdScoreModal";
 
 /* ─── Types (mirror backend camelCase JSON) ───────────────────────────── */
 
@@ -592,7 +593,7 @@ export default function JobLeadsView() {
     setCustomPrompts(p => ({ ...p, [type]: promptDraft }));
     savePromptToDb(type, promptDraft);
     setPromptModal(null);
-    if (type === "email") generateEmailOne(drawerId, promptDraft);
+    if (type === "email") generateEmailWithScore(drawerId, drawerLead?.jobTitle || "", drawerLead?.jobDescription || "", promptDraft);
     if (type === "followUp1") generateFollowUp(drawerId, 1, promptDraft);
     if (type === "followUp2") generateFollowUp(drawerId, 2, promptDraft);
   };
@@ -601,6 +602,15 @@ export default function JobLeadsView() {
     await api.post(`/api/job-leads/${id}/generate-email`, { provider, customPrompt });
     await refreshLead(id);
   });
+
+  const [jdModal, setJdModal] = useState<null | { entityId: string; title: string; description: string; onConfirm: () => void }>(null);
+
+  const generateEmailWithScore = (id: string, jobTitle: string, jobDescription: string, customPrompt?: string) => {
+    setJdModal({
+      entityId: id, title: jobTitle, description: jobDescription,
+      onConfirm: () => { setJdModal(null); generateEmailOne(id, customPrompt); },
+    });
+  };
 
   const generateFollowUp = (id: string, stage: 1 | 2, customPrompt?: string) => withBusy(id, async () => {
     await api.post(`/api/job-leads/${id}/generate-followup${stage}`, { provider, customPrompt });
@@ -1147,7 +1157,7 @@ export default function JobLeadsView() {
                         provider={provider} setProvider={setProvider}
                         canGenerate={!!drawerLead.contactEmail}
                         busy={busy.has(drawerLead.id)}
-                        onGenerate={() => generateEmailOne(drawerLead.id)}
+                        onGenerate={() => generateEmailWithScore(drawerLead.id, drawerLead.jobTitle, drawerLead.jobDescription)}
                         onSave={(subject, body) => saveEmailEdits(drawerLead.id, subject, body)}
                         onSend={(sender, scheduledAt, channel) => sendEmail(drawerLead.id, sender, scheduledAt, channel)}
                         onPromptClick={() => openPromptModal("email")}
@@ -1599,6 +1609,16 @@ function OutreachQueuePanel({ leadId, emailReady, candidates }: { leadId: string
             })}
           </div>
         </div>
+      )}
+      {jdModal && (
+        <JdScoreModal
+          entityType="job_lead"
+          entityId={jdModal.entityId}
+          title={jdModal.title}
+          description={jdModal.description}
+          onConfirm={jdModal.onConfirm}
+          onCancel={() => setJdModal(null)}
+        />
       )}
     </div>
   );

@@ -36,6 +36,13 @@ public class SettingsController : ControllerBase
                 values[key] = SettingKeys.Secrets.Contains(key) ? "" : v;
             }
 
+            // JD Quality thresholds: show built-in defaults pre-filled when unset,
+            // so the settings page never looks empty (no manual seeding needed).
+            if (string.IsNullOrEmpty(values[SettingKeys.JdMinDurationWeeks]))
+                values[SettingKeys.JdMinDurationWeeks] = JdQualityService.DefaultMinDurationWeeks.ToString();
+            if (string.IsNullOrEmpty(values[SettingKeys.JdMinBudget]))
+                values[SettingKeys.JdMinBudget] = JdQualityService.DefaultMinBudget.ToString("0");
+
             return Ok(new { values, isSet });
         }
         catch (Exception ex)

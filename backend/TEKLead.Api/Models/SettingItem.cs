@@ -124,6 +124,12 @@ public static class SettingKeys
     public const string GmailSmtpUser              = "gmail_smtp_user";
     public const string GmailSmtpAppPassword       = "gmail_smtp_app_password";
 
+    // JD Quality Score thresholds. Empty/unset falls back to code defaults
+    // (JdQualityService.DefaultMinDurationWeeks / DefaultMinBudget) — no manual
+    // seeding required, Settings page just shows these defaults pre-filled.
+    public const string JdMinDurationWeeks         = "jd_min_duration_weeks";
+    public const string JdMinBudget                = "jd_min_budget";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -148,6 +154,7 @@ public static class SettingKeys
         ApifyApiKey, JobScraperKeywords, EmailSendersJson,
         JobLeadEmailPrompt, JobLeadFollowUp1Prompt, JobLeadFollowUp2Prompt,
         GmailSmtpUser, GmailSmtpAppPassword,
+        JdMinDurationWeeks, JdMinBudget,
     };
 
     public static readonly HashSet<string> Secrets = new()

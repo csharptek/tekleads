@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { api } from "../../lib/api";
+import JdScoreModal from "./JdScoreModal";
 
 interface LeadOrgDetails {
   orgWebsiteUrl?: string;
@@ -483,12 +484,15 @@ export default function NewProposalView({
     finally { setSaving(false); }
   };
 
+  const [jdModal, setJdModal] = useState<null | { entityId: string; onConfirm: () => void }>(null);
+
   const handleGenerateArtifacts = async () => {
     if (!jdOnlyMode && !primaryContact) { setError("Select a primary contact first."); return; }
     if (!form.jobPostBody.trim()) { setError("Job post is required."); return; }
     let id = savedId;
     if (!id) id = await handleSave(false);
     if (!id) return;
+    const proceed = () => {
     const allEmails: string[] = [];
     const allEmailNames: string[] = [];
     const allPhones: string[] = [];
@@ -516,6 +520,8 @@ export default function NewProposalView({
       allPhoneNames,
       autoGenerate: true,
     });
+    };
+    setJdModal({ entityId: id, onConfirm: () => { setJdModal(null); proceed(); } });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -967,6 +973,16 @@ export default function NewProposalView({
         </div>
         <SaveButtons />
       </div>
+      {jdModal && (
+        <JdScoreModal
+          entityType="proposal"
+          entityId={jdModal.entityId}
+          title={form.jobPostHeadline}
+          description={form.jobPostBody}
+          onConfirm={jdModal.onConfirm}
+          onCancel={() => setJdModal(null)}
+        />
+      )}
     </div>
   );
 }
