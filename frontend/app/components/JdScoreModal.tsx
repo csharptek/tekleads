@@ -35,6 +35,7 @@ const sourceLabel = (s: string) => {
   if (s === "jd_text") return "found in job post";
   if (s === "comment") return "found in a comment";
   if (s === "signature") return "found in sign-off";
+  if (s === "testimonial") return "found in client review";
   return "not found";
 };
 
