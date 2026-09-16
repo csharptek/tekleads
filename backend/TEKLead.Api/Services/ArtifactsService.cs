@@ -1364,8 +1364,21 @@ Return only the JSON. No preamble.";
         };
 
         // Always Claude for artifacts, regardless of the global AI Provider setting.
+        // 2500 was too tight for cover letter / email prompts (long context + strict
+        // JSON/structure rules) — they were hitting stop_reason=max_tokens with zero
+        // text emitted. WhatsApp (shorter, unconstrained) never hit it. Raised headroom.
         var settings = new Dictionary<string, string>(await _settings.GetAll()) { [SettingKeys.AiProvider] = "claude" };
-        var text = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 2500);
+        string text;
+        try
+        {
+            text = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 4096);
+        }
+        catch (Exception ex) when (ex.Message.Contains("max_tokens"))
+        {
+            // Still ran out of budget even at 4096 — double it once instead of failing outright.
+            _log.LogWarning("CallAI: retrying with larger token budget after: {0}", ex.Message);
+            text = await TEKLead.Api.Services.Llm.LlmClient.ChatAsync(_http, settings, messages, 8192);
+        }
         text = text.Replace("**", "");
 
         // Post-inject: if context had YouTube demos but model skipped them, append
