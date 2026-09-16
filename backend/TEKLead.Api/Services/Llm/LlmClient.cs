@@ -64,11 +64,32 @@ public static class LlmClient
             messages = userMessages
         });
 
-        var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
-        var json = await resp.Content.ReadAsStringAsync();
+        // 429 (rate limit) and 529 (overloaded) are transient — Claude is now the sole
+        // provider for artifact generation, so a single unretried rate limit here means
+        // a generation silently produces nothing. Retry like CallGroq does.
+        const int maxRetries = 4;
+        string json = "";
+        for (var attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            var resp = await client.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
 
-        if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Claude {(int)resp.StatusCode}: {json}");
+            var isRetryable = resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests
+                || (int)resp.StatusCode == 529
+                || (int)resp.StatusCode >= 500;
+
+            if (isRetryable && attempt < maxRetries)
+            {
+                var delay = resp.Headers.RetryAfter?.Delta
+                    ?? TimeSpan.FromSeconds(Math.Pow(2, attempt + 1)); // 2s,4s,8s,16s fallback
+                await Task.Delay(delay);
+                continue;
+            }
+
+            json = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Claude {(int)resp.StatusCode}: {json}");
+            break;
+        }
 
         var doc = JsonDocument.Parse(json);
         var sb = new StringBuilder();
@@ -77,7 +98,14 @@ public static class LlmClient
             if (block.TryGetProperty("type", out var t) && t.GetString() == "text")
                 sb.Append(block.GetProperty("text").GetString());
         }
-        return sb.ToString();
+
+        var result = sb.ToString();
+        if (string.IsNullOrWhiteSpace(result))
+        {
+            var stopReason = doc.RootElement.TryGetProperty("stop_reason", out var sr) ? sr.GetString() : "unknown";
+            throw new Exception($"Claude returned empty output (stop_reason={stopReason}). Try regenerating.");
+        }
+        return result;
     }
 
     private static async Task<string> CallAzureOpenAI(
