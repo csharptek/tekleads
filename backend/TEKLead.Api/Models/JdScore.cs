@@ -18,12 +18,32 @@ public class JdScoreResult
     public string Recommendation { get; set; } = "";
     public string? ExtractedClientName { get; set; }
     public string? ExtractedCompanyName { get; set; }
-    public string ExtractionSource { get; set; } = "";             // jd_text | comment | signature | none
+    public List<string> ClientNameCandidates { get; set; } = new();   // every distinct name found, most-mentioned first
+    public List<string> CompanyNameCandidates { get; set; } = new();
+    public string ExtractionSource { get; set; } = "";             // jd_text | comment | signature | testimonial | none
     public string ExtractionConfidence { get; set; } = "low";      // high | low
+    public string? ContactLinkedinUrl { get; set; }
+    public string ContactLinkedinSource { get; set; } = "none";    // apollo | none
     public double? EstimatedHoursMin { get; set; }
     public double? EstimatedHoursMax { get; set; }
     public string EstimateNotes { get; set; } = "";
     public DateTime AnalyzedAt { get; set; } = DateTime.UtcNow;
+
+    // Contact-research panel — transient, not persisted (regenerated fresh on every Analyze() call).
+    // Both lists are free/best-effort: ApolloCandidates comes only from the credit-free
+    // mixed_people/api_search discovery endpoint; WebSearchCandidates only populates if
+    // a Serper.dev key is configured in Settings. Neither ever costs Apollo credits.
+    public List<ContactCandidate> ApolloCandidates { get; set; } = new();
+    public List<ContactCandidate> WebSearchCandidates { get; set; } = new();
+}
+
+public class ContactCandidate
+{
+    public string Name { get; set; } = "";
+    public string? Title { get; set; }
+    public string? Company { get; set; }
+    public string? LinkedinUrl { get; set; }
+    public string? Snippet { get; set; }
 }
 
 /// <summary>Raw structured fields the LLM extracts. Scoring is computed separately, deterministically.</summary>
@@ -64,6 +84,12 @@ public class JdExtraction
 
     [JsonPropertyName("extracted_company_name")]
     public string? ExtractedCompanyName { get; set; }
+
+    [JsonPropertyName("extracted_client_name_candidates")]
+    public List<string>? ClientNameCandidates { get; set; }
+
+    [JsonPropertyName("extracted_company_name_candidates")]
+    public List<string>? CompanyNameCandidates { get; set; }
 
     [JsonPropertyName("extraction_source")]
     public string ExtractionSource { get; set; } = "none";

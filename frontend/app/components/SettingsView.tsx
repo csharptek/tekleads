@@ -35,6 +35,7 @@ const KEYS = {
   AzureSearchKey: "azure_search_key",
   AzureSearchIndex: "azure_search_index",
   InstantlyApiKey: "instantly_api_key",
+  SerperApiKey: "serper_api_key",
   AppUrl: "app_url",
   ApolloMasterKey: "apollo_master_key",
   AiProvider: "ai_provider",
@@ -155,6 +156,13 @@ const USER_GROUPS: Group[] = [
     subtitle: "Send leads to Instantly campaigns for automated cold email sequences.",
     fields: [
       { key: KEYS.InstantlyApiKey, label: "API Key (V2)", placeholder: "Enter to set / replace", secret: true, full: true },
+    ],
+  },
+  {
+    title: "Web Search (JD Contact Research)",
+    subtitle: "Optional. Powers the \"web search matches\" panel on the JD Quality modal (Serper.dev — google.serper.dev). Leave blank to skip that panel; never affects Apollo credits.",
+    fields: [
+      { key: KEYS.SerperApiKey, label: "Serper.dev API Key", placeholder: "Enter to set / replace", secret: true, full: true },
     ],
   },
   {

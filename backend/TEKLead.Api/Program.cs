@@ -10,6 +10,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<SettingsService>();
 builder.Services.AddScoped<LeadService>();
 builder.Services.AddScoped<ApolloService>();
+builder.Services.AddScoped<WebSearchService>();
 builder.Services.AddScoped<PortfolioService>();
 builder.Services.AddScoped<ProposalService>();
 builder.Services.AddScoped<ProposalCompanyContextService>();

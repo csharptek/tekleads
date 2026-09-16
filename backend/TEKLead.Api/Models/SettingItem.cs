@@ -135,6 +135,10 @@ public static class SettingKeys
     // manual seeding required.
     public const string JdHourlyRateUsd            = "jd_hourly_rate_usd";
 
+    // Web search for the JD Quality contact-research panel (Serper.dev — google.serper.dev).
+    // Optional: if unset, the "Web search matches" panel is simply skipped, no error.
+    public const string SerperApiKey               = "serper_api_key";
+
     public static readonly string[] AllKnown =
     {
         AzureOpenAiEndpoint, AzureOpenAiKey, AzureOpenAiDeployment, AzureBlobConnString, ApolloApiKey,
@@ -159,13 +163,13 @@ public static class SettingKeys
         ApifyApiKey, JobScraperKeywords, EmailSendersJson,
         JobLeadEmailPrompt, JobLeadFollowUp1Prompt, JobLeadFollowUp2Prompt,
         GmailSmtpUser, GmailSmtpAppPassword,
-        JdMinDurationWeeks, JdMinBudget, JdHourlyRateUsd,
+        JdMinDurationWeeks, JdMinBudget, JdHourlyRateUsd, SerperApiKey,
     };
 
     public static readonly HashSet<string> Secrets = new()
     {
         AzureOpenAiKey, AzureBlobConnString, ApolloApiKey, GraphClientSecret, AzureSearchKey, InstantlyApiKey,
         WhatsappCloudAccessToken, WhatsappCloudVerifyToken, ApolloMasterKey, GroqApiKey, ClaudeApiKey, ApifyApiKey, GmailSmtpAppPassword,
-        GeminiApiKey
+        GeminiApiKey, SerperApiKey
     };
 }

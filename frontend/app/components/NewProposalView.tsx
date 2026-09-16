@@ -484,7 +484,7 @@ export default function NewProposalView({
     finally { setSaving(false); }
   };
 
-  const [jdModal, setJdModal] = useState<null | { entityId: string; onConfirm: (extracted: { clientName: string; companyName: string }) => void }>(null);
+  const [jdModal, setJdModal] = useState<null | { entityId: string; onConfirm: (extracted: { clientName: string; companyName: string; linkedinUrl: string }) => void }>(null);
 
   const handleGenerateArtifacts = async () => {
     if (!jdOnlyMode && !primaryContact) { setError("Select a primary contact first."); return; }
@@ -492,11 +492,13 @@ export default function NewProposalView({
     let id = savedId;
     if (!id) id = await handleSave(false);
     if (!id) return;
-    const proceed = (extracted?: { clientName: string; companyName: string }) => {
+    const proceed = (extracted?: { clientName: string; companyName: string; linkedinUrl: string }) => {
     const resolvedClientName = form.clientName.trim() || extracted?.clientName.trim() || "";
     const resolvedClientCompany = form.clientCompany.trim() || extracted?.companyName.trim() || "";
+    const resolvedClientLinkedin = form.clientLinkedin.trim() || extracted?.linkedinUrl?.trim() || "";
     if (resolvedClientName !== form.clientName) set("clientName", resolvedClientName);
     if (resolvedClientCompany !== form.clientCompany) set("clientCompany", resolvedClientCompany);
+    if (resolvedClientLinkedin !== form.clientLinkedin) set("clientLinkedin", resolvedClientLinkedin);
     const allEmails: string[] = [];
     const allEmailNames: string[] = [];
     const allPhones: string[] = [];

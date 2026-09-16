@@ -14,6 +14,8 @@ namespace TEKLead.Api.Services;
 public class JdQualityService
 {
     private readonly SettingsService _settings;
+    private readonly ApolloService _apollo;
+    private readonly WebSearchService _webSearch;
     private readonly IHttpClientFactory _http;
     private readonly ILogger<JdQualityService> _log;
 
@@ -22,9 +24,11 @@ public class JdQualityService
     public const decimal DefaultMinBudget = 1000m;
     public const decimal DefaultHourlyRateUsd = 25m;
 
-    public JdQualityService(SettingsService settings, IHttpClientFactory http, ILogger<JdQualityService> log)
+    public JdQualityService(SettingsService settings, ApolloService apollo, WebSearchService webSearch, IHttpClientFactory http, ILogger<JdQualityService> log)
     {
         _settings = settings;
+        _apollo = apollo;
+        _webSearch = webSearch;
         _http = http;
         _log = log;
     }
@@ -60,6 +64,10 @@ public class JdQualityService
         await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extracted_company_name TEXT");
         await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extraction_source TEXT NOT NULL DEFAULT 'none'");
         await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extraction_confidence TEXT NOT NULL DEFAULT 'low'");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extracted_client_name_candidates TEXT NOT NULL DEFAULT ''");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extracted_company_name_candidates TEXT NOT NULL DEFAULT ''");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS contact_linkedin_url TEXT");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS contact_linkedin_source TEXT NOT NULL DEFAULT 'none'");
         _log.LogInformation("JdQuality schema OK.");
     }
 
@@ -84,8 +92,83 @@ public class JdQualityService
         result.EntityType = entityType;
         result.EntityId = entityId;
 
+        await GatherContactCandidates(result);
+
         await Save(result);
         return result;
+    }
+
+    // Best-effort contact research — never throws, never spends Apollo credits.
+    // Apollo side: ONLY calls Search() (mixed_people/api_search) and SearchOrganizationDomain()
+    // (mixed_companies/search) — both documented credit-free discovery endpoints. This method
+    // must never call EnrichFull / EnrichEmailOnly / EnrichPhoneOnly / people-match — those cost
+    // credits and belong to the existing explicit-enrich flow, not this guesswork panel.
+    // Web side: only runs if a Serper.dev key is configured; otherwise WebSearchCandidates stays empty.
+    private async Task GatherContactCandidates(JdScoreResult result)
+    {
+        var name = result.ExtractedClientName;
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        string? domain = null;
+        if (!string.IsNullOrWhiteSpace(result.ExtractedCompanyName))
+        {
+            try { domain = await _apollo.SearchOrganizationDomain(result.ExtractedCompanyName); }
+            catch (Exception ex) { _log.LogWarning(ex, "JdQuality: org domain lookup failed for {company}", result.ExtractedCompanyName); }
+        }
+
+        // --- Apollo (free discovery only) ---
+        try
+        {
+            var (leads, _) = await _apollo.Search(name, null, domain == null ? result.ExtractedCompanyName : null, null, null, domain, page: 1, perPage: 5);
+
+            var nameParts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var firstName = nameParts.Length > 0 ? nameParts[0] : name;
+
+            result.ApolloCandidates = leads.Select(l => new ContactCandidate
+            {
+                Name = l.Name,
+                Title = l.Title,
+                Company = l.Company,
+                LinkedinUrl = l.LinkedinUrl,
+            }).ToList();
+
+            var best = leads.FirstOrDefault(l =>
+                !string.IsNullOrWhiteSpace(l.LinkedinUrl) &&
+                l.Name.Contains(firstName, StringComparison.OrdinalIgnoreCase));
+
+            if (best != null)
+            {
+                result.ContactLinkedinUrl = best.LinkedinUrl;
+                result.ContactLinkedinSource = "apollo";
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "JdQuality: Apollo candidate search failed for {name}", name);
+        }
+
+        // --- Web search (optional, only if configured) ---
+        try
+        {
+            if (await _webSearch.IsConfigured())
+            {
+                var query = string.IsNullOrWhiteSpace(result.ExtractedCompanyName)
+                    ? $"{name} linkedin"
+                    : $"{name} {result.ExtractedCompanyName} linkedin";
+
+                var hits = await _webSearch.Search(query, count: 5);
+                result.WebSearchCandidates = hits.Select(h => new ContactCandidate
+                {
+                    Name = h.Title,
+                    LinkedinUrl = h.Link,
+                    Snippet = h.Snippet,
+                }).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "JdQuality: web search failed for {name}", name);
+        }
     }
 
     public async Task<JdScoreResult?> GetSaved(string entityType, Guid entityId)
@@ -105,8 +188,12 @@ public class JdQualityService
                    estimate_notes AS ""EstimateNotes"",
                    extracted_client_name AS ""ExtractedClientName"",
                    extracted_company_name AS ""ExtractedCompanyName"",
+                   extracted_client_name_candidates AS ""ExtractedClientNameCandidatesRaw"",
+                   extracted_company_name_candidates AS ""ExtractedCompanyNameCandidatesRaw"",
                    extraction_source AS ""ExtractionSource"",
                    extraction_confidence AS ""ExtractionConfidence"",
+                   contact_linkedin_url AS ""ContactLinkedinUrl"",
+                   contact_linkedin_source AS ""ContactLinkedinSource"",
                    analyzed_at AS ""AnalyzedAt""
             FROM jd_scores WHERE entity_type=@t AND entity_id=@i",
             new { t = entityType, i = entityId });
@@ -125,11 +212,17 @@ public class JdQualityService
             INSERT INTO jd_scores (id, entity_type, entity_id, score, duration_signal, budget_mentioned,
                 budget_amount, timeline_pressure, has_screening_questions, project_type, existing_subtype,
                 recommendation, estimated_hours_min, estimated_hours_max, estimate_notes,
-                extracted_client_name, extracted_company_name, extraction_source, extraction_confidence, analyzed_at)
+                extracted_client_name, extracted_company_name,
+                extracted_client_name_candidates, extracted_company_name_candidates,
+                extraction_source, extraction_confidence,
+                contact_linkedin_url, contact_linkedin_source, analyzed_at)
             VALUES (@Id, @EntityType, @EntityId, @Score, @DurationSignal, @BudgetMentioned,
                 @BudgetAmount, @TimelinePressure, @HasScreeningQuestions, @ProjectType, @ExistingSubtype,
                 @Recommendation, @EstimatedHoursMin, @EstimatedHoursMax, @EstimateNotes,
-                @ExtractedClientName, @ExtractedCompanyName, @ExtractionSource, @ExtractionConfidence, @AnalyzedAt)
+                @ExtractedClientName, @ExtractedCompanyName,
+                @ExtractedClientNameCandidatesRaw, @ExtractedCompanyNameCandidatesRaw,
+                @ExtractionSource, @ExtractionConfidence,
+                @ContactLinkedinUrl, @ContactLinkedinSource, @AnalyzedAt)
             ON CONFLICT (entity_type, entity_id) DO UPDATE SET
                 score = EXCLUDED.score,
                 duration_signal = EXCLUDED.duration_signal,
@@ -145,10 +238,24 @@ public class JdQualityService
                 estimate_notes = EXCLUDED.estimate_notes,
                 extracted_client_name = EXCLUDED.extracted_client_name,
                 extracted_company_name = EXCLUDED.extracted_company_name,
+                extracted_client_name_candidates = EXCLUDED.extracted_client_name_candidates,
+                extracted_company_name_candidates = EXCLUDED.extracted_company_name_candidates,
                 extraction_source = EXCLUDED.extraction_source,
                 extraction_confidence = EXCLUDED.extraction_confidence,
+                contact_linkedin_url = EXCLUDED.contact_linkedin_url,
+                contact_linkedin_source = EXCLUDED.contact_linkedin_source,
                 analyzed_at = EXCLUDED.analyzed_at",
-            r);
+            new
+            {
+                r.Id, r.EntityType, r.EntityId, r.Score, r.DurationSignal, r.BudgetMentioned,
+                r.BudgetAmount, r.TimelinePressure, r.HasScreeningQuestions, r.ProjectType, r.ExistingSubtype,
+                r.Recommendation, r.EstimatedHoursMin, r.EstimatedHoursMax, r.EstimateNotes,
+                r.ExtractedClientName, r.ExtractedCompanyName,
+                ExtractedClientNameCandidatesRaw = string.Join(", ", r.ClientNameCandidates),
+                ExtractedCompanyNameCandidatesRaw = string.Join(", ", r.CompanyNameCandidates),
+                r.ExtractionSource, r.ExtractionConfidence,
+                r.ContactLinkedinUrl, r.ContactLinkedinSource, r.AnalyzedAt,
+            });
     }
 
     private async Task<JdExtraction> ExtractViaLlm(Dictionary<string, string> settings, string title, string description)
@@ -173,6 +280,8 @@ Return JSON with exactly these fields:
   ""estimate_notes"": <short string>,
   ""extracted_client_name"": <string or null>,
   ""extracted_company_name"": <string or null>,
+  ""extracted_client_name_candidates"": <array of every distinct person name found, most-mentioned first — empty array if none>,
+  ""extracted_company_name_candidates"": <array of every distinct company name found, most-mentioned first — empty array if none>,
   ""extraction_source"": ""jd_text"" | ""comment"" | ""signature"" | ""testimonial"" | ""none"",
   ""extraction_confidence"": ""high"" | ""low""
 }}
@@ -186,7 +295,7 @@ Rules:
 - existing_subtype: only set when project_type is ""existing"" — feature_add if adding new functionality, troubleshooting if fixing bugs/issues/errors. Null otherwise.
 - estimated_hours_min / estimated_hours_max: your best-effort effort estimate to actually deliver everything scoped in this JD, under these assumptions: (1) exactly ONE person does all of it — no team; (2) that person is an experienced full-stack developer who uses AI coding assistants (Claude Code / Cursor-style tools) for coding, debugging, and UI/UX design, so implementation, boilerplate, and design mockups go noticeably faster than pure manual work — but requirements gathering, client communication, testing, deployment, and fixing AI-introduced bugs still take real time. Base the range on the actual scope described (number of screens/pages, integrations, auth, admin panels, data models, third-party APIs, etc.) — do not default to a generic number. Give a realistic min-max spread, minimum 2 hours even for trivial asks.
 - estimate_notes: ONE short sentence (max ~20 words) naming the main scope drivers behind the estimate (e.g. ""auth + admin panel + 2 API integrations"").
-- extracted_client_name / extracted_company_name: The input may contain more than just the job post — it can include pasted client comments, chat replies, a signature block, or an Upwork-style ""About the client"" / ""Client's recent history"" section listing past jobs with freelancer reviews. Scan ALL of it (not just the main JD paragraph) for the client's personal first/last name or their company name. Look for, in priority order: (1) a signature line (""- John"", ""Thanks, Sarah"") or self-introduction (""I'm Sarah from Acme Inc"") — high confidence; (2) an @handle or a company name mentioned as ""we/our"" (""we at Acme need..."") — high confidence; (3) a freelancer review/testimonial inside a client history section that names the client directly (""I enjoyed working with Alize!"", ""Great to work with Kayla"") — this is a valid signal, treat the name as present text, not a guess — low confidence. If the history section names more than one distinct person across reviews, pick the name that recurs most often across the most reviews and still return it (low confidence) rather than returning null — only return null if no name appears anywhere or every name appears exactly once with no clear majority. Only extract a name/company that is actually present as text — never invent one that appears nowhere in the input. If nothing is found, use null for both.
+- extracted_client_name / extracted_company_name: The input may contain more than just the job post — it can include pasted client comments, chat replies, a signature block, or an Upwork-style ""About the client"" / ""Client's recent history"" section listing past jobs with freelancer reviews. Scan ALL of it (not just the main JD paragraph) for every distinct personal first/last name or company name that could plausibly be the client. Look for, in priority order: (1) a signature line (""- John"", ""Thanks, Sarah"") or self-introduction (""I'm Sarah from Acme Inc"") — high confidence; (2) an @handle or a company name mentioned as ""we/our"" (""we at Acme need..."") — high confidence; (3) a freelancer review/testimonial inside a client history section that names the client directly (""I enjoyed working with Alize!"", ""Great to work with Kayla"") — this is a valid signal, treat the name as present text, not a guess — low confidence. Collect EVERY distinct name/company found this way into extracted_client_name_candidates / extracted_company_name_candidates (most-mentioned first, deduplicated, no invented names). Set extracted_client_name / extracted_company_name to the single best candidate — the one that recurs most often, or the highest-confidence single mention if there's no repeat. Only extract a name/company that is actually present as text — never invent one that appears nowhere in the input. If nothing is found, use null for the single fields and an empty array for the candidate lists.
 - extraction_source: where the name/company (if any) was found — ""jd_text"" if in the main job description body, ""comment"" if in an appended client comment/reply, ""signature"" if from a sign-off line, ""testimonial"" if from a freelancer review inside a client history section, ""none"" if nothing was extracted.
 - extraction_confidence: ""high"" if the name/company is stated plainly and unambiguously (e.g. a clear signature or self-introduction); ""low"" if it's inferred from a weaker signal (e.g. a company name only implied by an email domain or a handle) or if nothing was found.";
 
@@ -264,6 +373,8 @@ Rules:
             EstimateNotes = e.EstimateNotes,
             ExtractedClientName = e.ExtractedClientName,
             ExtractedCompanyName = e.ExtractedCompanyName,
+            ClientNameCandidates = e.ClientNameCandidates ?? new List<string>(),
+            CompanyNameCandidates = e.CompanyNameCandidates ?? new List<string>(),
             ExtractionSource = e.ExtractionSource,
             ExtractionConfidence = e.ExtractionConfidence,
             AnalyzedAt = DateTime.UtcNow,
@@ -289,9 +400,16 @@ Rules:
         public string EstimateNotes { get; set; } = "";
         public string? ExtractedClientName { get; set; }
         public string? ExtractedCompanyName { get; set; }
+        public string ExtractedClientNameCandidatesRaw { get; set; } = "";
+        public string ExtractedCompanyNameCandidatesRaw { get; set; } = "";
         public string ExtractionSource { get; set; } = "";
         public string ExtractionConfidence { get; set; } = "low";
+        public string? ContactLinkedinUrl { get; set; }
+        public string ContactLinkedinSource { get; set; } = "none";
         public DateTime AnalyzedAt { get; set; }
+
+        private static List<string> SplitCandidates(string raw) =>
+            raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
         public JdScoreResult ToResult() => new()
         {
@@ -301,7 +419,10 @@ Rules:
             ProjectType = ProjectType, ExistingSubtype = ExistingSubtype, Recommendation = Recommendation,
             EstimatedHoursMin = EstimatedHoursMin, EstimatedHoursMax = EstimatedHoursMax, EstimateNotes = EstimateNotes,
             ExtractedClientName = ExtractedClientName, ExtractedCompanyName = ExtractedCompanyName,
+            ClientNameCandidates = SplitCandidates(ExtractedClientNameCandidatesRaw),
+            CompanyNameCandidates = SplitCandidates(ExtractedCompanyNameCandidatesRaw),
             ExtractionSource = ExtractionSource, ExtractionConfidence = ExtractionConfidence,
+            ContactLinkedinUrl = ContactLinkedinUrl, ContactLinkedinSource = ContactLinkedinSource,
             AnalyzedAt = AnalyzedAt,
         };
     }
