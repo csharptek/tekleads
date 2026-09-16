@@ -16,6 +16,10 @@ public class JdScoreResult
     public string ProjectType { get; set; } = "unclear";          // new_build | existing | unclear
     public string? ExistingSubtype { get; set; }                  // feature_add | troubleshooting | null
     public string Recommendation { get; set; } = "";
+    public string? ExtractedClientName { get; set; }
+    public string? ExtractedCompanyName { get; set; }
+    public string ExtractionSource { get; set; } = "";             // jd_text | comment | signature | none
+    public string ExtractionConfidence { get; set; } = "low";      // high | low
     public double? EstimatedHoursMin { get; set; }
     public double? EstimatedHoursMax { get; set; }
     public string EstimateNotes { get; set; } = "";
@@ -54,4 +58,16 @@ public class JdExtraction
 
     [JsonPropertyName("estimate_notes")]
     public string EstimateNotes { get; set; } = "";
+
+    [JsonPropertyName("extracted_client_name")]
+    public string? ExtractedClientName { get; set; }
+
+    [JsonPropertyName("extracted_company_name")]
+    public string? ExtractedCompanyName { get; set; }
+
+    [JsonPropertyName("extraction_source")]
+    public string ExtractionSource { get; set; } = "none";
+
+    [JsonPropertyName("extraction_confidence")]
+    public string ExtractionConfidence { get; set; } = "low";
 }

@@ -56,6 +56,10 @@ public class JdQualityService
         await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS estimated_hours_min NUMERIC");
         await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS estimated_hours_max NUMERIC");
         await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS estimate_notes TEXT NOT NULL DEFAULT ''");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extracted_client_name TEXT");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extracted_company_name TEXT");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extraction_source TEXT NOT NULL DEFAULT 'none'");
+        await c.ExecuteAsync(@"ALTER TABLE jd_scores ADD COLUMN IF NOT EXISTS extraction_confidence TEXT NOT NULL DEFAULT 'low'");
         _log.LogInformation("JdQuality schema OK.");
     }
 
@@ -99,6 +103,10 @@ public class JdQualityService
                    existing_subtype AS ""ExistingSubtype"", recommendation AS ""Recommendation"",
                    estimated_hours_min AS ""EstimatedHoursMin"", estimated_hours_max AS ""EstimatedHoursMax"",
                    estimate_notes AS ""EstimateNotes"",
+                   extracted_client_name AS ""ExtractedClientName"",
+                   extracted_company_name AS ""ExtractedCompanyName"",
+                   extraction_source AS ""ExtractionSource"",
+                   extraction_confidence AS ""ExtractionConfidence"",
                    analyzed_at AS ""AnalyzedAt""
             FROM jd_scores WHERE entity_type=@t AND entity_id=@i",
             new { t = entityType, i = entityId });
@@ -116,10 +124,12 @@ public class JdQualityService
         await c.ExecuteAsync(@"
             INSERT INTO jd_scores (id, entity_type, entity_id, score, duration_signal, budget_mentioned,
                 budget_amount, timeline_pressure, has_screening_questions, project_type, existing_subtype,
-                recommendation, estimated_hours_min, estimated_hours_max, estimate_notes, analyzed_at)
+                recommendation, estimated_hours_min, estimated_hours_max, estimate_notes,
+                extracted_client_name, extracted_company_name, extraction_source, extraction_confidence, analyzed_at)
             VALUES (@Id, @EntityType, @EntityId, @Score, @DurationSignal, @BudgetMentioned,
                 @BudgetAmount, @TimelinePressure, @HasScreeningQuestions, @ProjectType, @ExistingSubtype,
-                @Recommendation, @EstimatedHoursMin, @EstimatedHoursMax, @EstimateNotes, @AnalyzedAt)
+                @Recommendation, @EstimatedHoursMin, @EstimatedHoursMax, @EstimateNotes,
+                @ExtractedClientName, @ExtractedCompanyName, @ExtractionSource, @ExtractionConfidence, @AnalyzedAt)
             ON CONFLICT (entity_type, entity_id) DO UPDATE SET
                 score = EXCLUDED.score,
                 duration_signal = EXCLUDED.duration_signal,
@@ -133,6 +143,10 @@ public class JdQualityService
                 estimated_hours_min = EXCLUDED.estimated_hours_min,
                 estimated_hours_max = EXCLUDED.estimated_hours_max,
                 estimate_notes = EXCLUDED.estimate_notes,
+                extracted_client_name = EXCLUDED.extracted_client_name,
+                extracted_company_name = EXCLUDED.extracted_company_name,
+                extraction_source = EXCLUDED.extraction_source,
+                extraction_confidence = EXCLUDED.extraction_confidence,
                 analyzed_at = EXCLUDED.analyzed_at",
             r);
     }
@@ -156,7 +170,11 @@ Return JSON with exactly these fields:
   ""existing_subtype"": ""feature_add"" | ""troubleshooting"" | null,
   ""estimated_hours_min"": <number>,
   ""estimated_hours_max"": <number>,
-  ""estimate_notes"": <short string>
+  ""estimate_notes"": <short string>,
+  ""extracted_client_name"": <string or null>,
+  ""extracted_company_name"": <string or null>,
+  ""extraction_source"": ""jd_text"" | ""comment"" | ""signature"" | ""none"",
+  ""extraction_confidence"": ""high"" | ""low""
 }}
 
 Rules:
@@ -167,7 +185,10 @@ Rules:
 - project_type: new_build if this is a from-scratch project; existing if it's about an existing/live product or codebase.
 - existing_subtype: only set when project_type is ""existing"" — feature_add if adding new functionality, troubleshooting if fixing bugs/issues/errors. Null otherwise.
 - estimated_hours_min / estimated_hours_max: your best-effort effort estimate to actually deliver everything scoped in this JD, under these assumptions: (1) exactly ONE person does all of it — no team; (2) that person is an experienced full-stack developer who uses AI coding assistants (Claude Code / Cursor-style tools) for coding, debugging, and UI/UX design, so implementation, boilerplate, and design mockups go noticeably faster than pure manual work — but requirements gathering, client communication, testing, deployment, and fixing AI-introduced bugs still take real time. Base the range on the actual scope described (number of screens/pages, integrations, auth, admin panels, data models, third-party APIs, etc.) — do not default to a generic number. Give a realistic min-max spread, minimum 2 hours even for trivial asks.
-- estimate_notes: ONE short sentence (max ~20 words) naming the main scope drivers behind the estimate (e.g. ""auth + admin panel + 2 API integrations"").";
+- estimate_notes: ONE short sentence (max ~20 words) naming the main scope drivers behind the estimate (e.g. ""auth + admin panel + 2 API integrations"").
+- extracted_client_name / extracted_company_name: The input may contain more than just the job post — it can include pasted client comments, chat replies, or a signature block. Scan ALL of it (not just the main JD paragraph) for the client's personal first/last name or their company name. Look for: a signature line (""- John"", ""Thanks, Sarah""), a self-introduction (""I'm Sarah from Acme Inc""), an @handle, or a company name mentioned as ""we/our"" (""we at Acme need...""). Only extract a name/company that is actually present as text — never guess or invent one from context. If nothing is found, use null for both.
+- extraction_source: where the name/company (if any) was found — ""jd_text"" if in the main job description body, ""comment"" if in an appended client comment/reply, ""signature"" if from a sign-off line, ""none"" if nothing was extracted.
+- extraction_confidence: ""high"" if the name/company is stated plainly and unambiguously (e.g. a clear signature or self-introduction); ""low"" if it's inferred from a weaker signal (e.g. a company name only implied by an email domain or a handle) or if nothing was found.";
 
         var messages = new List<object>
         {
@@ -241,6 +262,10 @@ Rules:
             EstimatedHoursMin = e.EstimatedHoursMin,
             EstimatedHoursMax = e.EstimatedHoursMax,
             EstimateNotes = e.EstimateNotes,
+            ExtractedClientName = e.ExtractedClientName,
+            ExtractedCompanyName = e.ExtractedCompanyName,
+            ExtractionSource = e.ExtractionSource,
+            ExtractionConfidence = e.ExtractionConfidence,
             AnalyzedAt = DateTime.UtcNow,
         };
     }
@@ -262,6 +287,10 @@ Rules:
         public double? EstimatedHoursMin { get; set; }
         public double? EstimatedHoursMax { get; set; }
         public string EstimateNotes { get; set; } = "";
+        public string? ExtractedClientName { get; set; }
+        public string? ExtractedCompanyName { get; set; }
+        public string ExtractionSource { get; set; } = "";
+        public string ExtractionConfidence { get; set; } = "low";
         public DateTime AnalyzedAt { get; set; }
 
         public JdScoreResult ToResult() => new()
@@ -271,6 +300,8 @@ Rules:
             TimelinePressure = TimelinePressure, HasScreeningQuestions = HasScreeningQuestions,
             ProjectType = ProjectType, ExistingSubtype = ExistingSubtype, Recommendation = Recommendation,
             EstimatedHoursMin = EstimatedHoursMin, EstimatedHoursMax = EstimatedHoursMax, EstimateNotes = EstimateNotes,
+            ExtractedClientName = ExtractedClientName, ExtractedCompanyName = ExtractedCompanyName,
+            ExtractionSource = ExtractionSource, ExtractionConfidence = ExtractionConfidence,
             AnalyzedAt = AnalyzedAt,
         };
     }

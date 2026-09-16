@@ -957,7 +957,7 @@ PORTFOLIO SELECTION RULE (CRITICAL):
 - If the client is healthcare, reference healthcare projects. If fintech, fintech. Never reference an unrelated-industry project when an industry match exists in context.
 - Use maximum 1-2 projects, never all three.
 
-TARGET LENGTH: 200-300 words total (Upwork's own recommended range). Count before returning. Every word must earn its place.
+TARGET LENGTH: aim for 200-300 words (Upwork's own recommended range) — this is a target, not a hard ceiling. Cut filler, buzzwords, and repetition first to hit it. Only go beyond 300 if the job post genuinely has enough distinct scope (multiple integrations, unusual constraints, several screening questions to answer) that compressing further would force dropping a proof point, a screening answer, or a scoped decision — never cut those to hit the target. Never pad a thin job post to reach 200.
 
 STRUCTURE — follow this exact order, no section titles:
 
@@ -1045,7 +1045,7 @@ Proposal rules:
 - If CLIENT INFO says no name found, start with: Hi there,
 - If Title / Seniority / Headline are present in CLIENT INFO, let it shape tone and the APPROACH paragraph (e.g. a hands-on technical title → more specific tech detail; a founder/exec title → outcome-and-speed framing). Never state their title back to them verbatim, never say ""As a CTO...""
 - Subject: specific, 8-12 words, references their project — not generic
-- Body: 150-200 words MAX. Count before returning.
+- Body: aim for 150-200 words — a target, not a hard ceiling. Trim filler first. Only exceed it if the job post's scope or screening questions genuinely need the room; never drop a proof point, screening answer, or scoped decision just to fit under 200. Never pad a thin job post to reach 150.
 - Never mention ""Csharptek"" or any company name of Bhanu
 - No self-introduction paragraph — do not describe who Bhanu is or what the company does. Every sentence addresses their problem or proves relevant experience, never sender bio.
 - Banned filler: ""great fit"", ""passionate"", ""I'd love to"", ""excited"", ""I believe"", ""challenging""

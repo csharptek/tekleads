@@ -16,6 +16,10 @@ export interface JdScoreData {
   estimatedHoursMin: number | null;
   estimatedHoursMax: number | null;
   estimateNotes: string;
+  extractedClientName: string | null;
+  extractedCompanyName: string | null;
+  extractionSource: string;
+  extractionConfidence: string;
 }
 
 interface Props {
@@ -23,9 +27,16 @@ interface Props {
   entityId: string;
   title: string;
   description: string;
-  onConfirm: () => void;
+  onConfirm: (extracted: { clientName: string; companyName: string }) => void;
   onCancel: () => void;
 }
+
+const sourceLabel = (s: string) => {
+  if (s === "jd_text") return "found in job post";
+  if (s === "comment") return "found in a comment";
+  if (s === "signature") return "found in sign-off";
+  return "not found";
+};
 
 const scoreColor = (score: number) => {
   if (score >= 4) return "#16a34a";
@@ -80,6 +91,8 @@ export default function JdScoreModal({ entityType, entityId, title, description,
   const [error, setError] = useState("");
   const [data, setData] = useState<JdScoreData | null>(null);
   const [hourlyRate, setHourlyRate] = useState(25);
+  const [clientName, setClientName] = useState("");
+  const [companyName, setCompanyName] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -89,6 +102,8 @@ export default function JdScoreModal({ entityType, entityId, title, description,
           api.get(`/api/settings`).catch(() => null),
         ]);
         setData(res);
+        setClientName(res?.extractedClientName || "");
+        setCompanyName(res?.extractedCompanyName || "");
         const rate = Number(settings?.values?.jd_hourly_rate_usd);
         if (rate > 0) setHourlyRate(rate);
       } catch (e: any) {
@@ -115,7 +130,7 @@ export default function JdScoreModal({ entityType, entityId, title, description,
             <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 16 }}>{error}</div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
-              <button className="btn btn-primary btn-sm" onClick={onConfirm}>Proceed Anyway</button>
+              <button className="btn btn-primary btn-sm" onClick={() => onConfirm({ clientName: "", companyName: "" })}>Proceed Anyway</button>
             </div>
           </div>
         )}
@@ -161,9 +176,28 @@ export default function JdScoreModal({ entityType, entityId, title, description,
               </div>
             )}
 
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 8 }}>
+                Client / company found — {sourceLabel(data.extractionSource)}
+                {data.extractionSource !== "none" && (
+                  <span style={{
+                    marginLeft: 6, fontSize: 10, padding: "1px 6px", borderRadius: 999,
+                    background: data.extractionConfidence === "high" ? "#dcfce7" : "#fef3c7",
+                    color: data.extractionConfidence === "high" ? "#166534" : "#92400e",
+                  }}>{data.extractionConfidence === "high" ? "high confidence" : "low confidence"}</span>
+                )}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <input className="input" placeholder="Client name (edit if wrong)" value={clientName}
+                  onChange={e => setClientName(e.target.value)} style={{ fontSize: 13 }} />
+                <input className="input" placeholder="Company name (edit if wrong)" value={companyName}
+                  onChange={e => setCompanyName(e.target.value)} style={{ fontSize: 13 }} />
+              </div>
+            </div>
+
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
-              <button className="btn btn-primary btn-sm" onClick={onConfirm}>Continue to Generate</button>
+              <button className="btn btn-primary btn-sm" onClick={() => onConfirm({ clientName, companyName })}>Continue to Generate</button>
             </div>
           </div>
         )}

@@ -484,7 +484,7 @@ export default function NewProposalView({
     finally { setSaving(false); }
   };
 
-  const [jdModal, setJdModal] = useState<null | { entityId: string; onConfirm: () => void }>(null);
+  const [jdModal, setJdModal] = useState<null | { entityId: string; onConfirm: (extracted: { clientName: string; companyName: string }) => void }>(null);
 
   const handleGenerateArtifacts = async () => {
     if (!jdOnlyMode && !primaryContact) { setError("Select a primary contact first."); return; }
@@ -492,7 +492,11 @@ export default function NewProposalView({
     let id = savedId;
     if (!id) id = await handleSave(false);
     if (!id) return;
-    const proceed = () => {
+    const proceed = (extracted?: { clientName: string; companyName: string }) => {
+    const resolvedClientName = form.clientName.trim() || extracted?.clientName.trim() || "";
+    const resolvedClientCompany = form.clientCompany.trim() || extracted?.companyName.trim() || "";
+    if (resolvedClientName !== form.clientName) set("clientName", resolvedClientName);
+    if (resolvedClientCompany !== form.clientCompany) set("clientCompany", resolvedClientCompany);
     const allEmails: string[] = [];
     const allEmailNames: string[] = [];
     const allPhones: string[] = [];
@@ -506,12 +510,12 @@ export default function NewProposalView({
     // also include clientEmail if not already present
     if (form.clientEmail && !allEmails.includes(form.clientEmail)) {
       allEmails.unshift(form.clientEmail);
-      allEmailNames.unshift(form.clientName || "");
+      allEmailNames.unshift(resolvedClientName);
     }
     onGenerateArtifacts?.({
       proposalId: id,
       proposalHeadline: form.jobPostHeadline || form.jobPostBody.slice(0, 60),
-      clientName: form.clientName,
+      clientName: resolvedClientName,
       clientEmail: primaryContact?.checkedEmails[0] || form.clientEmail,
       clientPhone: primaryContact?.checkedPhones[0] || "",
       allEmails,
@@ -521,7 +525,7 @@ export default function NewProposalView({
       autoGenerate: true,
     });
     };
-    setJdModal({ entityId: id, onConfirm: () => { setJdModal(null); proceed(); } });
+    setJdModal({ entityId: id, onConfirm: (extracted) => { setJdModal(null); proceed(extracted); } });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
