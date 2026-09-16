@@ -340,6 +340,7 @@ function ContactsTab({ list }: { list: ContactList }) {
   const [inCampaignId, setInCampaignId]   = useState("");
   const [inLoading, setInLoading]         = useState(false);
   const [inPushing, setInPushing]         = useState(false);
+  const [waQueuing, setWaQueuing]         = useState(false);
   const [inMsg, setInMsg]                 = useState("");
 
   const load = useCallback(async () => {
@@ -490,6 +491,7 @@ function ContactsTab({ list }: { list: ContactList }) {
   }
 
   async function startWaBulkQueue() {
+    if (waQueuing) return; // guard against double-click / double-submit re-queuing everyone
     if (!list || !selectedMetaTemplate) return;
     const targets = contacts.filter(c => selected.has(c.id) && c.phone);
     if (!targets.length) { setEnrichMsg("No contacts with phone in selection."); return; }
@@ -504,6 +506,7 @@ function ContactsTab({ list }: { list: ContactList }) {
       bodyVariables: [] as string[],
     }));
 
+    setWaQueuing(true);
     try {
       const res: any = await api.post("/api/wa-schedule/send-now", {
         listId: list.id,
@@ -515,6 +518,8 @@ function ContactsTab({ list }: { list: ContactList }) {
       setShowScheduledJobs(true);
     } catch (e: any) {
       alert("Queue failed: " + (e?.message || "unknown error"));
+    } finally {
+      setWaQueuing(false);
     }
   }
 
@@ -1028,15 +1033,15 @@ function ContactsTab({ list }: { list: ContactList }) {
                 </button>
                 <button
                   onClick={startWaBulkQueue}
-                  disabled={targets.length === 0}
-                  style={{ background: targets.length === 0 ? "#64748b" : "#128C7E", color: "white",
+                  disabled={targets.length === 0 || waQueuing}
+                  style={{ background: (targets.length === 0 || waQueuing) ? "#64748b" : "#128C7E", color: "white",
                     border: "none", borderRadius: 6, padding: "7px 18px", cursor: "pointer",
                     fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8,
-                    opacity: targets.length === 0 ? 0.5 : 1 }}>
+                    opacity: (targets.length === 0 || waQueuing) ? 0.5 : 1 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
                   </svg>
-                  Queue & Send {targets.length} messages
+                  {waQueuing ? "Queuing…" : `Queue & Send ${targets.length} messages`}
                 </button>
               </div>
 
