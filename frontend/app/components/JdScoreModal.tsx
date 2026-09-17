@@ -26,6 +26,7 @@ export interface JdScoreData {
   contactLinkedinSource: string;
   apolloCandidates: ContactCandidate[];
   webSearchCandidates: ContactCandidate[];
+  webSearchConfigured: boolean;
 }
 
 interface ContactCandidate {
@@ -282,10 +283,16 @@ export default function JdScoreModal({ entityType, entityId, title, description,
 
           <CandidateSection
             title="Web search matches"
-            badge={data.webSearchCandidates.length === 0 ? "not configured" : undefined}
+            badge={!data.webSearchConfigured ? "not configured" : undefined}
             badgeColor={{ bg: "#f1f5f9", fg: "#64748b" }}
             candidates={data.webSearchCandidates}
-            emptyText="No web search matches. Add a Serper.dev key in Settings to enable this panel."
+            emptyText={
+              !data.webSearchConfigured
+                ? "Add a Serper.dev key in Settings to enable this panel."
+                : !clientName
+                ? "No client name extracted — nothing to search for."
+                : "No web search matches found."
+            }
             onUse={c => { if (c.linkedinUrl) setLinkedinUrl(c.linkedinUrl); }}
           />
         </div>

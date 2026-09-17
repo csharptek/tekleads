@@ -35,6 +35,7 @@ public class JdScoreResult
     // a Serper.dev key is configured in Settings. Neither ever costs Apollo credits.
     public List<ContactCandidate> ApolloCandidates { get; set; } = new();
     public List<ContactCandidate> WebSearchCandidates { get; set; } = new();
+    public bool WebSearchConfigured { get; set; }
 }
 
 public class ContactCandidate

@@ -1,6 +1,7 @@
 using Dapper;
 using Npgsql;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using TEKLead.Api.Models;
 using TEKLead.Api.Services.Llm;
 
@@ -92,6 +93,26 @@ public class JdQualityService
         result.EntityType = entityType;
         result.EntityId = entityId;
 
+        // Safety net: on long Upwork "Client's recent history" blobs (30-50+ past jobs),
+        // the LLM has repeatedly missed a client name that IS present in testimonial prose
+        // (seen live on real JDs despite explicit prompt instructions) — likely losing a
+        // repeated first name among dozens of one-off freelancer names. This runs a
+        // deterministic scan only when the LLM found nothing, so it never overrides a
+        // real answer.
+        if (string.IsNullOrWhiteSpace(result.ExtractedClientName))
+        {
+            var fallbackName = FallbackExtractClientName(description);
+            if (fallbackName != null)
+            {
+                _log.LogInformation("JdQuality: LLM found no client name, fallback scan found '{0}'", fallbackName);
+                result.ExtractedClientName = fallbackName;
+                if (!result.ClientNameCandidates.Contains(fallbackName))
+                    result.ClientNameCandidates.Insert(0, fallbackName);
+                result.ExtractionSource = "testimonial";
+                result.ExtractionConfidence = "low";
+            }
+        }
+
         await GatherContactCandidates(result);
 
         await Save(result);
@@ -106,6 +127,11 @@ public class JdQualityService
     // Web side: only runs if a Serper.dev key is configured; otherwise WebSearchCandidates stays empty.
     private async Task GatherContactCandidates(JdScoreResult result)
     {
+        // Computed unconditionally — this must reflect the real Settings state even when
+        // there's no client name to search for, otherwise the UI can't tell "not configured"
+        // apart from "configured but nothing to search yet".
+        result.WebSearchConfigured = await _webSearch.IsConfigured();
+
         var name = result.ExtractedClientName;
         if (string.IsNullOrWhiteSpace(name)) return;
 
@@ -150,7 +176,7 @@ public class JdQualityService
         // --- Web search (optional, only if configured) ---
         try
         {
-            if (await _webSearch.IsConfigured())
+            if (result.WebSearchConfigured)
             {
                 var query = string.IsNullOrWhiteSpace(result.ExtractedCompanyName)
                     ? $"{name} linkedin"
@@ -260,7 +286,7 @@ public class JdQualityService
 
     private async Task<JdExtraction> ExtractViaLlm(Dictionary<string, string> settings, string title, string description)
     {
-        var prompt = $@"You extract structured facts from a freelance job post. Output ONLY valid JSON, no markdown fences, no commentary.
+        var prompt = $@"You extract structured facts from a freelance job post. Respond with the JSON object below and NOTHING else — no markdown fences, no preamble, no step-by-step reasoning, no explanation before or after. The first character of your response must be '{{'.
 
 Job Title: {title}
 Job Description:
@@ -299,15 +325,30 @@ Rules:
   CRITICAL — do NOT confuse the freelancer being reviewed with the client: a client-history entry's ""To freelancer: <Name>"" (or ""To freelancer: <Name>No feedback given"") label names the FREELANCER who did the work, never the client. Never add a ""To freelancer:"" name to the candidate lists, and never let it outrank the real client name — with many past jobs, there will be many different one-off freelancer names (each appearing once) versus the client's own name, which typically recurs across several reviews. Only names that appear in the flowing testimonial/review PROSE (not in a ""To freelancer:"" label, and not a freelancer's own name) are eligible client-name candidates.
   Collect EVERY distinct eligible name/company into extracted_client_name_candidates / extracted_company_name_candidates (most-mentioned first, deduplicated, max 5 each, no invented names, no freelancer names). Set extracted_client_name / extracted_company_name to the single best candidate — the one that recurs most often in the prose, or the highest-confidence single mention if there's no repeat. Only extract a name/company that is actually present as text — never invent one that appears nowhere in the input. If nothing is found, use null for the single fields and an empty array for the candidate lists.
 - extraction_source: where the name/company (if any) was found — ""jd_text"" if in the main job description body, ""comment"" if in an appended client comment/reply, ""signature"" if from a sign-off line, ""testimonial"" if from a freelancer review inside a client history section, ""none"" if nothing was extracted.
-- extraction_confidence: ""high"" if the name/company is stated plainly and unambiguously (e.g. a clear signature or self-introduction); ""low"" if it's inferred from a weaker signal (e.g. a company name only implied by an email domain or a handle) or if nothing was found.";
+- extraction_confidence: ""high"" if the name/company is stated plainly and unambiguously (e.g. a clear signature or self-introduction); ""low"" if it's inferred from a weaker signal (e.g. a company name only implied by an email domain or a handle) or if nothing was found.
+
+Respond with ONLY the JSON object. No reasoning, no analysis, no markdown fences.";
 
         var messages = new List<object>
         {
-            new { role = "system", content = "You are a precise information-extraction engine. Always respond with strictly valid JSON matching the requested schema. No prose." },
+            new { role = "system", content = "You are a precise information-extraction engine. Always respond with strictly valid JSON matching the requested schema and nothing else — no reasoning, no commentary, no markdown fences." },
             new { role = "user", content = prompt }
         };
 
-        var raw = await LlmClient.ChatAsync(_http, settings, messages, maxTokens: 1100);
+        // Best-effort: any LLM failure (rate limit, empty output, malformed JSON, provider
+        // outage) degrades to a default (all-unclear, no names) instead of a hard 500 —
+        // the JD modal still opens, just with a lower-confidence result.
+        string raw;
+        try
+        {
+            raw = await LlmClient.ChatAsync(_http, settings, messages, maxTokens: 2000);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "JdQuality: LLM call failed, returning defaults");
+            return new JdExtraction();
+        }
+
         var cleaned = raw.Trim();
         if (cleaned.StartsWith("```"))
         {
@@ -381,6 +422,57 @@ Rules:
             ExtractionConfidence = e.ExtractionConfidence,
             AnalyzedAt = DateTime.UtcNow,
         };
+    }
+
+    private static readonly string[] TestimonialSignalWords =
+    {
+        "client", "work", "team", "instruction", "communicat", "professional",
+        "trustworthy", "pleasure", "recommend", "responsive", "reliable", "kind",
+        "respectful", "understanding", "helpful", "easy",
+    };
+
+    private static readonly HashSet<string> NameStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "He", "She", "His", "Her", "They", "Their", "Them", "It", "Its", "I", "We", "Our",
+        "You", "Your", "The", "This", "That", "These", "Those", "Good", "Great", "Very",
+        "Always", "Follow", "Make", "Success", "Nice", "Thanks", "Excellent", "Amazing",
+        "Highly", "Recommend", "Working", "Worker", "Client", "Freelancer", "Communication",
+        "Instructions", "Everything", "Overall", "Throughout", "Would", "Will", "And", "But",
+        "With", "For", "As", "So", "If", "When", "While", "Since", "Also", "Just", "More",
+        "Less", "Only", "Even", "Still", "Really", "All", "Was", "Is", "Are", "Been",
+    };
+
+    // Deterministic fallback for when the LLM extraction misses a client name that's
+    // genuinely present in testimonial prose. Only scans sentences that actually read like
+    // a testimonial (contain a signal word), strips "To freelancer:" labels first so
+    // freelancer names are never counted, and requires a name to recur at least twice —
+    // all to keep false positives low. Never invents anything not in the text.
+    private static string? FallbackExtractClientName(string description)
+    {
+        if (string.IsNullOrWhiteSpace(description)) return null;
+
+        var scrubbed = Regex.Replace(
+            description,
+            @"To freelancer:\s*(?:\[[^\]]+\]\([^)]*\)|[^\r\n]*?)(?=\s*(?:Rating is|No feedback given|\r?\n|$))",
+            "",
+            RegexOptions.IgnoreCase);
+
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var line in scrubbed.Split('\n'))
+        {
+            if (!TestimonialSignalWords.Any(w => line.Contains(w, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            foreach (Match m in Regex.Matches(line, @"\b[A-Z][a-zA-Z'\-]{2,}\b"))
+            {
+                var word = m.Value;
+                if (NameStopWords.Contains(word)) continue;
+                counts[word] = counts.GetValueOrDefault(word) + 1;
+            }
+        }
+
+        var best = counts.Where(kv => kv.Value >= 2).OrderByDescending(kv => kv.Value).FirstOrDefault();
+        return best.Key;
     }
 
     private class JdScoreRow
