@@ -11,14 +11,16 @@ public class ProposalController : ControllerBase
     private readonly ProposalService _proposals;
     private readonly LeadService _leads;
     private readonly BlobService _blob;
+    private readonly FileStorageService _files;
     private readonly ILogger<ProposalController> _log;
     private readonly ProposalCompanyContextService _companyCtx;
 
-    public ProposalController(ProposalService proposals, LeadService leads, BlobService blob, ILogger<ProposalController> log, ProposalCompanyContextService companyCtx)
+    public ProposalController(ProposalService proposals, LeadService leads, BlobService blob, FileStorageService files, ILogger<ProposalController> log, ProposalCompanyContextService companyCtx)
     {
         _proposals = proposals;
         _leads = leads;
         _blob = blob;
+        _files = files;
         _companyCtx = companyCtx;
         _log = log;
     }
@@ -74,14 +76,16 @@ public class ProposalController : ControllerBase
         var allowed = new[] { "application/pdf", "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "image/jpeg", "image/png", "image/gif", "image/webp" };
-        if (!allowed.Contains(file.ContentType))
+        var allowedExt = new[] { ".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+        var ext = Path.GetExtension(file.FileName ?? "").ToLowerInvariant();
+        if (!allowed.Contains(file.ContentType) && !allowedExt.Contains(ext))
             return BadRequest(new { error = "File type not allowed. Use PDF, Word, or images." });
 
         var proposal = await _proposals.GetById(id);
         if (proposal == null) return NotFound();
 
         await using var stream = file.OpenReadStream();
-        var url = await _blob.UploadAsync(stream, file.FileName, file.ContentType);
+        var url = await _files.SaveAsync(stream, $"proposals/{id}", file.FileName);
 
         var urls = proposal.DocumentUrls.ToList();
         var names = proposal.DocumentNames.ToList();
@@ -110,7 +114,8 @@ public class ProposalController : ControllerBase
             proposal.DocumentUrls = urls.ToArray();
             proposal.DocumentNames = names.ToArray();
             await _proposals.Upsert(proposal);
-            try { await _blob.DeleteAsync(req.Url); } catch { }
+            if (_files.IsLocalUrl(req.Url)) _files.TryDelete(req.Url);
+            else { try { await _blob.DeleteAsync(req.Url); } catch { } }
         }
         return Ok(new { deleted = true });
     }

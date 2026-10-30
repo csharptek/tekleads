@@ -27,7 +27,8 @@ public class RequestLoggingMiddleware
     {
         var path = ctx.Request.Path.Value ?? "/";
 
-        if (_skip.Contains(path) || path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase))
+        if (_skip.Contains(path) || path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/files/", StringComparison.OrdinalIgnoreCase))
         {
             await _next(ctx);
             return;
@@ -42,17 +43,21 @@ public class RequestLoggingMiddleware
             CreatedAt = DateTime.UtcNow,
         };
 
-        // Buffer request body
-        ctx.Request.EnableBuffering();
-        try
+        // Buffer request body (skip binary multipart uploads)
+        var isMultipart = (ctx.Request.ContentType ?? "").StartsWith("multipart/", StringComparison.OrdinalIgnoreCase);
+        if (!isMultipart)
         {
-            using var reader = new StreamReader(ctx.Request.Body, Encoding.UTF8, leaveOpen: true);
-            var reqBody = await reader.ReadToEndAsync();
-            ctx.Request.Body.Position = 0;
-            if (!string.IsNullOrWhiteSpace(reqBody))
-                entry.RequestBody = reqBody.Length > MaxBodyBytes ? reqBody[..MaxBodyBytes] + "…[truncated]" : reqBody;
+            ctx.Request.EnableBuffering();
+            try
+            {
+                using var reader = new StreamReader(ctx.Request.Body, Encoding.UTF8, leaveOpen: true);
+                var reqBody = await reader.ReadToEndAsync();
+                ctx.Request.Body.Position = 0;
+                if (!string.IsNullOrWhiteSpace(reqBody))
+                    entry.RequestBody = reqBody.Length > MaxBodyBytes ? reqBody[..MaxBodyBytes] + "…[truncated]" : reqBody;
+            }
+            catch { }
         }
-        catch { }
 
         // Buffer response body
         var originalBody = ctx.Response.Body;

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { api } from "../../lib/api";
+import { api, fileUrl } from "../../lib/api";
 import JdScoreModal from "./JdScoreModal";
 
 interface LeadOrgDetails {
@@ -533,17 +533,24 @@ export default function NewProposalView({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
-    if (!savedId) { setError("Save first before uploading."); e.target.value = ""; return; }
+    const picked = Array.from(files);
+    e.target.value = "";
+    let id = savedId;
+    if (!id) {
+      id = await handleSave(false);
+      if (!id) return;
+    }
     setUploading(true); setError("");
     try {
-      for (const file of Array.from(files)) {
+      for (const file of picked) {
+        if (file.size > 20 * 1024 * 1024) throw new Error(`${file.name} is larger than 20 MB.`);
         const fd = new FormData(); fd.append("file", file);
-        const res: any = await api.upload(`/api/proposals/${savedId}/upload`, fd);
+        const res: any = await api.upload(`/api/proposals/${id}/upload`, fd);
         setForm(f => ({ ...f, documentUrls: [...f.documentUrls, res.url], documentNames: [...f.documentNames, res.name] }));
       }
       setSuccess("File(s) uploaded.");
-    } catch (e: any) { setError(e.message); }
-    finally { setUploading(false); e.target.value = ""; }
+    } catch (err: any) { setError(err.message); }
+    finally { setUploading(false); }
   };
 
   const handleRemoveDoc = async (i: number) => {
@@ -927,21 +934,21 @@ export default function NewProposalView({
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div>
               <div className="field-label" style={{ margin: 0 }}>Documents</div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Save proposal first to enable upload</div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>PDF, Word or images · max 20 MB</div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               {uploading && <span className="spinner spinner-dark" />}
-              <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading || !savedId}>
+              <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading || saving || (!savedId && !section2Unlocked)}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload
               </button>
               <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp" style={{ display: "none" }} onChange={handleFileUpload} />
             </div>
           </div>
-          {!savedId && <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "var(--surface)", borderRadius: 6 }}>💡 Save first, then upload files.</div>}
+          {!savedId && <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "var(--surface)", borderRadius: 6 }}>💡 Uploading will save the prospect first.</div>}
           {form.documentUrls.map((url, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)", marginBottom: 6 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 13, color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <a href={fileUrl(url)} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 13, color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {form.documentNames[i] || `Document ${i + 1}`}
               </a>
               <button className="icon-btn" onClick={() => handleRemoveDoc(i)}>✕</button>
