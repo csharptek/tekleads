@@ -60,14 +60,13 @@ export const api = {
     if (!BASE) throw new Error("NEXT_PUBLIC_API_URL is not set");
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
+    const timeout = setTimeout(() => controller.abort(), 180000);
 
     try {
       const res = await fetch(`${BASE}${path}`, {
         method: "POST",
         body: formData,
         cache: "no-cache",
-        keepalive: true,
         signal: controller.signal,
         headers: { "Accept": "application/json" },
       });
@@ -89,3 +88,10 @@ export const api = {
 };
 
 export const API_BASE = BASE;
+
+/** Resolves stored document URLs: relative "/api/files/..." paths are prefixed with the API base. */
+export function fileUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+}

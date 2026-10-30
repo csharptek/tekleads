@@ -16,6 +16,7 @@ builder.Services.AddScoped<ProposalService>();
 builder.Services.AddScoped<ProposalCompanyContextService>();
 builder.Services.AddScoped<ProposalGenerationService>();
 builder.Services.AddScoped<BlobService>();
+builder.Services.AddSingleton<FileStorageService>();
 builder.Services.AddScoped<LogService>();
 builder.Services.AddScoped<ProposalExportService>();
 builder.Services.AddScoped<ArtifactsService>();
