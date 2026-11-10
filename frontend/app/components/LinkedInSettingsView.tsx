@@ -70,7 +70,7 @@ export default function LinkedInSettingsView() {
       <div className="page-header">
         <div>
           <h1 className="page-title">LinkedIn Settings</h1>
-          <div className="page-sub">Limits, company context and prompts for LinkedIn Comments and Conversations. Uses the Claude API key from Settings.</div>
+          <div className="page-sub">Limits, company context and prompts for the LinkedIn page. Uses the Claude API key from Settings.</div>
         </div>
         <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save"}</button>
       </div>

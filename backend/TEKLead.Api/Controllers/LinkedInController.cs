@@ -49,17 +49,7 @@ public class LinkedInController : ControllerBase
     [HttpPost("people/accept")]
     public Task<IActionResult> Accept([FromBody] LiLeadReq req) => Run(async () => { await _svc.Accept(req.LeadId); return null; });
 
-    [HttpPost("people/unaccept")]
-    public Task<IActionResult> Unaccept([FromBody] LiLeadReq req) => Run(async () => { await _svc.Unaccept(req.LeadId); return null; });
-
-    [HttpPost("people/stage")]
-    public Task<IActionResult> Stage([FromBody] LiStageReq req) => Run(async () => { await _svc.SetStage(req); return null; });
-
-    // Conversations page
-    [HttpGet("conversations")]
-    public Task<IActionResult> Conversations([FromQuery] string? f, [FromQuery] string? q, [FromQuery] int page = 1)
-        => Run(async () => await _svc.Conversations(f, q, page));
-
+    // Replies to your comments
     [HttpPost("conversations/reply")]
     public Task<IActionResult> LogReply([FromBody] LiLogReplyReq req) => Run(async () => { await _svc.LogReply(req); return null; });
 
@@ -71,15 +61,6 @@ public class LinkedInController : ControllerBase
 
     [HttpPost("conversations/delete")]
     public Task<IActionResult> DeleteReply([FromBody] LiIdReq req) => Run(async () => { await _svc.DeleteReply(req.Id); return null; });
-
-    [HttpPost("reminders")]
-    public Task<IActionResult> Remind([FromBody] LiRemindReq req) => Run(async () => { await _svc.Remind(req); return null; });
-
-    [HttpPost("reminders/cancel")]
-    public Task<IActionResult> CancelRemind([FromBody] LiIdReq req) => Run(async () => { await _svc.CancelRemind(req.Id); return null; });
-
-    [HttpPost("reminders/done")]
-    public Task<IActionResult> DoneRemind([FromBody] LiIdReq req) => Run(async () => { await _svc.DoneRemind(req.Id); return null; });
 
     // Settings + usage
     [HttpGet("settings")]

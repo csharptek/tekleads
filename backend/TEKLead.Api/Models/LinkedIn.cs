@@ -52,14 +52,13 @@ public class LiConvoReply
     public DateTime CreatedAt { get; set; }
 }
 
-public class LiReminder
+public class LiCard
 {
-    public int Id { get; set; }
-    public Guid LeadId { get; set; }
-    public string Note { get; set; } = "";
-    public DateTime DueAt { get; set; }
-    public string Status { get; set; } = "open";
-    public string? Name { get; set; }
+    public LiPerson Person { get; set; } = new();
+    public LiEngagement? Draft { get; set; }
+    public List<LiEngagement> Comments { get; set; } = new();
+    public List<LiConvoReply> Thread { get; set; } = new();
+    public bool NeedsReply { get; set; }
 }
 
 public class LiCommentsState
@@ -69,30 +68,12 @@ public class LiCommentsState
     public int OldTotal { get; set; }
     public int NewPerPage { get; set; }
     public int OldPerDay { get; set; }
-    public List<LiEngagement> InProgress { get; set; } = new();
-    public List<LiPerson> InProgressPeople { get; set; } = new();
-    public List<LiPerson> NewPeople { get; set; } = new();
-    public List<LiPerson> OldPeople { get; set; } = new();
-}
-
-public class LiConvoCard
-{
-    public LiPerson Person { get; set; } = new();
-    public List<LiEngagement> Comments { get; set; } = new();
-    public LiEngagement? Draft { get; set; }
-    public List<LiConvoReply> Thread { get; set; } = new();
-    public LiReminder? Reminder { get; set; }
-    public bool NeedsReply { get; set; }
-    public DateTime Activity { get; set; }
-}
-
-public class LiConvoPage
-{
-    public int Total { get; set; }
-    public int Page { get; set; }
-    public int Pages { get; set; }
-    public List<LiConvoCard> Cards { get; set; } = new();
-    public List<LiReminder> DueReminders { get; set; } = new();
+    /// <summary>They replied to your comment and you haven't answered.</summary>
+    public List<LiCard> NeedsReply { get; set; } = new();
+    /// <summary>Comment drafted / drafting.</summary>
+    public List<LiCard> InProgress { get; set; } = new();
+    public List<LiCard> New { get; set; } = new();
+    public List<LiCard> Old { get; set; } = new();
 }
 
 // ── Requests ───────────────────────────────────────────────────────────────
@@ -113,8 +94,6 @@ public class LiDraftAllReq
 public class LiDoneReq { public int Id { get; set; } public string? Comment { get; set; } }
 public class LiIdReq { public int Id { get; set; } }
 public class LiLeadReq { public Guid LeadId { get; set; } public string? Reason { get; set; } }
-public class LiLogReplyReq { public Guid LeadId { get; set; } public string Channel { get; set; } = "comment"; public string TheirText { get; set; } = ""; }
+public class LiLogReplyReq { public Guid LeadId { get; set; } public string TheirText { get; set; } = ""; }
 public class LiPostedReq { public int Id { get; set; } public string? MyReply { get; set; } }
-public class LiStageReq { public Guid LeadId { get; set; } public string Stage { get; set; } = ""; }
-public class LiRemindReq { public Guid LeadId { get; set; } public int Days { get; set; } public string? Note { get; set; } }
 public class LiSettingsSaveReq { public Dictionary<string, string?> Values { get; set; } = new(); }

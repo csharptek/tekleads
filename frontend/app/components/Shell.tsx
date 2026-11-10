@@ -21,10 +21,9 @@ import ContactsWAInboxView from "./ContactsWAInboxView";
 import JobLeadsView from "./JobLeadsView";
 import JobContactsView from "./JobContactsView";
 import LinkedInCommentsView from "./LinkedInCommentsView";
-import LinkedInConversationsView from "./LinkedInConversationsView";
 import LinkedInSettingsView from "./LinkedInSettingsView";
 
-type Page = "quick-outreach" | "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "jd-only-list" | "jd-only-new" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads" | "job-contacts" | "li-comments" | "li-conversations" | "li-settings";
+type Page = "quick-outreach" | "leads" | "prospects" | "portfolio" | "products" | "proposals" | "new-proposal" | "proposal-list" | "jd-only-list" | "jd-only-new" | "proposal-settings" | "proposal-editor" | "artifacts" | "settings" | "logs" | "phone-logs" | "contact-lists" | "contacts-wa-inbox" | "wa-inbox" | "hr-inbox" | "job-leads" | "job-contacts" | "li-comments" | "li-settings";
 
 type EditorContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientCompany?: string; };
 type ArtifactsContext = { proposalId: string; proposalHeadline?: string; clientName?: string; clientEmail?: string; clientPhone?: string; allEmails?: string[]; allPhones?: string[]; allEmailNames?: string[]; allPhoneNames?: string[]; autoGenerate?: boolean; returnTo?: Page; };
@@ -69,8 +68,7 @@ const CATEGORIES: NavCategory[] = [
   {
     label: "LinkedIn",
     items: [
-      { id: "li-comments", label: "LinkedIn Comments", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg> },
-      { id: "li-conversations", label: "LinkedIn Conversations", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
+      { id: "li-comments", label: "LinkedIn", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg> },
       { id: "li-settings", label: "LinkedIn Settings", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg> },
     ],
   },
@@ -217,7 +215,6 @@ export default function Shell() {
         {page === "job-leads"         && <JobLeadsView />}
         {page === "job-contacts"      && <JobContactsView />}
         {page === "li-comments"       && <LinkedInCommentsView />}
-        {page === "li-conversations"  && <LinkedInConversationsView />}
         {page === "li-settings"       && <LinkedInSettingsView />}
       </div>
     </div>

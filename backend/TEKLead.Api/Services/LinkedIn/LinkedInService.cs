@@ -7,7 +7,7 @@ using TEKLead.Api.Models;
 namespace TEKLead.Api.Services.LinkedIn;
 
 /// <summary>
-/// LinkedIn comments (daily round robin over Saved Contacts) and Conversations (comment → reply flow).
+/// LinkedIn page: daily round robin over Saved Contacts — comment on their activity, then answer replies to your comments.
 /// Only reads existing tables (saved_leads etc.); all writes go to li_* tables.
 /// </summary>
 public class LinkedInService
@@ -26,7 +26,6 @@ public class LinkedInService
     private NpgsqlConnection Conn() => new(_settings.ConnectionString);
 
     private static readonly string[] OpenStatuses = { "queued", "batching", "drafted", "failed" };
-    public static readonly string[] Stages = { "accepted", "replied", "meeting", "nurture", "lost" };
     private static readonly string[] Actions = { "reply_thread", "move_to_dm", "ask_call", "follow_up", "stop" };
 
     // ── Schema ───────────────────────────────────────────────────────────────
@@ -168,7 +167,7 @@ public class LinkedInService
             UPDATE li_people_state SET {setSql}, updated_at = NOW() WHERE lead_id = @leadId;", args);
     }
 
-    // ── Comments page ────────────────────────────────────────────────────────
+    // ── LinkedIn page (one list) ────────────────────────────────────────────
 
     public async Task<LiCommentsState> CommentsState(int newPage)
     {
@@ -185,43 +184,66 @@ public class LinkedInService
 
         var res = new LiCommentsState { NewPerPage = perPage, OldPerDay = oldPerDay };
         res.DoneToday = await c.ExecuteScalarAsync<int>(
-            "SELECT count(*)::int FROM li_engagements WHERE status = 'done' AND source = 'comments' AND done_at >= @dayStart", new { dayStart });
+            "SELECT count(*)::int FROM li_engagements WHERE status = 'done' AND done_at >= @dayStart", new { dayStart });
 
         // Old already done today: their first done comment was before today.
         var oldDoneToday = await c.ExecuteScalarAsync<int>(@"SELECT count(DISTINCT x.lead_id)::int FROM li_engagements x
-            WHERE x.status = 'done' AND x.source = 'comments' AND x.done_at >= @dayStart
+            WHERE x.status = 'done' AND x.done_at >= @dayStart
               AND EXISTS (SELECT 1 FROM li_engagements y WHERE y.lead_id = x.lead_id AND y.status = 'done' AND y.done_at < @dayStart)", new { dayStart });
 
-        res.InProgress = (await c.QueryAsync<LiEngagement>($@"SELECT {EngCols} FROM li_engagements en
-            WHERE en.source = 'comments' AND en.status = ANY(@open)
-              AND NOT EXISTS (SELECT 1 FROM li_people_state st WHERE st.lead_id = en.lead_id AND (st.accepted_at IS NOT NULL OR st.removed))
-            ORDER BY en.created_at DESC", new { open = OpenStatuses })).ToList();
-
-        var ids = res.InProgress.Select(e => e.LeadId).Distinct().ToArray();
-        if (ids.Length > 0)
-            res.InProgressPeople = (await c.QueryAsync<LiPerson>($"SELECT {PersonCols} {PersonJoins} WHERE s.id = ANY(@ids)", new { ids })).ToList();
-
-        const string eligible = @"
+        const string baseWhere = @"
             WHERE s.saved_at >= @start
               AND COALESCE(s.linkedin_url, '') <> ''
               AND st.accepted_at IS NULL
-              AND COALESCE(st.removed, FALSE) = FALSE
+              AND COALESCE(st.removed, FALSE) = FALSE";
+        const string pendingReply = "EXISTS (SELECT 1 FROM li_convo_replies r WHERE r.lead_id = s.id AND r.posted_at IS NULL)";
+        const string openDraft = "EXISTS (SELECT 1 FROM li_engagements o WHERE o.lead_id = s.id AND o.status = ANY(@open))";
+        const string rotation = $@"{baseWhere}
               AND (st.skip_until IS NULL OR st.skip_until < NOW())
-              AND NOT EXISTS (SELECT 1 FROM li_engagements o WHERE o.lead_id = s.id AND o.status = ANY(@open))";
+              AND NOT {pendingReply} AND NOT {openDraft}";
+        var args = new { start, open = OpenStatuses };
 
-        res.NewTotal = await c.ExecuteScalarAsync<int>($"SELECT count(*)::int {PersonJoins} {eligible} AND COALESCE(e.n, 0) = 0",
-            new { start, open = OpenStatuses });
-        res.NewPeople = (await c.QueryAsync<LiPerson>($@"SELECT {PersonCols} {PersonJoins} {eligible} AND COALESCE(e.n, 0) = 0
+        var needs = (await c.QueryAsync<LiPerson>($@"SELECT {PersonCols} {PersonJoins} {baseWhere} AND {pendingReply}
+            ORDER BY s.saved_at DESC", args)).ToList();
+        var prog = (await c.QueryAsync<LiPerson>($@"SELECT {PersonCols} {PersonJoins} {baseWhere} AND {openDraft} AND NOT {pendingReply}
+            ORDER BY s.saved_at DESC", args)).ToList();
+
+        res.NewTotal = await c.ExecuteScalarAsync<int>($"SELECT count(*)::int {PersonJoins} {rotation} AND COALESCE(e.n, 0) = 0", args);
+        var fresh = (await c.QueryAsync<LiPerson>($@"SELECT {PersonCols} {PersonJoins} {rotation} AND COALESCE(e.n, 0) = 0
             ORDER BY s.saved_at DESC LIMIT @lim", new { start, open = OpenStatuses, lim = perPage * newPage })).ToList();
 
         var gapCut = DateTime.UtcNow.AddDays(-gap);
-        res.OldTotal = await c.ExecuteScalarAsync<int>($"SELECT count(*)::int {PersonJoins} {eligible} AND COALESCE(e.n, 0) > 0 AND e.last_done < @gapCut",
+        res.OldTotal = await c.ExecuteScalarAsync<int>($"SELECT count(*)::int {PersonJoins} {rotation} AND COALESCE(e.n, 0) > 0 AND e.last_done < @gapCut",
             new { start, open = OpenStatuses, gapCut });
         var oldLimit = Math.Max(0, oldPerDay - oldDoneToday);
-        if (oldLimit > 0)
-            res.OldPeople = (await c.QueryAsync<LiPerson>($@"SELECT {PersonCols} {PersonJoins} {eligible} AND COALESCE(e.n, 0) > 0 AND e.last_done < @gapCut
-                ORDER BY e.last_done ASC LIMIT @lim", new { start, open = OpenStatuses, gapCut, lim = oldLimit })).ToList();
+        var old = oldLimit > 0
+            ? (await c.QueryAsync<LiPerson>($@"SELECT {PersonCols} {PersonJoins} {rotation} AND COALESCE(e.n, 0) > 0 AND e.last_done < @gapCut
+                ORDER BY e.last_done ASC LIMIT @lim", new { start, open = OpenStatuses, gapCut, lim = oldLimit })).ToList()
+            : new List<LiPerson>();
 
+        var ids = needs.Concat(prog).Concat(fresh).Concat(old).Select(p => p.LeadId).Distinct().ToArray();
+        var engs = new List<LiEngagement>();
+        var replies = new List<LiConvoReply>();
+        if (ids.Length > 0)
+        {
+            engs = (await c.QueryAsync<LiEngagement>($@"SELECT {EngCols} FROM li_engagements
+                WHERE lead_id = ANY(@ids) AND (status = 'done' OR status = ANY(@open)) ORDER BY created_at ASC", new { ids, open = OpenStatuses })).ToList();
+            replies = (await c.QueryAsync<LiConvoReply>($"SELECT {ReplyCols} FROM li_convo_replies WHERE lead_id = ANY(@ids) ORDER BY created_at ASC", new { ids })).ToList();
+        }
+
+        LiCard Card(LiPerson p) => new()
+        {
+            Person = p,
+            Comments = engs.Where(e => e.LeadId == p.LeadId && e.Status == "done").ToList(),
+            Draft = engs.LastOrDefault(e => e.LeadId == p.LeadId && e.Status != "done"),
+            Thread = replies.Where(r => r.LeadId == p.LeadId).ToList(),
+            NeedsReply = replies.Any(r => r.LeadId == p.LeadId && r.PostedAt == null),
+        };
+
+        res.NeedsReply = needs.Select(Card).ToList();
+        res.InProgress = prog.Select(Card).ToList();
+        res.New = fresh.Select(Card).ToList();
+        res.Old = old.Select(Card).ToList();
         return res;
     }
 
@@ -271,7 +293,7 @@ public class LinkedInService
     {
         var postText = (req.PostText ?? "").Trim();
         if (postText.Length < 30) throw new Exception("Paste the post text (at least a few lines)");
-        var source = req.Source == "conversations" ? "conversations" : "comments";
+        const string source = "comments";
         var ctx = await _ctx.Build(req.LeadId) ?? throw new Exception("Contact not found");
         var s = await _li.GetAll();
         var banned = s.GetValueOrDefault(LiSettingsService.BannedWords, "");
@@ -284,9 +306,9 @@ public class LinkedInService
         var (comment, problems) = await FixComment(call, first, postText, banned);
         if (string.IsNullOrWhiteSpace(comment)) throw new Exception("No comment returned, try again");
 
-        // One open draft per person per page.
-        await c.ExecuteAsync("DELETE FROM li_engagements WHERE lead_id = @leadId AND source = @source AND status = ANY(@open)",
-            new { leadId = req.LeadId, source, open = OpenStatuses });
+        // One open draft per person.
+        await c.ExecuteAsync("DELETE FROM li_engagements WHERE lead_id = @leadId AND status = ANY(@open)",
+            new { leadId = req.LeadId, open = OpenStatuses });
         var id = await c.ExecuteScalarAsync<int>(@"INSERT INTO li_engagements (lead_id, source, post_url, post_text, comment, status, problems, context_used)
             VALUES (@leadId, @source, @postUrl, @postText, @comment, 'drafted', @problems, @ctxUsed) RETURNING id",
             new
@@ -307,9 +329,9 @@ public class LinkedInService
         {
             var post = (it.PostText ?? "").Trim();
             if (post.Length < 30) continue;
-            var source = it.Source == "conversations" ? "conversations" : "comments";
-            await c.ExecuteAsync("DELETE FROM li_engagements WHERE lead_id = @leadId AND source = @source AND status = ANY(@open)",
-                new { leadId = it.LeadId, source, open = OpenStatuses });
+            const string source = "comments";
+            await c.ExecuteAsync("DELETE FROM li_engagements WHERE lead_id = @leadId AND status = ANY(@open)",
+                new { leadId = it.LeadId, open = OpenStatuses });
             await c.ExecuteAsync(@"INSERT INTO li_engagements (lead_id, source, post_url, post_text, status) VALUES (@leadId, @source, @postUrl, @post, 'queued')",
                 new { leadId = it.LeadId, source, postUrl = string.IsNullOrWhiteSpace(it.PostUrl) ? null : it.PostUrl!.Trim(), post });
             n++;
@@ -337,7 +359,7 @@ public class LinkedInService
     {
         await using var c = Conn();
         await c.OpenAsync();
-        await c.ExecuteAsync("UPDATE li_engagements SET status = 'skipped', done_at = NOW() WHERE lead_id = @leadId AND source = 'comments' AND status = ANY(@open)",
+        await c.ExecuteAsync("UPDATE li_engagements SET status = 'skipped', done_at = NOW() WHERE lead_id = @leadId AND status = ANY(@open)",
             new { leadId, open = OpenStatuses });
         await UpsertState(c, leadId, "skip_until = NOW() + interval '7 days'", new { leadId });
     }
@@ -355,79 +377,9 @@ public class LinkedInService
     {
         await using var c = Conn();
         await c.OpenAsync();
-        await UpsertState(c, leadId, "accepted_at = COALESCE(accepted_at, NOW()), stage = CASE WHEN stage = '' THEN 'accepted' ELSE stage END, skip_until = NULL", new { leadId });
-        // Open comment draft follows them to Conversations.
-        await c.ExecuteAsync("DELETE FROM li_engagements WHERE lead_id = @leadId AND source = 'conversations' AND status = ANY(@open)", new { leadId, open = OpenStatuses });
-        await c.ExecuteAsync("UPDATE li_engagements SET source = 'conversations' WHERE lead_id = @leadId AND source = 'comments' AND status = ANY(@open)", new { leadId, open = OpenStatuses });
-    }
-
-    public async Task Unaccept(Guid leadId)
-    {
-        await using var c = Conn();
-        await c.OpenAsync();
-        await UpsertState(c, leadId, "accepted_at = NULL, stage = CASE WHEN stage = 'accepted' THEN '' ELSE stage END", new { leadId });
-    }
-
-    // ── Conversations page ───────────────────────────────────────────────────
-
-    public async Task<LiConvoPage> Conversations(string? filter, string? q, int page)
-    {
-        const int per = 20;
-        page = Math.Max(1, page);
-        filter = filter is "needs" or "waiting" ? filter : "all";
-        var like = string.IsNullOrWhiteSpace(q) ? null : $"%{q.Trim().Replace("%", "").Replace("_", "")}%";
-
-        await using var c = Conn();
-        await c.OpenAsync();
-
-        var where = new StringBuilder(@"
-            WHERE (st.accepted_at IS NOT NULL OR EXISTS (SELECT 1 FROM li_convo_replies r WHERE r.lead_id = s.id))
-              AND COALESCE(st.removed, FALSE) = FALSE");
-        if (like != null) where.Append(" AND (s.name ILIKE @like OR s.company ILIKE @like OR s.title ILIKE @like)");
-        if (filter == "needs") where.Append(" AND EXISTS (SELECT 1 FROM li_convo_replies r WHERE r.lead_id = s.id AND r.posted_at IS NULL)");
-        if (filter == "waiting") where.Append(" AND NOT EXISTS (SELECT 1 FROM li_convo_replies r WHERE r.lead_id = s.id)");
-
-        const string activity = @"GREATEST(COALESCE(st.accepted_at, 'epoch'::timestamptz), COALESCE(e.last_done, 'epoch'::timestamptz),
-            COALESCE((SELECT max(r.created_at) FROM li_convo_replies r WHERE r.lead_id = s.id), 'epoch'::timestamptz))";
-
-        var total = await c.ExecuteScalarAsync<int>($"SELECT count(*)::int {PersonJoins} {where}", new { like });
-        var rows = (await c.QueryAsync<LiPersonActivity>(
-            $@"SELECT {PersonCols}, {activity} AS ""Activity"" {PersonJoins} {where}
-               ORDER BY {activity} DESC LIMIT @per OFFSET @off",
-            new { like, per, off = (page - 1) * per })).ToList();
-
-        var res = new LiConvoPage { Total = total, Page = page, Pages = Math.Max(1, (int)Math.Ceiling(total / (double)per)) };
-        var ids = rows.Select(r => r.LeadId).ToArray();
-        if (ids.Length > 0)
-        {
-            var engs = (await c.QueryAsync<LiEngagement>($@"SELECT {EngCols} FROM li_engagements
-                WHERE lead_id = ANY(@ids) AND (status = 'done' OR (source = 'conversations' AND status = ANY(@open)))
-                ORDER BY created_at ASC", new { ids, open = OpenStatuses })).ToList();
-            var replies = (await c.QueryAsync<LiConvoReply>($"SELECT {ReplyCols} FROM li_convo_replies WHERE lead_id = ANY(@ids) ORDER BY created_at ASC", new { ids })).ToList();
-            var rems = (await c.QueryAsync<LiReminder>(@"SELECT id AS ""Id"", lead_id AS ""LeadId"", note AS ""Note"", due_at AS ""DueAt"", status AS ""Status""
-                FROM li_reminders WHERE lead_id = ANY(@ids) AND status = 'open'", new { ids })).ToList();
-
-            foreach (var p in rows)
-            {
-                var thread = replies.Where(r => r.LeadId == p.LeadId).ToList();
-                var last = thread.LastOrDefault();
-                res.Cards.Add(new LiConvoCard
-                {
-                    Person = p,
-                    Activity = p.Activity,
-                    Comments = engs.Where(e => e.LeadId == p.LeadId && e.Status == "done").ToList(),
-                    Draft = engs.LastOrDefault(e => e.LeadId == p.LeadId && e.Status != "done"),
-                    Thread = thread,
-                    Reminder = rems.FirstOrDefault(r => r.LeadId == p.LeadId),
-                    NeedsReply = thread.Any(t => t.PostedAt == null),
-                });
-            }
-        }
-
-        res.DueReminders = (await c.QueryAsync<LiReminder>(@"SELECT r.id AS ""Id"", r.lead_id AS ""LeadId"", r.note AS ""Note"", r.due_at AS ""DueAt"", r.status AS ""Status"", s.name AS ""Name""
-            FROM li_reminders r JOIN saved_leads s ON s.id = r.lead_id
-            WHERE r.status = 'open' AND r.due_at < @tomorrow ORDER BY r.due_at", new { tomorrow = IstDayStartUtc().AddDays(1) })).ToList();
-        return res;
+        // Accepted: they leave the tool; you handle them yourself.
+        await UpsertState(c, leadId, "accepted_at = COALESCE(accepted_at, NOW()), stage = 'accepted', skip_until = NULL", new { leadId });
+        await c.ExecuteAsync("UPDATE li_engagements SET status = 'removed', done_at = NOW() WHERE lead_id = @leadId AND status = ANY(@open)", new { leadId, open = OpenStatuses });
     }
 
     private record Suggestion(string Reply, string Action, string Reason, string Dm, List<string> Problems);
@@ -458,7 +410,6 @@ public class LinkedInService
         var edits = await EditsBlock(c, "reply", leadId);
         var prompt = string.Join("\n\n", new[]
         {
-            $"STAGE: {(await c.ExecuteScalarAsync<string?>("SELECT stage FROM li_people_state WHERE lead_id = @leadId", new { leadId })) ?? "new"}",
             eng?.PostText != null ? $"THEIR POST:\n{Cut(eng.PostText, 1500)}" : "",
             eng?.Comment != null ? $"MY COMMENT:\n{eng.Comment}" : "",
             history.Count > 0 ? "EARLIER IN THIS CONVERSATION:\n" + string.Join("\n", history.Select((h, i) =>
@@ -515,7 +466,7 @@ public class LinkedInService
     {
         var theirText = (req.TheirText ?? "").Trim();
         if (theirText.Length < 2) throw new Exception("Paste what they wrote");
-        var channel = req.Channel is "comment" or "dm" or "other" ? req.Channel : "comment";
+        const string channel = "comment"; // comment replies only
 
         await using var c = Conn();
         await c.OpenAsync();
@@ -536,7 +487,6 @@ public class LinkedInService
                 myReply = autoClose ? "No reply needed (they closed the thread)" : null,
                 postedAt = autoClose ? DateTime.UtcNow : (DateTime?)null,
             });
-        await UpsertState(c, req.LeadId, "stage = CASE WHEN stage IN ('', 'accepted') THEN 'replied' ELSE stage END", new { leadId = req.LeadId });
     }
 
     public async Task Regenerate(int id)
@@ -576,41 +526,6 @@ public class LinkedInService
         await using var c = Conn();
         await c.OpenAsync();
         await c.ExecuteAsync("DELETE FROM li_convo_replies WHERE id = @id", new { id });
-    }
-
-    public async Task SetStage(LiStageReq req)
-    {
-        if (!Stages.Contains(req.Stage)) throw new Exception("Bad stage");
-        await using var c = Conn();
-        await c.OpenAsync();
-        await UpsertState(c, req.LeadId, "stage = @stage", new { leadId = req.LeadId, stage = req.Stage });
-    }
-
-    public async Task Remind(LiRemindReq req)
-    {
-        if (req.Days is not (1 or 3 or 7)) throw new Exception("Bad request");
-        var due = IstDayStartUtc().AddDays(req.Days).AddHours(9); // 09:00 IST
-        var note = Cut((req.Note ?? "").Trim(), 140);
-        if (note.Length == 0) note = "Follow up";
-        await using var c = Conn();
-        await c.OpenAsync();
-        var ex = await c.ExecuteScalarAsync<int?>("SELECT id FROM li_reminders WHERE lead_id = @leadId AND status = 'open' LIMIT 1", new { leadId = req.LeadId });
-        if (ex is { } rid) await c.ExecuteAsync("UPDATE li_reminders SET due_at = @due, note = @note WHERE id = @rid", new { due, note, rid });
-        else await c.ExecuteAsync("INSERT INTO li_reminders (lead_id, note, due_at) VALUES (@leadId, @note, @due)", new { leadId = req.LeadId, note, due });
-    }
-
-    public async Task CancelRemind(int id)
-    {
-        await using var c = Conn();
-        await c.OpenAsync();
-        await c.ExecuteAsync("UPDATE li_reminders SET status = 'cancelled' WHERE id = @id AND status = 'open'", new { id });
-    }
-
-    public async Task DoneRemind(int id)
-    {
-        await using var c = Conn();
-        await c.OpenAsync();
-        await c.ExecuteAsync("UPDATE li_reminders SET status = 'done' WHERE id = @id AND status = 'open'", new { id });
     }
 
     // ── Usage ────────────────────────────────────────────────────────────────
@@ -785,11 +700,6 @@ public class LinkedInService
             await c.ExecuteAsync("UPDATE li_engagements SET status = 'failed', error = @err WHERE id = @id", new { id = engId, err = Cut(ex.Message, 300) });
         }
     }
-}
-
-public class LiPersonActivity : LiPerson
-{
-    public DateTime Activity { get; set; }
 }
 
 public class LiUsageRow
