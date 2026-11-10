@@ -1,6 +1,7 @@
 using TEKLead.Api.Data;
 using TEKLead.Api.Middleware;
 using TEKLead.Api.Services;
+using TEKLead.Api.Services.LinkedIn;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +43,12 @@ builder.Services.AddHostedService<EmailSendWorker>();
 builder.Services.AddHostedService<PhoneWebhookWorker>();
 builder.Services.AddHostedService<WaScheduleWorker>();
 builder.Services.AddHostedService<JobLeadEmailWorker>();
+// LinkedIn engage module
+builder.Services.AddScoped<LiSettingsService>();
+builder.Services.AddScoped<LiClaudeClient>();
+builder.Services.AddScoped<LiContextService>();
+builder.Services.AddScoped<LinkedInService>();
+builder.Services.AddHostedService<LiBatchWorker>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()
      .WithExposedHeaders("Access-Control-Allow-Private-Network")));
@@ -104,6 +111,10 @@ using (var scope = app.Services.CreateScope())
     try { var jobsSvc = scope.ServiceProvider.GetRequiredService<JobScraperService>(); await jobsSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "JobScraper schema failed"); }
     try { var jleQueue = scope.ServiceProvider.GetRequiredService<JobLeadEmailQueueService>(); await jleQueue.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "JobLeadEmailQueue schema failed"); }
     try { var pickerSvc = scope.ServiceProvider.GetRequiredService<JobLeadContactPickerService>(); await pickerSvc.EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "JobLeadContactPicker schema failed"); }
+    try { await scope.ServiceProvider.GetRequiredService<LiSettingsService>().EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "LiSettings schema failed"); }
+    try { await scope.ServiceProvider.GetRequiredService<LiClaudeClient>().EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "LiAiUsage schema failed"); }
+    try { await scope.ServiceProvider.GetRequiredService<LiContextService>().EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "LiContext schema failed"); }
+    try { await scope.ServiceProvider.GetRequiredService<LinkedInService>().EnsureSchema(); } catch (Exception ex) { app.Logger.LogError(ex, "LinkedIn schema failed"); }
 }
 
 app.MapControllers();
