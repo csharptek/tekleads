@@ -188,7 +188,7 @@ export default function ArtifactsView({
   // Send to All state
   const [sendInterval, setSendInterval] = useState(5);
   const [sendAllQueued, setSendAllQueued] = useState(false);
-  const [sendAllJobs, setSendAllJobs] = useState<{ id: string; toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string; followUpStage?: number; subject?: string; body?: string }[]>([]);
+  const [sendAllJobs, setSendAllJobs] = useState<{ id: string; toEmail: string; toName: string; scheduledAt: string; sentAt?: string; status: string; error?: string; followUpStage?: number; subject?: string; body?: string; timezone?: string }[]>([]);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Follow-up delays (subject/body now in artifacts state, AI-generated)
@@ -700,6 +700,41 @@ export default function ArtifactsView({
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(pollStatus, 5000);
   };
+
+  const [sendingTz, setSendingTz] = useState(false);
+  const sendToAllTz = async () => {
+    if (!allEmails || allEmails.length === 0 || sendingTz) return;
+    setSendingTz(true);
+    try {
+      const recipients = allEmails.map((email, i) => ({ email, name: allEmailNames?.[i] || "" }));
+      const followUp1 = (artifacts.followUp1Subject?.trim() && artifacts.followUp1Body?.trim())
+        ? { subject: artifacts.followUp1Subject, body: artifacts.followUp1Body, delayHours: fu1Delay > 0 ? fu1Delay : 6 }
+        : null;
+      const followUp2 = (artifacts.followUp2Subject?.trim() && artifacts.followUp2Body?.trim())
+        ? { subject: artifacts.followUp2Subject, body: artifacts.followUp2Body, delayHours: fu2Delay > 0 ? fu2Delay : 12 }
+        : null;
+      await api.post(`/api/artifacts/${proposalId}/send-bulk-tz`, {
+        recipients,
+        intervalMinutes: sendInterval,
+        followUp1,
+        followUp2,
+      });
+      setSendAllQueued(true);
+      pollStatus();
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(pollStatus, 5000);
+    } finally {
+      setSendingTz(false);
+    }
+  };
+
+  const tzLocalTime = (iso: string, tz?: string) => {
+    if (!tz) return "";
+    try {
+      return new Date(iso).toLocaleString([], { timeZone: tz, weekday: "short", hour: "2-digit", minute: "2-digit" });
+    } catch { return ""; }
+  };
+  const tzShort = (tz?: string) => (tz ? (tz.split("/").pop() || tz).replace(/_/g, " ") : "");
 
   const cancelSendAll = async () => {
     await api.post(`/api/artifacts/${proposalId}/send-bulk/cancel`, {});
@@ -1370,7 +1405,7 @@ export default function ArtifactsView({
               <div className="card-sub">Open email / WhatsApp for each contact</div>
             </div>
             {allEmails && allEmails.length > 0 && artifacts.emailSubject && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <label style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Interval (min):</label>
                 <select
                   value={sendInterval}
@@ -1389,6 +1424,16 @@ export default function ArtifactsView({
                     <button className="btn btn-sm" style={{ background: "#0078d4", color: "white", border: "none" }} onClick={sendToAll}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                       Send to All
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      style={{ background: "#7c3aed", color: "white", border: "none", opacity: sendingTz ? 0.6 : 1 }}
+                      onClick={sendToAllTz}
+                      disabled={sendingTz}
+                      title="Schedule each email inside the client's local business window (Settings → Email Send Window)"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      {sendingTz ? "Scheduling..." : "Send All (Client TZ)"}
                     </button>
                   </>
                 )}
@@ -1447,9 +1492,12 @@ export default function ArtifactsView({
               <span style={{ background: color, color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 40, textAlign: "center" as const, display: "inline-block" }}>{label}</span>
             );
 
-            const scheduledLabel = (job?: { scheduledAt: string; status: string }) =>
+            const scheduledLabel = (job?: { scheduledAt: string; status: string; timezone?: string }) =>
               job && job.status === "pending"
-                ? <span style={{ color: "var(--muted)", fontSize: 10 }}>due {new Date(job.scheduledAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                ? <span style={{ color: "var(--muted)", fontSize: 10 }}>
+                    due {new Date(job.scheduledAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {job.timezone && <> · {tzLocalTime(job.scheduledAt, job.timezone)} {tzShort(job.timezone)}</>}
+                  </span>
                 : null;
 
             return (
@@ -1496,9 +1544,14 @@ export default function ArtifactsView({
                       <div key={email} style={{ background: "var(--surface2, var(--surface))", borderRadius: 6, border: "1px solid var(--border)", padding: "8px 10px" }}>
                         {/* Contact name row */}
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{name}</span>
                             <span style={{ fontSize: 11, color: "var(--muted)" }}>{email}</span>
+                            {initial?.timezone && (
+                              <span style={{ fontSize: 10, background: "#ede9fe", color: "#6d28d9", padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>
+                                🕒 {initial.timezone}
+                              </span>
+                            )}
                           </div>
                           {hasPendingFu && (
                             <button

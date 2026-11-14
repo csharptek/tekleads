@@ -36,6 +36,9 @@ const KEYS = {
   AzureSearchIndex: "azure_search_index",
   InstantlyApiKey: "instantly_api_key",
   SerperApiKey: "serper_api_key",
+  SendWindowStartHour: "send_window_start_hour",
+  SendWindowEndHour: "send_window_end_hour",
+  SendAllowedDays: "send_allowed_days",
   AppUrl: "app_url",
   ApolloMasterKey: "apollo_master_key",
   AiProvider: "ai_provider",
@@ -151,6 +154,15 @@ const TECH_GROUPS: Group[] = [
 
 // User-facing config — always visible
 const USER_GROUPS: Group[] = [
+  {
+    title: "Email Send Window (Client Timezone)",
+    subtitle: "Used by \"Send All (Client TZ)\". Emails and follow-ups are scheduled inside this window in each client's local time. Hours are 0–24 (end is exclusive). Days: 1=Mon … 7=Sun.",
+    fields: [
+      { key: KEYS.SendWindowStartHour, label: "Window Start Hour (client local)", placeholder: "9", defaultValue: "9" },
+      { key: KEYS.SendWindowEndHour, label: "Window End Hour (client local)", placeholder: "11", defaultValue: "11" },
+      { key: KEYS.SendAllowedDays, label: "Allowed Days (comma-separated)", placeholder: "1,2,3,4,5", defaultValue: "1,2,3,4,5", full: true },
+    ],
+  },
   {
     title: "Instantly Outreach",
     subtitle: "Send leads to Instantly campaigns for automated cold email sequences.",

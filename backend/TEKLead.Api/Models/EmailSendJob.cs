@@ -18,4 +18,5 @@ public class EmailSendJob
     public string? Body { get; set; }           // null for initial (uses artifact); set for FU1/FU2
     public string Channel { get; set; } = "graph"; // graph | gmail_smtp
     public string? AttachmentPath { get; set; } // local disk path, initial send only
+    public string? Timezone { get; set; }       // IANA tz, set for client-timezone sends
 }

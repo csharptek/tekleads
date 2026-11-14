@@ -46,6 +46,7 @@ public class EmailSendQueueService
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_path TEXT;
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_data BYTEA;
             ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS attachment_filename TEXT;
+            ALTER TABLE email_send_jobs ADD COLUMN IF NOT EXISTS timezone TEXT;
             CREATE INDEX IF NOT EXISTS idx_esj_stage ON email_send_jobs(proposal_id, follow_up_stage);
         ");
     }
@@ -115,6 +116,73 @@ public class EmailSendQueueService
                     new { pid = proposalId, email = recipients[i].email, name = recipients[i].name, scheduledAt = fu3At, subject = fu3.Subject, body = fu3.Body, channel });
             }
         }
+    }
+
+    /// <summary>
+    /// Same as EnqueueBulk, but each recipient's initial + follow-ups are scheduled inside
+    /// their local send window (timezone resolved per recipient).
+    /// </summary>
+    public async Task<List<(string email, string timezone, DateTime initialAt)>> EnqueueBulkTz(
+        Guid proposalId,
+        List<(string email, string name, string timezone)> recipients,
+        int intervalMinutes,
+        SendWindow window,
+        FollowUpSpec? fu1,
+        FollowUpSpec? fu2,
+        FollowUpSpec? fu3 = null,
+        string? manualSubject = null,
+        string? manualBody = null,
+        string channel = "graph",
+        string? attachmentPath = null)
+    {
+        await using var c = new NpgsqlConnection(_settings.ConnectionString);
+        await c.OpenAsync();
+
+        await c.ExecuteAsync(
+            "DELETE FROM email_send_jobs WHERE proposal_id=@pid AND status IN ('pending','cancelled','failed')",
+            new { pid = proposalId });
+
+        var now = DateTime.UtcNow;
+        var gap = TimeSpan.FromMinutes(Math.Max(1, intervalMinutes));
+
+        // initial times per recipient, then enforce min gap across the whole batch
+        var planned = recipients
+            .Select(r => (r.email, r.name, r.timezone, at: TimezoneResolver.NextWindow(now, r.timezone, window)))
+            .OrderBy(x => x.at)
+            .ToList();
+        for (int i = 1; i < planned.Count; i++)
+        {
+            var min = planned[i - 1].at + gap;
+            if (planned[i].at < min)
+            {
+                var at = min;
+                if (!TimezoneResolver.InWindow(at, planned[i].timezone, window))
+                    at = TimezoneResolver.NextWindow(at, planned[i].timezone, window, jitter: false);
+                planned[i] = (planned[i].email, planned[i].name, planned[i].timezone, at);
+            }
+        }
+
+        var result = new List<(string, string, DateTime)>();
+        foreach (var r in planned)
+        {
+            await c.ExecuteAsync(@"
+                INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body, channel, attachment_path, timezone)
+                VALUES (@pid, @email, @name, @scheduledAt, 'pending', 0, @subject, @body, @channel, @attachmentPath, @tz)",
+                new { pid = proposalId, email = r.email, name = r.name, scheduledAt = r.at, subject = manualSubject, body = manualBody, channel, attachmentPath, tz = r.timezone });
+
+            var stages = new[] { (1, fu1), (2, fu2), (3, fu3) };
+            foreach (var (stage, fu) in stages)
+            {
+                if (fu == null || string.IsNullOrWhiteSpace(fu.Subject) || string.IsNullOrWhiteSpace(fu.Body)) continue;
+                var fuAt = TimezoneResolver.NextWindow(r.at.AddHours(fu.DelayHours), r.timezone, window);
+                await c.ExecuteAsync(@"
+                    INSERT INTO email_send_jobs (proposal_id, to_email, to_name, scheduled_at, status, follow_up_stage, subject, body, channel, timezone)
+                    VALUES (@pid, @email, @name, @scheduledAt, 'pending', @stage, @subject, @body, @channel, @tz)",
+                    new { pid = proposalId, email = r.email, name = r.name, scheduledAt = fuAt, stage, subject = fu.Subject, body = fu.Body, channel, tz = r.timezone });
+            }
+            result.Add((r.email, r.timezone, r.at));
+        }
+        return result;
     }
 
     public async Task<List<EmailSendJob>> GetDueJobs()
@@ -248,5 +316,6 @@ public class EmailSendQueueService
         Body = r.body,
         Channel = r.channel ?? "graph",
         AttachmentPath = r.attachment_path,
+        Timezone = r.timezone,
     };
 }

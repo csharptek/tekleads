@@ -138,6 +138,9 @@ public static class SettingKeys
     // Web search for the JD Quality contact-research panel (Serper.dev — google.serper.dev).
     // Optional: if unset, the "Web search matches" panel is simply skipped, no error.
     public const string SerperApiKey               = "serper_api_key";
+    public const string SendWindowStartHour        = "send_window_start_hour";
+    public const string SendWindowEndHour          = "send_window_end_hour";
+    public const string SendAllowedDays            = "send_allowed_days";
 
     public static readonly string[] AllKnown =
     {
@@ -164,6 +167,7 @@ public static class SettingKeys
         JobLeadEmailPrompt, JobLeadFollowUp1Prompt, JobLeadFollowUp2Prompt,
         GmailSmtpUser, GmailSmtpAppPassword,
         JdMinDurationWeeks, JdMinBudget, JdHourlyRateUsd, SerperApiKey,
+        SendWindowStartHour, SendWindowEndHour, SendAllowedDays,
     };
 
     public static readonly HashSet<string> Secrets = new()

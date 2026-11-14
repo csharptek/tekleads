@@ -11,12 +11,17 @@ public class ArtifactsController : ControllerBase
     private readonly ArtifactsService _svc;
     private readonly GraphEmailService _graphEmail;
     private readonly EmailSendQueueService _queue;
+    private readonly ProposalService _proposals;
+    private readonly SettingsService _settings;
 
-    public ArtifactsController(ArtifactsService svc, GraphEmailService graphEmail, EmailSendQueueService queue)
+    public ArtifactsController(ArtifactsService svc, GraphEmailService graphEmail, EmailSendQueueService queue,
+        ProposalService proposals, SettingsService settings)
     {
         _svc = svc;
         _graphEmail = graphEmail;
         _queue = queue;
+        _proposals = proposals;
+        _settings = settings;
     }
 
     [HttpGet("prompts")]
@@ -173,6 +178,64 @@ public class ArtifactsController : ControllerBase
         });
     }
 
+    [HttpPost("{proposalId}/send-bulk-tz")]
+    public async Task<IActionResult> EnqueueBulkTz(Guid proposalId, [FromBody] BulkSendRequest req)
+    {
+        try
+        {
+            if (req.Recipients == null || req.Recipients.Count == 0)
+                return BadRequest(new { error = "No recipients provided." });
+            if (req.IntervalMinutes < 1) req.IntervalMinutes = 1;
+
+            var proposal = await _proposals.GetById(proposalId);
+            var locs = TimezoneResolver.LocationsFromContactsJson(proposal?.ContactsJson);
+            var proposalTz = TimezoneResolver.Resolve(proposal?.ClientCountry, null, proposal?.ClientCity);
+
+            var list = req.Recipients
+                .Where(r => !string.IsNullOrWhiteSpace(r.Email))
+                .Select(r =>
+                {
+                    string tz;
+                    if (!string.IsNullOrWhiteSpace(r.Country) || !string.IsNullOrWhiteSpace(r.State))
+                        tz = TimezoneResolver.Resolve(r.Country, r.State, r.City);
+                    else if (locs.TryGetValue(r.Email, out var l))
+                        tz = TimezoneResolver.Resolve(l.country, l.state, l.city);
+                    else
+                        tz = proposalTz;
+                    return (r.Email, r.Name ?? "", tz);
+                })
+                .ToList();
+
+            var window = SendWindow.FromSettings(await _settings.GetAll());
+
+            FollowUpSpec? Fu(FollowUpRequest? f, int dflt) =>
+                f != null && !string.IsNullOrWhiteSpace(f.Subject) && !string.IsNullOrWhiteSpace(f.Body)
+                    ? new FollowUpSpec { Subject = f.Subject!, Body = f.Body!, DelayHours = f.DelayHours > 0 ? f.DelayHours : dflt }
+                    : null;
+
+            string? attachmentPath = null;
+            if (!string.IsNullOrWhiteSpace(req.AttachmentToken))
+            {
+                attachmentPath = LocalAttachmentStore.ResolvePath(req.AttachmentToken);
+                if (attachmentPath == null)
+                    return BadRequest(new { error = "Attachment not found — please re-upload." });
+            }
+
+            var planned = await _queue.EnqueueBulkTz(proposalId, list, req.IntervalMinutes, window,
+                Fu(req.FollowUp1, 6), Fu(req.FollowUp2, 12), Fu(req.FollowUp3, 24),
+                req.Subject, req.Body, string.IsNullOrWhiteSpace(req.Channel) ? "graph" : req.Channel, attachmentPath);
+
+            return Ok(new
+            {
+                queued = planned.Count,
+                windowStartHour = window.StartHour,
+                windowEndHour = window.EndHour,
+                recipients = planned.Select(p => new { email = p.email, timezone = p.timezone, scheduledAt = p.initialAt }),
+            });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     [HttpPost("upload-attachment")]
     [RequestSizeLimit(15_000_000)]
     public async Task<IActionResult> UploadAttachment(IFormFile file)
@@ -200,6 +263,7 @@ public class ArtifactsController : ControllerBase
             followUpStage = j.FollowUpStage,
             subject       = j.Subject,
             body          = j.Body,
+            timezone      = j.Timezone,
         }));
     }
 
@@ -273,7 +337,7 @@ public class ArtifactsController : ControllerBase
 public class CustomPromptRequest  { public string? CustomPrompt { get; set; } public List<Guid>? PortfolioIds { get; set; } public string? Provider { get; set; } }
 public class SaveArtifactRequest  { public string Field { get; set; } = ""; public string? Value { get; set; } }
 public class SendEmailRequest     { public string ToEmail { get; set; } = ""; public string? ToName { get; set; } public string? Signature { get; set; } }
-public class BulkSendRecipient    { public string Email { get; set; } = ""; public string? Name { get; set; } }
+public class BulkSendRecipient    { public string Email { get; set; } = ""; public string? Name { get; set; } public string? Country { get; set; } public string? State { get; set; } public string? City { get; set; } }
 public class CancelFollowUpsRequest { public string? ContactEmail { get; set; } public int? Stage { get; set; } }
 
 public class FollowUpRequest
